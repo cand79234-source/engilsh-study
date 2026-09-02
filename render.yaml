@@ -1,0 +1,16 @@
+# Render 部署清单（配合 Neon Postgres 使用）
+# 部署步骤见 DEPLOY.md。本文件只用 Python 运行时，数据库走外部 Neon。
+services:
+  - type: web
+    name: english-os
+    runtime: python
+    plan: free
+    buildCommand: pip install -r backend/requirements.txt
+    startCommand: cd backend && uvicorn main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /api/today
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.11"
+      # 在 Render 控制台手动粘贴 Neon 的连接串（DATABASE_URL），不要写死在这里
+      - key: DATABASE_URL
+        sync: false
