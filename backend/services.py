@@ -52,31 +52,15 @@ def get_week(stage, week):
 
 
 def update_week(stage, week, title=None, grammar=None, topics=None, vocab=None):
-    """用户编辑每周内容（需求第七节）。vocab 为词对象列表。
-
-    参数语义（与 title/grammar/topics 保持一致，均为「不传=不改」）：
-      - vocab=None → 不修改原有 vocab
-      - vocab=[]   → 明确清空该周词汇
-    修复：此前无论传不传 vocab 都会写入 vocab or []，导致「只改标题」
-    这类调用把整周 120 词清空的数据破坏事故。
-    """
+    """用户编辑每周内容（需求第七节）。vocab 为词对象列表。"""
     conn = get_conn()
-    existing = conn.execute(
-        "SELECT * FROM weeks WHERE stage=? AND week_no=?", (stage, week)).fetchone()
+    existing = conn.execute("SELECT * FROM weeks WHERE stage=? AND week_no=?", (stage, week)).fetchone()
     if existing:
-        if vocab is None:
-            conn.execute(
-                "UPDATE weeks SET title=COALESCE(?,title), grammar=COALESCE(?,grammar),"
-                " topics=COALESCE(?,topics) WHERE stage=? AND week_no=?",
-                (title, grammar, topics, stage, week))
-        else:
-            conn.execute(
-                "UPDATE weeks SET title=COALESCE(?,title), grammar=COALESCE(?,grammar),"
-                " topics=COALESCE(?,topics), vocab_json=? WHERE stage=? AND week_no=?",
-                (title, grammar, topics,
-                 json.dumps(vocab, ensure_ascii=False), stage, week))
+        conn.execute(
+            "UPDATE weeks SET title=COALESCE(?,title), grammar=COALESCE(?,grammar),"
+            " topics=COALESCE(?,topics), vocab_json=? WHERE stage=? AND week_no=?",
+            (title, grammar, topics, json.dumps(vocab or [], ensure_ascii=False), stage, week))
     else:
-        # 新建记录时 vocab 为空列表与 None 等价
         conn.execute(
             "INSERT INTO weeks (stage, week_no, title, grammar, topics, vocab_json) VALUES (?,?,?,?,?,?)",
             (stage, week, title or "未命名周", grammar or "", topics or "",
@@ -420,6 +404,9 @@ def ensure_week_content(stage, week, force=False):
     theme = THEME_BY_WEEK.get((stage, week))
     if not vocab and _dictionary_count() > 0:
         filled = pick_words_for_theme(theme, 20)
+        # 标记内置预设词，供导入合并时区分并排除（避免混入用户没填的词）
+        for it in filled:
+            it.setdefault("source", "builtin")
         vocab = filled
         conn.execute(
             "UPDATE weeks SET vocab_json=? WHERE stage=? AND week_no=?",

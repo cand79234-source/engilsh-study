@@ -301,9 +301,14 @@ def import_rich_week_merge(text, forced_stage=None, forced_week=None):
 
     existing = svc.get_week(stage, week) or {"title": title, "vocab": []}
     base_vocab = existing.get("vocab") or []
-    # 保留其它天的旧词，本次涉及的天将被替换
+    # 保留其它天的旧词，本次涉及的天将被替换。
+    # 关键修复：系统「预设填充」词（ensure_week_content 按主题自动补的词）没有 day 字段、
+    # 且标记为 source='builtin'；若不过滤会被当作"其它天"一起保留，混入用户没填的词。
+    # 仅保留"有 day 字段且非内置"的用户词。
     touched_days = {g["day"] for g in groups}
-    kept = [v for v in base_vocab if v.get("day") not in touched_days]
+    kept = [v for v in base_vocab
+            if (v.get("day") or 0) and v.get("day") not in touched_days
+            and v.get("source") != "builtin"]
 
     conn = get_conn()
     known = {}
