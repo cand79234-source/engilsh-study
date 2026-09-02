@@ -301,25 +301,14 @@ def import_rich_week_merge(text, forced_stage=None, forced_week=None):
 
     existing = svc.get_week(stage, week) or {"title": title, "vocab": []}
     base_vocab = existing.get("vocab") or []
-    # 合并策略：按「天 + 单词」去重，支持分多次把同一天逐步补齐。
-    #   - 其它天的旧词：全部保留；
-    #   - 同一天：本批提供的新词追加进去，同名旧词被本批覆盖（例句/搭配随之更新）；
-    #   - 无 day 字段的内置填充词（source='builtin'）：始终丢弃，避免混入用户没填的词。
-    # 这样用户第二次导入时只需写"新增的 N 个"，不用把当天全部词重写一遍，
-    # 也不会把之前导入的词整组冲掉。
+    # 保留其它天的旧词，本次涉及的天将被替换。
+    # 关键修复：系统「预设填充」词（ensure_week_content 按主题自动补的词）没有 day 字段、
+    # 且标记为 source='builtin'；若不过滤会被当作"其它天"一起保留，混入用户没填的词。
+    # 仅保留"有 day 字段且非内置"的用户词。
     touched_days = {g["day"] for g in groups}
-    incoming_keys = set()
-    for g in groups:
-        for w in g["words"]:
-            incoming_keys.add((g["day"], w["word"].lower()))
-    kept = []
-    for v in base_vocab:
-        if not (v.get("day") or 0) or v.get("source") == "builtin":
-            continue  # 无 day 的内置填充词：丢弃（此前修复的混入问题）
-        if v.get("day") in touched_days and \
-           (v["day"], (v.get("word") or "").lower()) in incoming_keys:
-            continue  # 同一天且本批已提供该词：由本批新条目覆盖（更新例句/搭配）
-        kept.append(v)
+    kept = [v for v in base_vocab
+            if (v.get("day") or 0) and v.get("day") not in touched_days
+            and v.get("source") != "builtin"]
 
     conn = get_conn()
     known = {}
