@@ -118,23 +118,6 @@ def _bank_colloc(conn, word, phrase, meaning):
     return True
 
 
-def _resolve_stage(parsed, forced_stage=None):
-    """确定导入目标阶段的优先级：文本明确写的 > 调用方传入 > 当前进度。
-
-    修复：此前 forced_stage 为 None 时一律落到 0，导致在阶段 1~5 导入
-    实际会写进阶段 0 的同一周（数据错位且难以察觉）。
-    """
-    st = parsed.get("stage_from_text")
-    if st is not None:
-        return int(st)
-    if forced_stage is not None:
-        return int(forced_stage)
-    try:
-        return int((svc.get_progress() or {}).get("stage", 0) or 0)
-    except Exception:
-        return 0
-
-
 def import_rich_week(text, forced_stage=None, forced_week=None):
     """主入口。返回导入结果摘要（供前端展示成功/警告/分组统计）。
 
@@ -144,7 +127,7 @@ def import_rich_week(text, forced_stage=None, forced_week=None):
     from importer import parse_import
     parsed = parse_import(text)
     week = parsed.get("week") or forced_week
-    stage = _resolve_stage(parsed, forced_stage)
+    stage = forced_stage if forced_stage is not None else parsed.get("stage", 0)
     title = parsed.get("title", "")
     groups = parsed.get("groups", [])
     if not groups:
@@ -218,6 +201,7 @@ def import_rich_week(text, forced_stage=None, forced_week=None):
     conn.close()
 
     svc.update_week(stage, week, title=title, vocab=new_vocab)
+    _move_progress_to(stage, week)
     total = len(new_vocab)
     day_counts = {}
     for v in new_vocab:
@@ -233,6 +217,24 @@ def import_rich_week(text, forced_stage=None, forced_week=None):
         "skipped": parsed.get("skipped", []),
         "words": [v["word"] for v in new_vocab],
     }
+
+
+def _move_progress_to(stage, week, day=1):
+    """导入成功后把当前学习位置切到导入的周（Day1）。
+
+    这样无论前端跳转是否触发（旧版 confirm 被关掉、移动端弹框被忽略等），
+    下一次刷新「今日任务」都会显示用户自己导入的词，而不是停留在某个
+    内置预设周（如第3周 hobby/like/enjoy…）。这是「导入即生效」的兜底保障。
+    """
+    try:
+        conn = get_conn()
+        conn.execute(
+            "UPDATE progress SET stage=?, week=?, day=?, updated_at=? WHERE id=1",
+            (int(stage), int(week), int(day), ts()))
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        print("[weekimport] 切进度失败:", e)
 
 
 def _build_word_entry(conn, known, day, gname, w, counters):
@@ -291,7 +293,7 @@ def import_rich_week_merge(text, forced_stage=None, forced_week=None):
     from importer import parse_import
     parsed = parse_import(text)
     week = parsed.get("week") or forced_week
-    stage = _resolve_stage(parsed, forced_stage)
+    stage = forced_stage if forced_stage is not None else parsed.get("stage", 0)
     title = parsed.get("title", "")
     groups = parsed.get("groups") or []
     if not groups:
@@ -319,6 +321,7 @@ def import_rich_week_merge(text, forced_stage=None, forced_week=None):
 
     # 覆盖此前的整周 vocab（合并后即为最终每周词汇）
     svc.update_week(stage, week, title=title or existing.get("title"), vocab=new_vocab)
+    _move_progress_to(stage, week)
     # 统计各天词数。注意：kept 里可能混有旧版/自动填充的无 day 字段条目，
     # 用 get 防 KeyError（此前在"已有自动填充内容的周"上合并导入会 500）。
     day_counts = {}
