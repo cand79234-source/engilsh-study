@@ -473,22 +473,23 @@ async function runImport(){
       <b>✅ 已合并到 第${r.week}周「${esc(r.title||'未命名')}」</b><br>
       <span style="color:var(--muted)">本次：${dayTxt?dayTxt:'若干词'} · 当前周共 ${r.total} 词 / ${r.days} 天</span><br>
       <span style="color:var(--muted)">词库新增 ${r.added_new} · 自带例句 ${r.added_examples} · 固定搭配 ${r.added_collocations||0} · 自动补例句 ${r.autogen}</span>
+      <br><span style="color:var(--blue)">已自动跳转到第${r.week}周，去学你导入的内容 →</span>
       ${w.length?('<br><span style="color:var(--amber);font-size:13px">'+w.join('<br>')+'</span>'):''}
     </div>`;
   toast(`已合并到第${r.week}周，当前共 ${r.total} 词 / ${r.days} 天`);
   btn.textContent='✅ 完成，点击关闭';
   btn.disabled=false;
-  // 仅当导入到非当前周才询问跳转；否则直接刷新当前学习页
+  // 导入成功后自动切到「导入所在的周」，确保立刻能看到自己导入的词。
+  // 旧逻辑依赖一个易被忽略的确认框：关掉就不跳，于是每日任务仍显示旧的内置词（“完全没变”）。
   const cur=state.learn.d.progress;
   setTimeout(()=>{
-    if(r.week!==cur.week){
-      if(confirm(`已导入到第 ${r.week} 周。现在跳到第 ${r.week} 周开始学习吗？`)){
-        document.querySelector('.overlay')&&document.querySelector('.overlay').remove();
-        setProgressAndGo(r.week);
-      }
+    const overlay=document.querySelector('.overlay');
+    if(overlay) overlay.remove();
+    if(r.week && r.week!==cur.week){
+      setProgressAndGo(r.week);
+      toast(`已切到第${r.week}周，开始学习你导入的内容`);
     } else {
       pages.learn(document.getElementById('content'));
-      document.querySelector('.overlay')&&document.querySelector('.overlay').remove();
     }
   }, 400);
 }
