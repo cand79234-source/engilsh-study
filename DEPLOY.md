@@ -1,86 +1,177 @@
-# 部署手册：GitHub + Render + Neon + UptimeRobot
+# 📖 部署指南（Neon + Render + UptimeRobot）
 
-本仓库已改造为「本地 SQLite 兜底 / 设了 `DATABASE_URL` 就自动用 Postgres」双模式。
-所有 SQL 统一用 `?` 占位符，Postgres 模式下由 `backend/db.py` 的适配层自动转成 `%s`，
-并把 `INSERT OR IGNORE` 转成 `ON CONFLICT ... DO NOTHING`，业务代码无需改动。
-
-> ⚠️ 沙箱环境无法直连外网，所以下面的 `git push`、Neon / Render / UptimeRobot 创建步骤
-> **需要在你自己的电脑（或任意能联网的终端）上执行**。代码和配置都已就绪，照抄即可。
+> **当前进度**
+> - ✅ GitHub：代码已推送完成（https://github.com/cand79234-source/engilsh-study）
+> - ⬜ 第1步 Neon：建数据库，拿连接串（3 分钟）
+> - ⬜ 第2步 Render：连仓库，上线网站（5-8 分钟）
+> - ⬜ 第3步 UptimeRobot：监控 + 保活（2-3 分钟）
+>
+> 全程手机浏览器即可。**任何一步卡住，截图发我。**
 
 ---
 
-## 0. 前置：把代码推到 GitHub
+## 第 1 步：Neon —— 云端数据库
 
-```bash
-cd english-os
-git init -q
-git add -A
-git commit -q -m "English OS: production-ready (Render + Neon)"
-git remote add origin https://github.com/cand79234-source/engilsh-study.git
-git branch -M main
-git push -u origin main
+### 1.1 注册
+1. 打开 **https://neon.tech**
+2. 点右上角 **Sign Up**
+3. 选 **Continue with GitHub** → **Authorize Neon** 授权
+
+### 1.2 创建项目
+| 项目 | 怎么填 |
+|---|---|
+| Project name | `english-os` |
+| Postgres version | 默认（不用动） |
+| Region | **Singapore (ap-southeast-1)** ← 离国内最近 |
+
+点 **Create project**。
+
+### 1.3 复制连接串（⚠️ 最关键）
+项目建好后会直接弹出 **Connection string** 框：
+
+```
+postgresql://neondb_owner:xxxx@ep-xxx-pooler.ap-southeast-1.aws.neon.tech/neondb?sslmode=require
 ```
 
-（仓库名按你给的 `engilsh-study`；如果 GitHub 上还没建仓库，先在网页上新建一个空的。）
+- 点旁边的 **复制按钮** 📋，立刻存到手机备忘录
+- 确认从 `postgresql://` 开头、到 `?sslmode=require` 结尾**一整串完整**
+
+### 1.4 以后想再找连接串
+**https://console.neon.tech** → 点项目 → **Connect** 按钮 → 选 **Pooled connection**（带 `-pooler` 的那串）→ 复制
+
+> 💡 Neon 免费额度：0.5GB 存储（这个应用用不到 1%）、闲置自动暂停（访问时毫秒级唤醒，无感知）。
 
 ---
 
-## 1. Neon（Postgres 数据库）
+## 第 2 步：Render —— 上线正式网站
 
-1. 打开 https://neon.tech ，用 GitHub 登录，新建一个 Project（选 Postgres 16，区域就近）。
-2. 在 **Dashboard → Connection Details** 复制 **Connection string**，形如：
+### 2.1 注册 + 连 GitHub
+1. 打开 **https://render.com** → 点 **Get Started for Free**
+2. 选 **Sign in with GitHub** → **Authorize Render**
+3. 如果提示安装 **Render GitHub App**：
+   - 选你的账号 `cand79234-source`
+   - 选 **Only select repositories** → 勾选 **engilsh-study**
+   - 点 **Install**
+
+### 2.2 创建服务
+1. 控制台点 **New +** → **Web Service**
+2. 找到 **engilsh-study** → 点 **Connect**
+   - 列表里没有？点 **Configure account** 完成上面的 GitHub App 安装 → 回来刷新
+
+### 2.3 填写配置（⚠️ 逐项核对，最容易错的就是这里）
+
+| 配置项 | 填什么 |
+|---|---|
+| **Name** | `english-os` |
+| **Language** | Python 3（会自动识别，没识别就手动选） |
+| **Branch** | `main` |
+| **Region** | **Singapore** |
+| **Root Directory** | **留空，不填** |
+| **Build Command** | `pip install -r backend/requirements.txt` |
+| **Start Command** | `cd backend && uvicorn main:app --host 0.0.0.0 --port $PORT` |
+| **Instance Type** | **Free** |
+
+> 两条命令必须一字不差；Start Command 里的端口是 `$PORT` 不是 8000。
+
+### 2.4 设置数据库连接（必须！）
+在创建按钮附近点 **Add Environment Variable**：
+
+| Key | Value |
+|---|---|
+| `DATABASE_URL` | 粘贴第 1 步的 Neon **整串**连接串 |
+
+### 2.5 部署
+1. 点 **Create Web Service**
+2. 日志依次出现：
    ```
-   postgresql://user:password@ep-xxx-pooler.region.aws.neon.tech/neondb?sslmode=require
+   Build successful               ← 依赖装好了
+   Application startup complete   ← 启动成功 ✅
    ```
-3. 把整串复制好，下一步填进 Render。**表结构会在应用首次启动时由 `init_db()` 自动建好**，不用手动跑 SQL。
+3. 状态变 **Live**（绿点）= 上线成功
+4. 你的**正式网址**：**https://english-os-xxxx.onrender.com** → 打开能看到学习页 = 部署成功 🎉
+
+### 2.6 以后怎么找网址 / 改配置
+- 网址：**https://dashboard.render.com** → 点 `english-os` → 顶部就是
+- 改环境变量：服务页 → **Environment** → 编辑 → Save（自动重新部署）
+- 看日志排错：服务页 → **Logs** 标签
 
 ---
 
-## 2. Render（Web 服务，正式网站）
+## 第 3 步：UptimeRobot —— 监控 + 保活
 
-1. 打开 https://render.com ，用 GitHub 登录，点 **New → Web Service**，选中本仓库 `engilsh-study`。
-2. 配置：
-   - **Runtime**: Python 3.11（仓库已带 `runtime.txt`，会自动识别）
-   - **Build Command**: `pip install -r backend/requirements.txt`
-   - **Start Command**: `cd backend && uvicorn main:app --host 0.0.0.0 --port $PORT`
-   - **Plan**: Free（或选 Starter 避免休眠）
-3. 在 **Environment → Add Environment Variable** 里加：
-   - `DATABASE_URL` = 第 1 步复制的 Neon 连接串（**整串粘贴**，包含 `?sslmode=require`）
-4. 点 **Create Web Service**。首次启动会连接 Neon 并自动建表、导入内置词库（约 10–30 秒）。
-5. 部署完成后，Render 给你的域名形如 `https://english-os-xxxx.onrender.com` —— 这就是**正式网站地址**。
-   - 想要自定义域名：Render 控制台 **Settings → Custom Domains** 里绑定即可。
+**作用**：Render 免费版闲置 15 分钟会休眠（下次打开要等 1 分钟）。UptimeRobot 每 5 分钟 ping 一次 → 网站随时秒开，挂了还会邮件通知你。
 
-> 健康检查路径已设为 `/api/today`，Render 会用它判断实例是否存活。
+### 3.1 注册
+1. 打开 **https://uptimerobot.com** → **Register**
+2. 填邮箱 + 密码 → 提交
+3. 去邮箱点验证链接（垃圾邮件里翻翻）→ 登录
 
----
+### 3.2 添加监控
+点 **+ Add New Monitor**：
 
-## 3. UptimeRobot（宕机监控）
+| 项目 | 填什么 |
+|---|---|
+| **Monitor Type** | **HTTP(s)** |
+| **Friendly Name** | `English OS` |
+| **URL** | `https://你的render网址.onrender.com/api/today` |
+| **Interval** | **5 minutes** |
 
-1. 打开 https://uptimerobot.com ，注册/登录。
-2. **Add New Monitor**：
-   - **Monitor Type**: HTTP(s)
-   - **Friendly Name**: `English OS`
-   - **URL**: 你的 Render 地址 + `/api/today`（例如 `https://english-os-xxxx.onrender.com/api/today`）
-   - **Interval**: 5 分钟（免费额度）
-3. 保存。之后网站挂了会自动邮件/短信告警。
+点 **Create Monitor** → 列表里显示 **Up**（绿点）= 生效 ✅
 
 ---
 
-## 4. 本地开发 / 回退到 SQLite
+## ✅ 第 4 步：部署后验收
 
-不设 `DATABASE_URL` 时，应用自动用本地 `data/english_os.db`（当前你线上的数据就在那里）。
+打开 `https://你的网址.onrender.com`，逐项检查：
 
-```bash
-cd backend
-pip install -r requirements.txt
-python3 -m uvicorn main:app --host 0.0.0.0 --port 8000
-```
+| 检查项 | 预期 |
+|---|---|
+| 页面加载 | 顶部有进度徽章（阶段0 · W3 · D1） |
+| 本周词汇 | Week3 的 20 个种子词（hobby / relax / enjoy…） |
+| 点开一个词 | 有 🔊 发音、例句、固定搭配 |
+| 造句区 | ① 基础 / ② 升级 / ③ 组合表达 三段都在 |
+| 底部入口 | 学习 / 复习 / 薄弱项 能切换 |
 
 ---
 
-## 5. 数据迁移说明（从本地 SQLite → Neon）
+## 📦 第 5 步：恢复你的数据（部署完找我）
 
-当前你本地 `data/english_os.db` 里已有进度/词/造句。要搬到 Neon：
-- 小数据量：直接在网页端重新导入词、进度会自动从 0 开始（最简单，推荐）。
-- 想完整搬：用 `pgloader` 或写个小脚本把 SQLite 表导出成 SQL 再灌进 Neon。
-  由于两个库 schema 已对齐（列名一致），迁移很直接。需要我可以单独给你迁移脚本。
+新站是空数据库，你导入过的词和进度不在旧数据里。**把新站网址发我**，我立刻：
+1. 远程验证站点和数据库连通
+2. 生成你 **Week2 第 1 组 16 个词**（含例句、固定搭配）的导入文本 → 你贴进新站导入框
+3. 进度恢复：点进度徽章 → 阶段0 / 第 2 周 / Day1 → 保存
+
+---
+
+## 🔧 故障排查速查表
+
+| 现象 | 解决 |
+|---|---|
+| Render 报数据库连接错误 | `DATABASE_URL` 没设或不完整（结尾必须有 `?sslmode=require`） |
+| `pip install` 失败 | Build Command 拼写错误，严格照抄 2.3 |
+| `Errno 98 address already in use` | Start Command 端口写死了，必须是 `$PORT` |
+| 一直 Deploying 卡住 | 等 5-10 分钟；超时点 Manual Deploy → Clear build cache & deploy |
+| 打开网站转圈 1 分钟 | 免费实例冷启动，装好 UptimeRobot 后基本消失 |
+| 打开报 500 | 服务 Logs 标签截图发我 |
+| Neon 找不到连接串 | 项目页 → **Connect** → Pooled connection |
+| UptimeRobot 收不到验证邮件 | 翻垃圾邮件；还不行换邮箱 |
+
+---
+
+## 📚 常用网址收藏
+
+| 用途 | 网址 |
+|---|---|
+| **你的正式网站** | https://english-os-xxxx.onrender.com |
+| Render 控制台 | https://dashboard.render.com |
+| Neon 控制台 | https://console.neon.tech |
+| UptimeRobot | https://uptimerobot.com/dashboard |
+| GitHub 仓库 | https://github.com/cand79234-source/engilsh-study |
+
+---
+
+## 🔄 以后怎么更新网站
+
+1. 我在沙箱改好代码 → 推送到 GitHub `main`
+2. Render 检测到推送 → **自动重新部署**（2-3 分钟）
+3. 你刷新网址就是新版，数据不丢（都在 Neon 云端）
