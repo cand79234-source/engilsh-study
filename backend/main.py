@@ -1,23 +1,84 @@
 """English OS - 个人英语学习 OS 后端入口（纯本地，无 AI）。"""
+import hmac
 import json
 import re
 from datetime import date
-from fastapi import FastAPI
+from fastapi import FastAPI, File, Form, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
+from starlette.middleware.base import BaseHTTPMiddleware
 import os
 
 from db import init_db, get_conn, ts, today_str, STAGES
 import services as svc
 import srs
 from ai_service import correct_sentence, ERROR_TYPES
+import fileimport
 
 app = FastAPI(title="English OS")
 app.add_middleware(
     CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
+# ---------- 访问口令（公网部署保护） ----------
+# 不设 EOS_TOKEN → 完全开放（本地个人使用，run.sh 默认如此）。
+# 设了 EOS_TOKEN → 所有 /api/* 写/读接口都要求携带口令，否则 401。
+# 口令通过请求头 X-Auth-Token 或 Authorization: Bearer <token> 传递。
+ACCESS_TOKEN = (os.environ.get("EOS_TOKEN") or "").strip()
+# 健康检查/保活不鉴权：Render 的 healthCheck 与 UptimeRobot 无法带自定义头
+PUBLIC_API_PATHS = {"/api/health"}
+
+
+class TokenAuthMiddleware(BaseHTTPMiddleware):
+    """公网部署时防止任何人随意读写你的学习数据。"""
+
+    async def dispatch(self, request, call_next):
+        if not ACCESS_TOKEN:
+            return await call_next(request)          # 本地模式：不鉴权
+        path = request.url.path
+        if not path.startswith("/api/") or path in PUBLIC_API_PATHS:
+            return await call_next(request)
+        token = (request.headers.get("x-auth-token") or "").strip()
+        if not token:
+            auth = request.headers.get("authorization") or ""
+            if auth.lower().startswith("bearer "):
+                token = auth[7:].strip()
+        if not hmac.compare_digest(token, ACCESS_TOKEN):
+            return JSONResponse(
+                {"ok": False, "error": "未授权：缺少或错误的访问口令（EOS_TOKEN）。"},
+                status_code=401)
+        return await call_next(request)
+
+
+# 注意顺序：CORS 先注册（外层，负责 OPTIONS 预检），鉴权后注册（内层）
+app.add_middleware(TokenAuthMiddleware)
+
 init_db()
+
+
+def _first_collocation(body):
+    """从请求体里取一个搭配短语（用于拼 SRS 复习提示）。
+
+    项目统一契约是 collocations: [{"phrase":..., "meaning":...}, ...]，
+    但历史上前端/脚本发过单数字符串 collocation，这里两种都兼容。
+    """
+    collocs = body.get("collocations")
+    if isinstance(collocs, list) and collocs:
+        c0 = collocs[0]
+        if isinstance(c0, dict):
+            return (c0.get("phrase") or "").strip()
+        return str(c0 or "").strip()
+    return (body.get("collocation") or "").strip()
+
+
+@app.get("/api/health")
+def health():
+    """健康检查 / 保活探针（永不鉴权）。
+
+    Render 的 healthCheckPath 与 UptimeRobot 都打这个地址：它们无法携带
+    自定义请求头，所以必须排除在鉴权之外（只返回存活状态，不含任何学习数据）。
+    """
+    return {"ok": True, "auth_required": bool(ACCESS_TOKEN)}
 
 
 # ---------- 主页 ----------
@@ -89,9 +150,9 @@ def today():
             "SELECT * FROM day_items WHERE stage=? AND week=? AND day=? AND kind='vocab' AND ref_key=?",
             (p["stage"], p["week"], p["day"], key)).fetchone()
         mastered = row["mastered"] if row else 0
-        # 兼容两种内容形态：
+        # 兼容两种内容形态，对外统一成 A 的形态：
         #  A) 富文本导入(块状)：examples=[{sentence,translation}], collocations=[{phrase,meaning}]
-        #  B) 早期/自动填充：example+translation 字符串
+        #  B) 早期/自动填充：example+translation 字符串、collocation 字符串
         examples = w.get("examples") or []
         if not examples and (w.get("example") or w.get("extra_examples")):
             first = w.get("example") or ""
@@ -99,9 +160,12 @@ def today():
             examples = [{"sentence": first, "translation": w.get("translation", "")}] \
                 if first else []
             examples += [{"sentence": s, "translation": ""} for s in extras]
+        collocations = w.get("collocations") or []
+        if not collocations and w.get("collocation"):
+            collocations = [{"phrase": w.get("collocation"), "meaning": ""}]
         day_items[key] = {
             "word": key, "meaning": w.get("meaning", ""), "pos": w.get("pos", ""),
-            "collocations": w.get("collocations") or [],
+            "collocations": collocations,
             "examples": examples,
             "ex_source": w.get("ex_source", ""),
             "day": w.get("day", 1), "group_name": w.get("group_name", ""),
@@ -171,7 +235,7 @@ def word_master(body: dict):
     if mastered == 2:
         word = body.get("meaning", key)
         srs.schedule_review(conn, "vocab", key, f"回忆并造句使用：{key}",
-                            key + " " + body.get("collocation", ""),
+                            key + " " + _first_collocation(body),
                             p["stage"], p["week"], p["day"])
         conn.execute(
             "INSERT INTO history (date, stage, week, day, action, detail, created_at) VALUES (?,?,?,?,?,?,?)",
@@ -280,6 +344,72 @@ def words_import(body: dict):
         forced_stage=int(forced_stage) if forced_stage is not None else None,
         forced_week=int(forced_week) if forced_week is not None else None,
     )
+
+
+# ---------- 文件上传导入（docx/pdf/txt/xlsx/html 等多格式） ----------
+@app.post("/api/file/extract")
+async def file_extract(file: UploadFile = File(...)):
+    """上传文件 → 提取纯文本（供前端预览/编辑后再导入）。
+
+    支持 docx（含"聊天粘贴型"换行结构）、pdf、txt/md/csv/json、
+    html、rtf、xlsx 等，详见 fileimport.SUPPORTED_EXTS。
+    """
+    try:
+        raw = await file.read()
+        if len(raw) > fileimport.MAX_FILE_SIZE:
+            return {"ok": False, "error": "文件超过 20MB，请拆分后上传。"}
+        filename = file.filename or ""
+        text, fmt, warnings = fileimport.extract_text(raw, filename)
+        lines = [ln for ln in text.split("\n") if ln.strip()]
+        return {
+            "ok": True, "filename": filename, "format": fmt,
+            "lines": len(lines), "chars": len(text), "text": text,
+            "warnings": warnings,
+        }
+    except ValueError as e:
+        return {"ok": False, "error": str(e)}
+    except Exception as e:
+        return {"ok": False, "error": f"文件读取失败：{e}"}
+
+
+@app.post("/api/words/import/file")
+async def words_import_file(
+    file: UploadFile = File(...),
+    week: str = Form(None),
+    stage: str = Form(None),
+    merge: bool = Form(False),
+):
+    """上传文件并直接导入整周词汇（提取→解析→写库一步完成）。
+
+    与 POST /api/words/import 相同逻辑，只是入口从"粘贴文本"换成"上传文件"。
+    """
+    import weekimport
+    try:
+        raw = await file.read()
+        if len(raw) > fileimport.MAX_FILE_SIZE:
+            return {"ok": False, "error": "文件超过 20MB，请拆分后上传。"}
+        try:
+            text, fmt, warnings = fileimport.extract_text(raw, file.filename or "")
+        except ValueError as e:
+            return {"ok": False, "error": str(e)}
+        fn = weekimport.import_rich_week_merge if merge else weekimport.import_rich_week
+        result = fn(
+            text,
+            forced_stage=int(stage) if stage not in (None, "", "null") else None,
+            forced_week=int(week) if week not in (None, "", "null") else None,
+        )
+        result["format"] = fmt
+        if warnings:
+            result.setdefault("warnings", []).extend(warnings)
+        return result
+    except Exception as e:
+        return {"ok": False, "error": f"文件导入失败：{e}"}
+
+
+@app.get("/api/file/formats")
+def file_formats():
+    """前端展示：支持的文件格式列表。"""
+    return {"ok": True, "formats": fileimport.SUPPORTED_EXTS}
 
 
 @app.post("/api/words/set")

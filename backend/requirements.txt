@@ -1,3 +1,7 @@
 fastapi
 uvicorn[standard]
 psycopg2-binary
+# 文件上传解析（/api/words/import/file、/api/file/extract）
+python-multipart          # FastAPI 文件上传必需
+pdfplumber                # PDF 文本提取（可选：缺失时自动退回 pypdf/pdftotext）
+openpyxl                  # xlsx 表格提取（可选：缺失时自动退回标准库 zip 解析）

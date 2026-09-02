@@ -143,7 +143,28 @@ textarea{font-family:monospace;font-size:13px;min-height:110px;line-height:1.6}
   <div class="sheet" id="progSheet"></div>
 </div>
 <script>
-const api=(p,opt)=>fetch('/api'+p,opt).then(r=>r.json());
+// 访问口令：后端设了 EOS_TOKEN 时需要（公网部署保护）。
+// 存在 localStorage，一次性输入后所有请求自动携带；本地部署不带口令也不影响。
+const EOS_TOKEN_KEY='eos_token';
+function eosToken(){try{return localStorage.getItem(EOS_TOKEN_KEY)||'';}catch(e){return '';}}
+function askEosToken(msg){
+  return new Promise(res=>{
+    const t=prompt(msg||'请输入访问口令（后端环境变量 EOS_TOKEN）');
+    if(t&&t.trim()){try{localStorage.setItem(EOS_TOKEN_KEY,t.trim());}catch(e){} res(true);}else res(false);
+  });
+}
+const api=async(p,opt)=>{
+  opt=opt||{};
+  const h=Object.assign({},opt.headers||{});
+  const tk=eosToken(); if(tk) h['X-Auth-Token']=tk;
+  opt.headers=h;
+  let res=await fetch('/api'+p,opt);
+  if(res.status===401){
+    const got=await askEosToken('需要访问口令才能读写数据\n（后端 EOS_TOKEN，输入一次会记住）');
+    if(got){h['X-Auth-Token']=eosToken();opt.headers=h;res=await fetch('/api'+p,opt);}
+  }
+  return res.json();
+};
 function esc(s){return (s==null?'':String(s)).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
 function toast(m){const t=document.createElement('div');t.textContent=m;
   t.style.cssText='position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:#1e293b;color:#fff;padding:11px 18px;border-radius:10px;font-size:13.5px;z-index:99;opacity:0;transition:.25s';
@@ -371,7 +392,7 @@ async function toggleW(word){state.openWord=(state.openWord===word)?null:word;re
 function renderWordsInto(){const t=state.today;document.getElementById('wordlist').innerHTML=renderWords(t.words);}
 async function master(word){
   const w=state.today.words.find(x=>x.word===word); if(!w)return;
-  await api('/word/master',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({word,mastered:2,meaning:w.meaning,collocation:w.collocation})});
+  await api('/word/master',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({word,mastered:2,meaning:w.meaning,collocations:w.collocations||[]})});
   toast(`已掌握「${word}」`); refreshProg(); pages.learn(document.getElementById('content'));
 }
 async function showImport(){
@@ -383,13 +404,52 @@ async function showImport(){
     <button class="close" onclick="this.closest('.overlay').remove()">✕</button>
     <h3>📥 导入整周词汇</h3>
     <div class="sub" style="margin-top:2px">可分多次粘贴，第 N 组会合并进当前周，不会清掉前面的组。支持分组=每天、中文释义、例句、固定搭配。</div>
-    <div class="tagline">示例格式：<br>第2周｜工作与日常｜120词<br>第1组｜职场人物<br>colleague — 同事<br>We work with colleagues.　　(这行是该词的例句)<br>supervisor — 主管</div>
-    <textarea id="imp_rich" placeholder="粘贴第 ${p.day} 组内容…（会导入到当前第 ${p.week} 周；文本里写“第N组”即可，也可写“第2周｜…”）" style="min-height:180px"></textarea>
+    <div class="btnrow" style="margin:8px 0 6px">
+      <button class="btn" id="imp_file_btn" onclick="document.getElementById('imp_file').click()">📎 上传文件（docx / pdf / txt / xlsx / md / html）</button>
+    </div>
+    <input type="file" id="imp_file" accept=".docx,.doc,.pdf,.txt,.md,.markdown,.csv,.tsv,.json,.html,.htm,.rtf,.xlsx,.xlsm,.log" style="display:none" onchange="uploadImportFile(this.files[0])">
+    <div class="tagline">示例格式：<br>第2周｜工作与日常｜120词<br>第1组｜职场人物（也认 Day 1｜… / 第1天｜…）<br>colleague — 同事<br>We work with colleagues.　　(这行是该词的例句)<br>supervisor — 主管</div>
+    <textarea id="imp_rich" placeholder="粘贴或上传文件…（文本里写“第2周｜…”就导入第2周；没写周号则导入当前第 ${p.week} 周）" style="min-height:180px"></textarea>
+    <div id="imp_file_result"></div>
     <div class="btnrow"><button class="btn" onclick="runImport()">🚀 解析并导入</button></div>
     <div id="imp_rich_result"></div>
   </div>`;
   document.body.appendChild(ov);
+  // 支持拖拽文件到弹窗
+  const ta=ov.querySelector('#imp_rich');
+  ov.addEventListener('dragover',e=>{e.preventDefault();ta.style.outline='2px dashed #3b82f6';});
+  ov.addEventListener('dragleave',()=>{ta.style.outline='';});
+  ov.addEventListener('drop',e=>{e.preventDefault();ta.style.outline='';
+    const f=e.dataTransfer.files&&e.dataTransfer.files[0];
+    if(f)uploadImportFile(f);});
   requestAnimationFrame(()=>ov.classList.add('show'));
+}
+async function uploadImportFile(f){
+  if(!f)return;
+  const box=document.getElementById('imp_file_result')||document.getElementById('imp_rich_result');
+  const ta=document.getElementById('imp_rich');
+  const btn=document.getElementById('imp_file_btn');
+  const old=btn?btn.textContent:'';
+  if(btn){btn.textContent='⏳ 提取中…';btn.disabled=true;}
+  try{
+    const fd=new FormData();fd.append('file',f);
+    const r=await api('/file/extract',{method:'POST',body:fd});
+    if(!r.ok){
+      if(box)box.innerHTML=`<div class="res" style="background:#fee2e2;border-color:#fecaca;color:var(--red)">📄 ${esc(f.name)}：${esc(r.error||'提取失败')}</div>`;
+      return;
+    }
+    ta.value=r.text;
+    const warnTxt=(r.warnings&&r.warnings.length)?`<br><span style="color:var(--amber);font-size:12.5px">⚠️ ${esc(r.warnings.join('；'))}</span>`:'';
+    if(box)box.innerHTML=`<div class="res good" style="font-size:13px">
+      📄 已读取「${esc(f.name)}」（${esc(r.format)} · ${r.lines} 行）${warnTxt}<br>
+      <span style="color:var(--muted)">内容已填入下方文本框，可直接编辑；确认无误后点「🚀 解析并导入」。</span></div>`;
+    toast(`文件已提取：${r.lines} 行`);
+  }catch(e){
+    if(box)box.innerHTML=`<div class="res" style="background:#fee2e2;border-color:#fecaca;color:var(--red)">上传失败：${esc(e.message)}</div>`;
+  }finally{
+    if(btn){btn.textContent=old;btn.disabled=false;}
+    const inp=document.getElementById('imp_file');if(inp)inp.value='';
+  }
 }
 async function runImport(){
   const raw=document.getElementById('imp_rich').value;
@@ -400,7 +460,7 @@ async function runImport(){
   const box=document.getElementById('imp_rich_result');
   let r;
   try{
-    r=await api('/words/import',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:raw, merge:true, week:p.week})});
+    r=await api('/words/import',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:raw, merge:true, stage:p.stage, week:p.week})});
   }catch(e){box.innerHTML=`<div class="res" style="background:#fee2e2;border-color:#fecaca;color:var(--red)">导入请求失败：${esc(e.message)}</div>`;btn.textContent='🚀 解析并导入';btn.disabled=false;return;}
   if(!r.ok){
     box.innerHTML=`<div class="res" style="background:#fee2e2;border-color:#fecaca;color:var(--red)">${esc(r.error||'未识别到内容')}</div>`;
@@ -433,8 +493,11 @@ async function runImport(){
   }, 400);
 }
 function setProgressAndGo(week){
-  // 保存进度到该周 Day1，并回学习页
-  api('/progress',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({stage:0,week,day:1})}).then(()=>{refreshProg();render('learn');});
+  // 保存进度到该周 Day1，并回学习页。
+  // stage 必须沿用当前阶段（此前写死 0，切周会把阶段拉回阶段0）。
+  const st=(state.learn&&state.learn.d&&state.learn.d.progress)||{};
+  const stage=(st.stage!==undefined&&st.stage!==null)?st.stage:0;
+  api('/progress',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({stage,week,day:1})}).then(()=>{refreshProg();render('learn');});
 }
 // 离线发音：浏览器本地 TTS（优先选本机已下载的英文语音，无需联网/无外部服务）
 let _voices=[], _voice=null, _voiceReady=false;

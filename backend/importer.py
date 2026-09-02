@@ -77,11 +77,18 @@ _IS_ENG_SENT = re.compile(r"^[A-Za-z0-9 .,!?'\-;:()\"\/\u2019\u2018]+[.!?]$")
 _HAS_CN = re.compile(r"[\u4e00-\u9fff]")
 # 固定搭配行：形如  固定搭配：「a」b；「c」d
 _COLLOC_LINE = re.compile(r"^\s*(?:固定搭配|搭配|词组|短语)\s*[:：]?\s*(.+)$")
+# 行首列表标记（-、•、·等；不含 */★，它们是重点词标记）
+_LIST_MARK_RE = re.compile(r"^[\s]*[-–—•·▪◦‣▪]+\s+")
+
+
+def _strip_list_marker(s):
+    """去掉行首的列表标记（如 '- I like it.' → 'I like it.'）。"""
+    return _LIST_MARK_RE.sub("", s.rstrip())
 
 
 def _is_eng_sentence(s):
-    """整行是否像一句英文例句。"""
-    s = s.strip()
+    """整行是否像一句英文例句（容忍行首 '- '/'* ' 等列表标记）。"""
+    s = _strip_list_marker(s.strip())
     if len(s) < 8 or len(s) > 300:
         return False
     if _HAS_CN.search(s):
@@ -134,9 +141,15 @@ def _split_pos_and_cn(rest):
     return pos, meaning
 
 
-# 识别周/组行
-_WEEK_RE = re.compile(r"(?:第\s*)?([0-9０-９]{1,2})\s*周", re.I)
-_GROUP_RE = re.compile(r"第\s*([0-9０-９]{1,2})\s*组", re.I)
+# 识别周/组行（支持中英文写法：第2周 / Week 2 / 第1组 / Day 1 / 第1天）
+_WEEK_RE = re.compile(
+    r"(?:第\s*([0-9０-９]{1,2})\s*周|(?:week|wk)[\s.]*([0-9０-９]{1,2}))", re.I)
+_GROUP_RE = re.compile(
+    r"(?:第\s*([0-9０-９]{1,2})\s*组|day[\s.]*([0-9０-９]{1,2})|第\s*([0-9０-９]{1,2})\s*天)",
+    re.I)
+# 阶段行：阶段1｜… / Stage 1｜…（文本里明确写了阶段就按它来）
+_STAGE_RE = re.compile(
+    r"(?:阶段\s*([0-9０-９]{1,2})|(?:stage|phase)[\s.]*([0-9０-９]{1,2}))", re.I)
 
 
 def _to_int(t):
@@ -159,8 +172,8 @@ def _parse_word_header(line):
        11. branch — 分公司 / 分部
     """
     s = line.strip()
-    # 去掉行首序号 "1." "15." "40)" 等
-    s = re.sub(r"^\s*(?:\d{1,3})\s*[.、)）]\s*", "", s)
+    # 去掉行首序号 "1." "15." "40)" "2、" 及列表标记 "•" "①" 等
+    s = re.sub(r"^\s*(?:[0-9０-９]{1,3}\s*[.、)）]|[•·▪◦‣]|[\u2460-\u2473])\s*", "", s)
     for sep in ("—", "–", "－", "："):
         if sep in s:
             left, right = s.split(sep, 1)
@@ -213,24 +226,33 @@ def _build(left, right):
 
 # ---------------- 周/组信息提取（通用） ----------------
 def _read_headers(line, week_ref, title_ref, group_ref):
-    """若行为周/组标题则更新并返回 (kind, info)。kind: 'week'|'group'|None。"""
-    wm = _WEEK_RE.search(line)
-    if wm and len(line) <= 40:
-        wk = _to_int(wm.group(1))
+    """若行为周/组标题则更新并返回 (kind, info)。kind: 'week'|'group'|None。
+
+    支持写法（大小写不敏感）：
+      第2周｜工作与日常｜120词   /  Week 2｜工作与日常
+      第1组｜职场人物             /  Day 1｜第一天上班   /  第1天｜…
+    以句末标点结尾的行视为句子而非标题（防止 "Day 1 was my first day." 误判）。
+    """
+    s = line.strip()
+    if s and s[-1] in ".!?，。！？；;":
+        return None
+    wm = _WEEK_RE.search(s)
+    if wm and len(s) <= 40:
+        wk = _to_int(wm.group(1) or wm.group(2))
         if wk is not None:
             week_ref[0] = wk
-        t = _WEEK_RE.sub("", line)
-        t = re.sub(r"[|｜｜]", " ", t)
+        t = _WEEK_RE.sub("", s)
+        t = re.sub(r"[|｜]", " ", t)
         t = re.sub(r"\d+\s*词", "", t)
         t = re.sub(r"\s+", " ", t).strip(" |｜，,。:：")
         if t and not re.fullmatch(r"[0-9a-zA-Z\s]+", t):
             title_ref[0] = t
         return "week"
-    gm = _GROUP_RE.search(line)
-    if gm and len(line) <= 60:
-        gd = _to_int(gm.group(1)) or 1
-        name = _GROUP_RE.sub("", line)
-        name = re.sub(r"[|｜｜:：\s]+", " ", name).strip("|｜，,。:：-")
+    gm = _GROUP_RE.search(s)
+    if gm and len(s) <= 60:
+        gd = _to_int(gm.group(1) or gm.group(2) or gm.group(3)) or 1
+        name = _GROUP_RE.sub("", s)
+        name = re.sub(r"[|｜:：\s]+", " ", name).strip("|｜，,。:：-")
         group_ref[0] = gd
         group_ref[1] = name
         return "group"
@@ -247,6 +269,7 @@ def _parse_block(text):
     week_ref = [None]
     title_ref = [""]
     group_ref = [1, ""]        # [day, name]
+    stage_ref = [None]         # 文本里明确写的阶段号（None=没写）
     groups = {}
     skipped = []
     header_lines = []
@@ -272,6 +295,14 @@ def _parse_block(text):
         # 分块线
         if re.fullmatch(r"[-–—=_]{2,}", line):
             continue
+        # 阶段行：阶段2｜…（短行才认，避免误伤正文）
+        sm = _STAGE_RE.search(line)
+        if sm and len(line) <= 30 and not re.search(r"[。！？.!?]$", line):
+            st = _to_int(sm.group(1) or sm.group(2))
+            if st is not None:
+                stage_ref[0] = st
+                header_lines.append(raw)
+                continue
         # 周/组标题
         kind = _read_headers(line, week_ref, title_ref, group_ref)
         if kind == "week":
@@ -293,7 +324,7 @@ def _parse_block(text):
         #   否则 "I started working..." 会被误认成单词 "I"】
         if _is_eng_sentence(line):
             if cur_word is not None:
-                ex = {"sentence": line, "translation": ""}
+                ex = {"sentence": _strip_list_marker(line), "translation": ""}
                 cur_word.setdefault("examples", []).append(ex)
                 pending_ex = ex
             continue
@@ -319,7 +350,8 @@ def _parse_block(text):
         skipped.append(raw)
 
     return {
-        "stage": 0, "week": week_ref[0], "title": title_ref[0], "grammar": "",
+        "stage": stage_ref[0], "stage_from_text": stage_ref[0],
+        "week": week_ref[0], "title": title_ref[0], "grammar": "",
         "groups": groups, "flat": None, "skipped": skipped, "header_lines": header_lines,
     }
 
@@ -329,6 +361,7 @@ def _parse_line(text):
     week_ref = [None]
     title_ref = [""]
     group_ref = [1, ""]
+    stage_ref = [None]
     groups = {}
     skipped = []
     header_lines = []
@@ -345,6 +378,13 @@ def _parse_line(text):
         line = raw.strip()
         if not line:
             continue
+        sm = _STAGE_RE.search(line)
+        if sm and len(line) <= 30 and not re.search(r"[。！？.!?]$", line):
+            st = _to_int(sm.group(1) or sm.group(2))
+            if st is not None:
+                stage_ref[0] = st
+                header_lines.append(raw)
+                continue
         kind = _read_headers(line, week_ref, title_ref, group_ref)
         if kind == "week":
             header_lines.append(raw)
@@ -366,7 +406,7 @@ def _parse_line(text):
             pending_ex = None
             continue
         if cur_word is not None and _is_eng_sentence(line):
-            ex = {"sentence": line, "translation": ""}
+            ex = {"sentence": _strip_list_marker(line), "translation": ""}
             cur_word["examples"].append(ex)
             pending_ex = ex
             continue
@@ -379,7 +419,8 @@ def _parse_line(text):
             continue
         skipped.append(raw)
     return {
-        "stage": 0, "week": week_ref[0], "title": title_ref[0], "grammar": "",
+        "stage": stage_ref[0], "stage_from_text": stage_ref[0],
+        "week": week_ref[0], "title": title_ref[0], "grammar": "",
         "groups": groups, "flat": None, "skipped": skipped, "header_lines": header_lines,
     }
 
@@ -412,8 +453,21 @@ def _finalize(parsed):
     return groups, flat, warnings
 
 
+def _normalize_text(text):
+    """粘贴/文件提取的文本统一清洗：
+    去零宽字符（\ufeff/\u200b 等，网页与聊天工具粘贴的典型产物），
+    不间断空格 → 普通空格，统一换行符。"""
+    if not text:
+        return ""
+    text = re.sub(r"[\u200b\u200c\u200d\ufeff\u2060\u00ad]", "", text)
+    text = text.replace("\xa0", " ").replace("\u3000", " ")
+    text = text.replace("\r\n", "\n").replace("\r", "\n")
+    return text
+
+
 def parse_import(text):
     """主解析入口。返回结构见文件头。"""
+    text = _normalize_text(text)
     if _looks_like_block(text):
         parsed = _parse_block(text)
     else:
@@ -421,6 +475,9 @@ def parse_import(text):
     groups, flat, warnings = _finalize(parsed)
     return {
         "stage": parsed["stage"], "week": parsed["week"], "title": parsed["title"],
+        # stage_from_text: 文本里明确写了"阶段N"才有值（None 表示没写），
+        # 调用方据此决定是沿用该值，还是回退到传入值/当前进度。
+        "stage_from_text": parsed.get("stage_from_text"),
         "grammar": parsed["grammar"], "groups": groups, "flat": flat,
         "warnings": warnings, "skipped": parsed["skipped"],
         "header_lines": parsed["header_lines"],

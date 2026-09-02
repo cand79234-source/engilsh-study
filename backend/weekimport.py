@@ -118,12 +118,33 @@ def _bank_colloc(conn, word, phrase, meaning):
     return True
 
 
+def _resolve_stage(parsed, forced_stage=None):
+    """确定导入目标阶段的优先级：文本明确写的 > 调用方传入 > 当前进度。
+
+    修复：此前 forced_stage 为 None 时一律落到 0，导致在阶段 1~5 导入
+    实际会写进阶段 0 的同一周（数据错位且难以察觉）。
+    """
+    st = parsed.get("stage_from_text")
+    if st is not None:
+        return int(st)
+    if forced_stage is not None:
+        return int(forced_stage)
+    try:
+        return int((svc.get_progress() or {}).get("stage", 0) or 0)
+    except Exception:
+        return 0
+
+
 def import_rich_week(text, forced_stage=None, forced_week=None):
-    """主入口。返回导入结果摘要（供前端展示成功/警告/分组统计）。"""
+    """主入口。返回导入结果摘要（供前端展示成功/警告/分组统计）。
+
+    周号优先级：文档/文本里明确写了周号（如"第2周"）优先；
+    没写才用调用方指定的 forced_week 兜底。
+    """
     from importer import parse_import
     parsed = parse_import(text)
-    week = forced_week or parsed.get("week")
-    stage = forced_stage if forced_stage is not None else parsed.get("stage", 0)
+    week = parsed.get("week") or forced_week
+    stage = _resolve_stage(parsed, forced_stage)
     title = parsed.get("title", "")
     groups = parsed.get("groups", [])
     if not groups:
@@ -264,12 +285,13 @@ def _build_word_entry(conn, known, day, gname, w, counters):
 def import_rich_week_merge(text, forced_stage=None, forced_week=None):
     """把富文本按「天」合并进目标周：本次解析出的天(第N组)会替换该天旧词，
     其余天保持不变。适合分多次粘贴、逐步拼出整周的场景。
-    若标题里没写周号则需 forced_week。
+
+    周号优先级：文本里明确写了周号优先；没写才用 forced_week（如前端传的当前周）。
     """
     from importer import parse_import
     parsed = parse_import(text)
-    week = forced_week or parsed.get("week")
-    stage = forced_stage if forced_stage is not None else parsed.get("stage", 0)
+    week = parsed.get("week") or forced_week
+    stage = _resolve_stage(parsed, forced_stage)
     title = parsed.get("title", "")
     groups = parsed.get("groups") or []
     if not groups:
@@ -297,9 +319,14 @@ def import_rich_week_merge(text, forced_stage=None, forced_week=None):
 
     # 覆盖此前的整周 vocab（合并后即为最终每周词汇）
     svc.update_week(stage, week, title=title or existing.get("title"), vocab=new_vocab)
+    # 统计各天词数。注意：kept 里可能混有旧版/自动填充的无 day 字段条目，
+    # 用 get 防 KeyError（此前在"已有自动填充内容的周"上合并导入会 500）。
     day_counts = {}
     for v in new_vocab:
-        day_counts[v["day"]] = day_counts.get(v["day"], 0) + 1
+        d = v.get("day") or 0
+        day_counts[d] = day_counts.get(d, 0) + 1
+        if not v.get("day"):
+            v["day"] = 0  # 未分组的旧词统一归 0，前端不会按天展示它们
     return {
         "ok": True, "stage": stage, "week": week,
         "title": title or existing.get("title"),

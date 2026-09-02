@@ -7,10 +7,16 @@ services:
     plan: free
     buildCommand: pip install -r backend/requirements.txt
     startCommand: cd backend && uvicorn main:app --host 0.0.0.0 --port $PORT
-    healthCheckPath: /api/today
+    # 用 /api/health 做健康检查：它不鉴权且不含学习数据
+    # （/api/today 在开启 EOS_TOKEN 后会返回 401，导致 Render 判定实例不健康）
+    healthCheckPath: /api/health
     envVars:
       - key: PYTHON_VERSION
         value: "3.11"
       # 在 Render 控制台手动粘贴 Neon 的连接串（DATABASE_URL），不要写死在这里
       - key: DATABASE_URL
+        sync: false
+      # 公网部署强烈建议设置：访问口令。不设置则任何人都能读写你的学习数据。
+      # 设置后需在网页里输入同一个口令（浏览器会记住）。
+      - key: EOS_TOKEN
         sync: false

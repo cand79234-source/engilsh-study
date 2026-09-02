@@ -113,10 +113,37 @@ postgresql://neondb_owner:xxxx@ep-xxx-pooler.ap-southeast-1.aws.neon.tech/neondb
 |---|---|
 | **Monitor Type** | **HTTP(s)** |
 | **Friendly Name** | `English OS` |
-| **URL** | `https://你的render网址.onrender.com/api/today` |
+| **URL** | `https://你的render网址.onrender.com/api/health` |
 | **Interval** | **5 minutes** |
 
 点 **Create Monitor** → 列表里显示 **Up**（绿点）= 生效 ✅
+
+> ⚠️ **URL 一定要用 `/api/health`，不要用 `/api/today`**：UptimeRobot 不能带自定义请求头，
+> 一旦你开了访问口令（下一步），`/api/today` 会返回 401，监控会误报"网站挂了"。
+> `/api/health` 是专为健康检查/保活准备的，永远不鉴权，也不返回任何学习数据。
+
+---
+
+## 🔒 第 3.5 步（强烈建议）：设置访问口令
+
+**为什么**：Render 是公网 Web Service，谁拿到网址谁就能调用 `/api/progress`、
+`/api/words/import`、`/api/word/master` 等接口改你的学习数据。设了口令后，
+没有口令的请求一律 401。
+
+### 怎么开
+1. Render 控制台 → 你的服务 → **Environment** → **Add Environment Variable**
+2. Key = `EOS_TOKEN`，Value = 你自己想一个口令（建议 12 位以上，字母+数字）
+3. 点 **Save Changes** → 服务会自动重新部署
+
+### 怎么用
+打开你的网站 → 页面会自动弹一次输入框 → 输入刚设的口令 → **浏览器会记住**，
+以后不用再输（存在 localStorage；换设备/清缓存后重新输一次即可）。
+
+### 其它注意事项
+- **UptimeRobot 的监控地址保持 `/api/health`**，它不带口令也能 ping 通
+- Render 的 Health Check Path 已设为 `/api/health`（见 `render.yaml`），**不要改回 `/api/today`**
+- 想临时关掉口令：把 `EOS_TOKEN` 这个环境变量删掉即可（不设 = 完全开放）
+- 口令可以用 `X-Auth-Token: 你的口令` 请求头传，也可以用 `Authorization: Bearer 你的口令`
 
 ---
 
