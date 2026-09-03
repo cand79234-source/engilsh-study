@@ -15,6 +15,23 @@ DB_PATH = os.environ.get("EOS_DB", os.path.join(os.path.dirname(__file__), "..",
 DATABASE_URL = os.environ.get("DATABASE_URL")
 USING_PG = bool(DATABASE_URL)
 
+
+def _mask_url(u):
+    """隐藏连接串里的密码，便于安全打印日志。"""
+    if not u:
+        return ""
+    import re as _re
+    return _re.sub(r"://([^:/@]+):([^@]+)@", r"://\1:***@", u)
+
+
+# 启动时明确打印当前连的是哪个库。没有这行的话，一旦 Render 上漏配 DATABASE_URL，
+# 代码会静默回落到本地 SQLite（重启即丢数据），而日志里完全看不出来。
+if USING_PG:
+    print("[db] 数据库 = PostgreSQL (Neon): %s" % _mask_url(DATABASE_URL))
+else:
+    print("[db] ⚠️ 未检测到 DATABASE_URL，当前使用本地 SQLite 文件: %s" % DB_PATH)
+    print("[db]    若这是部署环境（Render），数据会在重启/重新部署后丢失，请检查环境变量配置。")
+
 # INSERT OR IGNORE 的冲突列（= 各表 UNIQUE 约束列）
 _IGNORE_CONFLICT = {
     "dictionary": "word",

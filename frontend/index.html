@@ -146,6 +146,22 @@ textarea{font-family:monospace;font-size:13px;min-height:110px;line-height:1.6}
 <script>
 const api=(p,opt)=>fetch('/api'+p,opt).then(r=>r.json());
 function esc(s){return (s==null?'':String(s)).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+
+/* 统一事件委托：凡是参数来自用户导入内容（单词/搭配/例句）的点击，
+   一律用 data-act + data-val 而非内联 onclick。
+   原因：HTML 转义救不了内联 JS——onclick="speak('I'm ...')" 里的撇号会直接破坏 JS 语法，
+   而英语里 I'm / don't / it's 遍地都是。data-* 属性不会被执行，取值后才调用。 */
+document.addEventListener('click', function(e){
+  const el = e.target.closest('[data-act]');
+  if (!el) return;
+  const act = el.getAttribute('data-act');
+  const v = el.getAttribute('data-val');
+  if (act === 'speak') { e.stopPropagation(); speak(v); }
+  else if (act === 'toggleW') toggleW(v);
+  else if (act === 'master') master(v);
+  else if (act === 'openErr') openErr(v);
+  else if (act === 'showColloc') showColloc(v, el.getAttribute('data-val2') || '');
+});
 function toast(m){const t=document.createElement('div');t.textContent=m;
   t.style.cssText='position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:#1e293b;color:#fff;padding:11px 18px;border-radius:10px;font-size:13.5px;z-index:99;opacity:0;transition:.25s';
   document.body.appendChild(t);requestAnimationFrame(()=>t.style.opacity=1);
@@ -241,10 +257,10 @@ function renderWords(words){
     const collocs=(w.collocations||[]).filter(c=>c&&c.phrase);
     const exs=(w.examples||[]).filter(e=>e&&e.sentence);
     return `<div>
-      <div class="word ${done?'done':''} ${isOpen?'open':''}" onclick="toggleW('${esc(w.word)}')">
+      <div class="word ${done?'done':''} ${isOpen?'open':''}" data-act="toggleW" data-val="${esc(w.word)}">
         <div><div class="en">${esc(w.word)} ${w.phonetic?`<span class="ph">${esc(w.phonetic)}</span>`:''}</div><div class="cn">${esc(w.meaning)||''}</div></div>
         <div style="display:flex;align-items:center;gap:7px">
-          <span class="spk" data-role="spk" title="听发音" onclick="event.stopPropagation();speak('${esc(w.word)}')">🔊</span>
+          <span class="spk" data-role="spk" title="听发音" data-act="speak" data-val="${esc(w.word)}">🔊</span>
           ${w.pos?`<span class="badge" style="${done?'background:#dcfce7;color:var(--green)':''}">${esc(w.pos)}</span>`:''}
           ${done?'✅':''}
         </div>
@@ -253,18 +269,18 @@ function renderWords(words){
         <div class="row" style="display:flex;align-items:center;gap:6px"><b>${esc(w.word)}</b>
           ${w.pos?`<span style="color:var(--muted)">· ${esc(w.pos)}</span>`:''}
           <span style="color:var(--muted)">/${esc(w.meaning)}/</span>
-          <span class="spk" style="margin-left:auto" onclick="speak('${esc(w.word)}')">🔊</span></div>
+          <span class="spk" style="margin-left:auto" data-act="speak" data-val="${esc(w.word)}">🔊</span></div>
         ${collocs.length?`<div class="row"><span class="lbl">固定搭配 · 点开看解释</span>
-          <div>${collocs.map((c,ci)=>`<span class="colloc" onclick="showColloc(${JSON.stringify(c.phrase).replace(/"/g,'&quot;')},${JSON.stringify(c.meaning).replace(/"/g,'&quot;')})">${esc(c.phrase)}</span>`).join('')}</div></div>`:''}
+          <div>${collocs.map((c,ci)=>`<span class="colloc" data-act="showColloc" data-val="${esc(c.phrase)}" data-val2="${esc(c.meaning||'')}">${esc(c.phrase)}</span>`).join('')}</div></div>`:''}
         ${exs.map((e,ei)=>`<div class="row exrow">
             <span class="lbl">例句 ${ei+1} · 加粗=该词固定搭配</span>
             <div style="display:flex;align-items:flex-start;gap:6px">
               <span style="flex:1;line-height:1.6" data-ex>${hlColloc(e.sentence, collocs.map(c=>c.phrase))}</span>
-              <span class="spk" onclick="speak('${esc(e.sentence)}')">🔊</span>
+              <span class="spk" data-act="speak" data-val="${esc(e.sentence)}">🔊</span>
             </div>
             ${e.translation?`<div class="tran">${esc(e.translation)}</div>`:''}
           </div>`).join('')}
-        <div class="btnrow"><button class="btn green" onclick="master('${esc(w.word)}')">我记住了 ✅</button></div>
+        <div class="btnrow"><button class="btn green" data-act="master" data-val="${esc(w.word)}">我记住了 ✅</button></div>
       </div>`:''}
     </div>`;
   }).join('');
@@ -362,7 +378,7 @@ function showColloc(phrase,meaning){
   ov.innerHTML=`<div class="sheet" style="max-width:480px">
     <button class="close" onclick="this.closest('.overlay').remove()">✕</button>
     <div style="font-size:18px;font-weight:800;color:var(--primary)">${esc(phrase)}
-      <span class="spk" style="margin-left:4px" onclick="speak('${esc(phrase)}')">🔊</span></div>
+      <span class="spk" style="margin-left:4px" data-act="speak" data-val="${esc(phrase)}">🔊</span></div>
     <div style="margin-top:8px;font-size:15px;line-height:1.6">${esc(meaning||'暂无解释')}</div>
     <div class="sub" style="margin-top:10px;color:var(--muted);font-size:12.5px">这个词组通常在句子中当作固定搭配来记。</div>
   </div>`;
@@ -789,7 +805,7 @@ pages.errors=async function(el){
 };
 function errRow(w){
   const col=w.level==='🔴'?'var(--red)':(w.level==='🟡'?'var(--amber)':'var(--muted)');
-  return `<div class="word" style="border-left:5px solid ${col}" onclick="openErr('${esc(w.type)}')">
+  return `<div class="word" style="border-left:5px solid ${col}" data-act="openErr" data-val="${esc(w.type)}">
     <div><div class="en">${w.level} ${esc(w.type)}</div>
       <div style="font-size:12px;color:var(--muted)">近30天 ${w.count_30d} 次 · 累计 ${w.total} 次</div></div>
     <div style="font-weight:800;color:${col}">${w.count_30d}次</div></div>`;

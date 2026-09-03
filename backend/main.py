@@ -250,6 +250,33 @@ def dict_count():
     return {"count": svc._dictionary_count()}
 
 
+@app.get("/api/dbinfo")
+def dbinfo():
+    """只读诊断：确认当前连的是 Neon(PostgreSQL) 还是本地 SQLite。
+
+    部署后打开 /api/dbinfo 即可一眼确认数据写进了哪里：
+    engine=postgresql 才说明数据在 Neon；若显示 sqlite，说明 DATABASE_URL 没生效，
+    此时数据写在 Render 本地磁盘，重启/重新部署后会丢失。
+    """
+    import db as _db
+    conn = get_conn()
+    try:
+        total = conn.execute("SELECT COUNT(*) FROM dictionary").fetchone()[0]
+        themed = conn.execute(
+            "SELECT COUNT(*) FROM dictionary WHERE theme!=''").fetchone()[0]
+    except Exception:
+        total = themed = -1
+    finally:
+        conn.close()
+    return {
+        "engine": "postgresql" if _db.USING_PG else "sqlite",
+        "target": _db._mask_url(_db.DATABASE_URL) if _db.USING_PG else _db.DB_PATH,
+        "using_pg": bool(_db.USING_PG),
+        "dictionary_words": total,
+        "themed_words": themed,
+    }
+
+
 @app.get("/api/lookup/{word}")
 def lookup(word: str):
     """查一个词的中文/词性/例句/搭配。"""

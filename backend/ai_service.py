@@ -303,14 +303,8 @@ def _simple_expand(sentence):
             f"你可以写成：I'm {name}, and I'm a student / I work as a ... "
             "再补一句你来自哪里或喜欢什么，会让句子更丰富。"
         )
-    # 模式2：My name is ...
-    m = re.match(r"^my name is\s+(.+)$", s, re.I)
-    if m:
-        name = m.group(1).strip()
-        return (
-            f"你可以写成：My name is {name}. I'm from ... and I like ... "
-            "（加上身份、地点或爱好）"
-        )
+    # 注：原「模式2 My name is ...」已删除——模式1 的分组已含 my name 且命中即 return，
+    # 该分支永远不可达，属死代码（删除后行为完全不变）。
     # 模式3：主语 + be + 表语（不超过5词且无标点）
     if len(words) <= 5 and re.match(r"^[a-z]+\s+(am|is|are)\s+[a-z]+\s*$", low):
         return "可以补充 because / and / but / usually / every day 等，把一句话拉长成两句。"

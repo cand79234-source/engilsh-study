@@ -11,6 +11,7 @@
 （仅含 dictionary 表），随仓库发布，部署时由 db.init_db 调用本模块 import_into_db 合并入主库。
 """
 import os
+import re
 import csv
 import sqlite3
 
@@ -25,13 +26,18 @@ _POS_MAP = {
 }
 _POS_PREFIX = ("n.", "v.", "vi.", "vt.", "a.", "adj.", "ad.", "adv.", "prep.",
                "conj.", "pron.", "num.", "int.", "art.", "abbr.", "aux.")
+_SPLIT_RE = re.compile(r"\r?\n|\\n")
 
 
 def _clean_meaning(translation):
-    """取中文释义第一段，去掉行首英文词性标记（如 'n. '）。"""
+    """取中文释义第一段，去掉行首英文词性标记（如 'n. '）。
+
+    注意：ECDICT 的 CSV 里换行是**字面两字符 `\\n`**（不是真实换行符），
+    必须一并切分，否则释义会拖着 `\\nvt. 陪伴` 这样的尾巴（影响约 5 万词）。
+    """
     if not translation:
         return ""
-    seg = translation.split("\n")[0].split(";")[0].strip()
+    seg = _SPLIT_RE.split(translation)[0].split(";")[0].strip()
     for p in _POS_PREFIX:
         if seg.startswith(p):
             seg = seg[len(p):].strip()
@@ -48,7 +54,7 @@ def _pos_from_translation(translation):
     从这里兜底提取词性，显著提高词性标签覆盖率。"""
     if not translation:
         return ""
-    for line in translation.split("\n"):
+    for line in _SPLIT_RE.split(translation):
         for seg in line.split(";"):
             seg = seg.strip().lower()
             for p in _EXTRACT_POS:
@@ -120,33 +126,35 @@ def build_seed(csv_path, out_db=None):
 
 
 def backfill_missing(conn, seed_path):
-    """回填：主库里已有词若缺音标/词性，用种子补齐（只填空，绝不覆盖已有值）。
+    """回填：主库里的精选词若缺音标/词性，用种子补齐（只填空，绝不覆盖已有值）。
 
-    典型场景：内置精选词先入库（当时无音标），或被用户导入进来的无音标词。
+    **只针对精选词（theme!=''，约 146 个）**。原因：ECDICT 里本来就没音标的 60 万词，
+    种子里同样是空的，旧实现每次启动都要把 62.8 万行拉进内存建 76 万项字典，
+    白耗 460MB 内存，最后只更新 145 行。收窄范围后内存开销可忽略。
+    用户导入的词不受影响：若该词在 ECDICT 中存在，合并时已带音标入库。
+
     本函数只 UPDATE 空字段，不触碰 meaning / theme / bnc 等任何已有数据。
     """
-    seed = sqlite3.connect(seed_path)
-    ref = {}
-    for w, ph, po in seed.execute(
-            "SELECT word, phonetic, pos FROM dictionary WHERE phonetic!='' OR pos!=''").fetchall():
-        ref[w] = (ph or "", po or "")
-    seed.close()
-    if not ref:
-        return 0
     targets = conn.execute(
-        "SELECT word, phonetic, pos FROM dictionary WHERE phonetic IS NULL OR phonetic='' "
-        "OR pos IS NULL OR pos=''").fetchall()
+        "SELECT word, phonetic, pos FROM dictionary WHERE theme!='' AND "
+        "(phonetic IS NULL OR phonetic='' OR pos IS NULL OR pos='')").fetchall()
     if not targets:
         return 0
+    seed = sqlite3.connect(seed_path)
     upd = []
     for r in targets:
-        ph, po = ref.get(r["word"], ("", ""))
+        row = seed.execute(
+            "SELECT phonetic, pos FROM dictionary WHERE word=?", (r["word"],)).fetchone()
+        if not row:
+            continue
+        ph, po = row[0] or "", row[1] or ""
         if not ph and not po:
             continue
         new_ph = (r["phonetic"] or "") or ph
         new_po = (r["pos"] or "") or po
         if new_ph != (r["phonetic"] or "") or new_po != (r["pos"] or ""):
             upd.append((new_ph, new_po, r["word"]))
+    seed.close()
     if not upd:
         return 0
     conn.executemany("UPDATE dictionary SET phonetic=?, pos=? WHERE word=?", upd)
@@ -178,16 +186,7 @@ def import_into_db(conn=None):
         from db import get_conn
         conn = get_conn()
     try:
-        seed = sqlite3.connect(seed_path)
-        rows = seed.execute(
-            "SELECT word, phonetic, meaning, pos, tag, bnc FROM dictionary").fetchall()
-        seed.close()
-        if tmp_name:
-            os.unlink(tmp_name)
-        if not rows:
-            return {"words": 0, "note": "种子库为空"}
-
-        # 已合并过就不再重复灌（PG 远程库逐条插入 76 万行会拖慢启动，必须跳过）
+        # 已合并过就不再重复灌（PG 远程库插入 76 万行会拖慢启动，必须跳过）
         _n = conn.execute("SELECT COUNT(*) FROM dictionary").fetchone()
         existing = _n[0] if _n else 0
         if existing >= 500000:
@@ -196,30 +195,53 @@ def import_into_db(conn=None):
             except Exception as e:
                 filled = -1
                 print("[seed_ecdict] 音标回填失败(可忽略):", e)
+            finally:
+                if tmp_name:
+                    os.unlink(tmp_name)
             return {"words": existing, "filled": filled, "skipped": True,
                     "note": "全量词典已在库中，跳过重复合并"}
 
-        BATCH = 2000
-        if os.environ.get("DATABASE_URL") and hasattr(conn, "_raw"):
-            # Postgres：用 psycopg2 真正的批量 VALUES，避免逐条往返
+        seed = sqlite3.connect(seed_path)
+        total = seed.execute("SELECT COUNT(*) FROM dictionary").fetchone()[0]
+        if not total:
+            seed.close()
+            if tmp_name:
+                os.unlink(tmp_name)
+            return {"words": 0, "note": "种子库为空"}
+
+        # 流式分批：游标 fetchmany 逐批取，内存只保留一批（约 3MB），
+        # 不再一次性 fetchall 76.8 万行（那样峰值 400MB+，Render 512MB 会 OOM）
+        BATCH = 5000
+        use_pg = bool(os.environ.get("DATABASE_URL")) and hasattr(conn, "_raw")
+        it = seed.execute(
+            "SELECT word, phonetic, meaning, pos, tag, bnc FROM dictionary")
+        done = 0
+        if use_pg:
             from psycopg2.extras import execute_values
             cur = conn._raw.cursor()
-            execute_values(
-                cur,
-                "INSERT INTO dictionary (word, phonetic, meaning, pos, tag, bnc) VALUES %s "
-                "ON CONFLICT (word) DO NOTHING", rows, page_size=BATCH)
-        else:
-            for i in range(0, len(rows), BATCH):
+            sql = ("INSERT INTO dictionary (word, phonetic, meaning, pos, tag, bnc) "
+                   "VALUES %s ON CONFLICT (word) DO NOTHING")
+        while True:
+            batch = it.fetchmany(BATCH)
+            if not batch:
+                break
+            if use_pg:
+                execute_values(cur, sql, batch, page_size=BATCH)
+            else:
                 conn.executemany(
                     "INSERT OR IGNORE INTO dictionary (word, phonetic, meaning, pos, tag, bnc) "
-                    "VALUES (?,?,?,?,?,?)", rows[i:i + BATCH])
+                    "VALUES (?,?,?,?,?,?)", batch)
+            done += len(batch)
         conn.commit()
-        n = conn.execute("SELECT COUNT(*) FROM dictionary").fetchone()[0]
         try:
             filled = backfill_missing(conn, seed_path)
         except Exception as e:  # 回填失败不影响主流程
             filled = -1
             print("[seed_ecdict] 音标回填失败(可忽略):", e)
+        seed.close()
+        if tmp_name:
+            os.unlink(tmp_name)
+        n = conn.execute("SELECT COUNT(*) FROM dictionary").fetchone()[0]
     finally:
         if own:
             conn.close()
