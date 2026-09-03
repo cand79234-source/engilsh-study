@@ -186,11 +186,33 @@ def import_into_db(conn=None):
             os.unlink(tmp_name)
         if not rows:
             return {"words": 0, "note": "种子库为空"}
+
+        # 已合并过就不再重复灌（PG 远程库逐条插入 76 万行会拖慢启动，必须跳过）
+        _n = conn.execute("SELECT COUNT(*) FROM dictionary").fetchone()
+        existing = _n[0] if _n else 0
+        if existing >= 500000:
+            try:
+                filled = backfill_missing(conn, seed_path)
+            except Exception as e:
+                filled = -1
+                print("[seed_ecdict] 音标回填失败(可忽略):", e)
+            return {"words": existing, "filled": filled, "skipped": True,
+                    "note": "全量词典已在库中，跳过重复合并"}
+
         BATCH = 2000
-        for i in range(0, len(rows), BATCH):
-            conn.executemany(
-                "INSERT OR IGNORE INTO dictionary (word, phonetic, meaning, pos, tag, bnc) "
-                "VALUES (?,?,?,?,?,?)", rows[i:i + BATCH])
+        if os.environ.get("DATABASE_URL") and hasattr(conn, "_raw"):
+            # Postgres：用 psycopg2 真正的批量 VALUES，避免逐条往返
+            from psycopg2.extras import execute_values
+            cur = conn._raw.cursor()
+            execute_values(
+                cur,
+                "INSERT INTO dictionary (word, phonetic, meaning, pos, tag, bnc) VALUES %s "
+                "ON CONFLICT (word) DO NOTHING", rows, page_size=BATCH)
+        else:
+            for i in range(0, len(rows), BATCH):
+                conn.executemany(
+                    "INSERT OR IGNORE INTO dictionary (word, phonetic, meaning, pos, tag, bnc) "
+                    "VALUES (?,?,?,?,?,?)", rows[i:i + BATCH])
         conn.commit()
         n = conn.execute("SELECT COUNT(*) FROM dictionary").fetchone()[0]
         try:
