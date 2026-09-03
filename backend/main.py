@@ -1,24 +1,66 @@
 """English OS - 个人英语学习 OS 后端入口（纯本地，无 AI）。"""
+import hmac
 import json
 import re
 from datetime import date
 from fastapi import FastAPI, File, Form, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
+from starlette.middleware.base import BaseHTTPMiddleware
 import os
 
 from db import init_db, get_conn, ts, today_str, STAGES
 import services as svc
 import srs
-from ai_service import correct_sentence, ERROR_TYPES
+from ai_service import (correct_sentence, ERROR_TYPES, attempts_of,
+                        today_attempts, analyze)
 import fileimport
 
 app = FastAPI(title="English OS")
 app.add_middleware(
     CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
+# ---------- 访问口令（公网部署保护） ----------
+# 不设 EOS_TOKEN → 完全开放（本地个人使用，run.sh 默认如此）。
+# 设了 EOS_TOKEN → 所有 /api/* 接口都要求携带口令，否则 401。
+# 口令通过请求头 X-Auth-Token 或 Authorization: Bearer <token> 传递。
+ACCESS_TOKEN = (os.environ.get("EOS_TOKEN") or "").strip()
+# 健康检查/保活不鉴权：Render 的 healthCheck 与 UptimeRobot 无法带自定义头
+PUBLIC_API_PATHS = {"/api/health"}
+
+
+class TokenAuthMiddleware(BaseHTTPMiddleware):
+    """公网部署时防止任何人随意读写你的学习数据。"""
+
+    async def dispatch(self, request, call_next):
+        if not ACCESS_TOKEN:
+            return await call_next(request)          # 本地模式：不鉴权
+        path = request.url.path
+        if not path.startswith("/api/") or path in PUBLIC_API_PATHS:
+            return await call_next(request)
+        token = (request.headers.get("x-auth-token") or "").strip()
+        if not token:
+            auth = request.headers.get("authorization") or ""
+            if auth.lower().startswith("bearer "):
+                token = auth[7:].strip()
+        if not hmac.compare_digest(token, ACCESS_TOKEN):
+            return JSONResponse(
+                {"ok": False, "error": "未授权：缺少或错误的访问口令（EOS_TOKEN）。"},
+                status_code=401)
+        return await call_next(request)
+
+
+# 注意顺序：CORS 先注册（外层，负责 OPTIONS 预检），鉴权后注册（内层）
+app.add_middleware(TokenAuthMiddleware)
+
 init_db()
+
+
+# ---------- 健康检查（不鉴权，供 Render / 保活用） ----------
+@app.get("/api/health")
+def health():
+    return {"ok": True, "auth_required": bool(ACCESS_TOKEN)}
 
 
 # ---------- 主页 ----------
@@ -112,7 +154,8 @@ def today():
         day_items[key] = {
             "word": key, "meaning": w.get("meaning", ""), "pos": _pos,
             "phonetic": _ph,
-            "collocations": w.get("collocations") or [],
+            # 归一化：老词条只有 collocation 字符串，不归一化的话搭配区会空白
+            "collocations": svc.normalize_collocations(w),
             "examples": examples,
             "ex_source": w.get("ex_source", ""),
             "day": w.get("day", 1), "group_name": w.get("group_name", ""),
@@ -180,9 +223,10 @@ def word_master(body: dict):
             (p["stage"], p["week"], p["day"], "vocab", key, "{}", mastered, ts()))
     # 学习过的词进入复习队列（明天首查）
     if mastered == 2:
-        word = body.get("meaning", key)
+        # 搭配可能以数组(collocations)或老的单数字符串(collocation)传来，统一处理
+        colloc = svc.collocation_text(body)
         srs.schedule_review(conn, "vocab", key, f"回忆并造句使用：{key}",
-                            key + " " + body.get("collocation", ""),
+                            (key + " " + colloc).strip(),
                             p["stage"], p["week"], p["day"])
         conn.execute(
             "INSERT INTO history (date, stage, week, day, action, detail, created_at) VALUES (?,?,?,?,?,?,?)",
@@ -192,15 +236,81 @@ def word_master(body: dict):
     return {"ok": True}
 
 
-# ---------- 造句 + AI 批改 ----------
+# ---------- 造句 + 本地规则批改（无任何 AI 参与） ----------
 @app.post("/api/sentence/check")
 def sentence_check(body: dict):
+    """提交一句造句，本地规则批改并入库。
+
+    每次作答都在 sentences 表追加一行（attempt 递增），绝不覆盖上一次答案。
+    判定有错才进错题本；写对了只把该词此前的错题标为「已改正」，不删除。
+    """
     p = svc.get_progress()
-    text = body.get("sentence", "").strip()
+    text = (body.get("sentence") or "").strip()
     if not text:
         return {"error": "句子不能为空"}
-    result = correct_sentence(text, p["stage"], p["week"], p["day"])
+    word = (body.get("word") or "").strip()
+    task_key = (body.get("task_key") or "").strip()
+    result = correct_sentence(text, p["stage"], p["week"], p["day"],
+                              word, task_key)
     return result
+
+
+@app.get("/api/sentence/attempts")
+def sentence_attempts(stage: int = None, week: int = None, day: int = None):
+    """当天全部造句作答，按题目分组返回（刷新页面后回填历史，含每次尝试）。"""
+    p = svc.get_progress()
+    st = p["stage"] if stage is None else stage
+    wk = p["week"] if week is None else week
+    dy = p["day"] if day is None else day
+    conn = get_conn()
+    groups = today_attempts(conn, st, wk, dy, today_str())
+    conn.close()
+    return {"stage": st, "week": wk, "day": dy, "groups": groups}
+
+
+@app.get("/api/sentence/attempts/{task_key:path}")
+def sentence_attempts_one(task_key: str):
+    """单道题的全部作答历史。"""
+    p = svc.get_progress()
+    conn = get_conn()
+    items = attempts_of(conn, p["stage"], p["week"], p["day"], task_key)
+    conn.close()
+    return {"task_key": task_key, "attempts": items}
+
+
+@app.post("/api/sentence/preview")
+def sentence_preview(body: dict):
+    """只看批改结果，不入库（用于前端「重新作答」时的实时预览）。"""
+    text = (body.get("sentence") or "").strip()
+    if not text:
+        return {"error": "句子不能为空"}
+    res = analyze(text)
+    if res is None:
+        return {"error": "无法识别该句子"}
+    return res
+
+
+# ---------- 错题本（只存真错，正确句永不进入） ----------
+@app.get("/api/error-bank")
+def error_bank(word: str = "", only_unfixed: int = 0):
+    """错题本列表。按词聚合，保留每一次首次错误记录（改正只标记不删除）。"""
+    conn = get_conn()
+    sql = ("SELECT id, error_type, original, corrected, explanation, source,"
+           " word, task_key, error_text, sentence_text, times, first_at,"
+           " last_at, fixed, fixed_at, created_at"
+           " FROM errors WHERE source='sentence'")
+    args = []
+    if word:
+        sql += " AND word=?"
+        args.append(word.strip())
+    if only_unfixed:
+        sql += " AND fixed=0"
+    sql += " ORDER BY (fixed=0) DESC, last_at DESC, id DESC"
+    rows = conn.execute(sql, tuple(args)).fetchall()
+    conn.close()
+    return {"items": [dict(r) for r in rows],
+            "total": len(rows),
+            "unfixed": sum(1 for r in rows if not r["fixed"])}
 
 
 # ---------- 复习 ----------

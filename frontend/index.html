@@ -145,7 +145,7 @@ textarea{font-family:monospace;font-size:13px;min-height:110px;line-height:1.6}
 </div>
 <script>
 const api=(p,opt)=>fetch('/api'+p,opt).then(r=>r.json());
-function esc(s){return (s==null?'':String(s)).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+function esc(s){return (s==null?'':String(s)).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');}
 
 /* 统一事件委托：凡是参数来自用户导入内容（单词/搭配/例句）的点击，
    一律用 data-act + data-val 而非内联 onclick。
@@ -160,7 +160,11 @@ document.addEventListener('click', function(e){
   else if (act === 'toggleW') toggleW(v);
   else if (act === 'master') master(v);
   else if (act === 'openErr') openErr(v);
-  else if (act === 'showColloc') showColloc(v, el.getAttribute('data-val2') || '');
+  if (act === 'showColloc') showColloc(v, el.getAttribute('data-val2') || '');
+  else if (act === 'check') submitSentence(v);
+  else if (act === 'redo') redoSentence(v);
+  else if (act === 'copyOne') copyOne(v, el.getAttribute('data-val2') || '');
+  else if (act === 'copyAll') copyAll();
 });
 function toast(m){const t=document.createElement('div');t.textContent=m;
   t.style.cssText='position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:#1e293b;color:#fff;padding:11px 18px;border-radius:10px;font-size:13.5px;z-index:99;opacity:0;transition:.25s';
@@ -219,8 +223,11 @@ pages.learn=async function(el){
   </div>
 
   <div class="card" id="planBasic">
-    <h2>① 基础 · 每词一句 <span class="badge" id="basicProg" style="background:var(--primary-bg);color:var(--primary)"></span></h2>
-    <div class="sub" style="margin-top:2px">目标：<b>会用</b>。今天 ${(t.sentence_plan&&t.sentence_plan.basic||[]).length} 个词，每个造一句</div>
+    <div style="display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:8px 12px">
+      <h2 style="margin:0;flex:1 1 200px;min-width:0">① 基础 · 每词一句 <span class="badge" id="basicProg" style="background:var(--primary-bg);color:var(--primary)"></span></h2>
+      <button class="btn ghost sm" style="flex-shrink:0" id="copyAllBtn" data-act="copyAll">📋 复制全部</button>
+    </div>
+    <div class="sub" style="margin-top:2px">目标：<b>会用</b>。今天 ${(t.sentence_plan&&t.sentence_plan.basic||[]).length} 个词，每个造一句 · 「复制全部」＝把今天 ①②③ 的每次作答和批改结果一次带走</div>
     <div id="sentences"></div>
   </div>
 
@@ -575,88 +582,261 @@ function speak(text){
 
 /* ---- 造句：三段式（①每词一句 ②5句升级 ③10组组合）---- */
 function planOf(t){ return t.sentence_plan || {basic:[],upgrade:[],combo:[],meta:{}}; }
+function setTxt(id,txt){const e=document.getElementById(id);if(e)e.textContent=txt;}
+
+/* 题目标识：basic:i / up:i / combo:i。当天唯一，用来串起「同一题的多次作答」。 */
+function planKeys(){
+  const p=planOf(state.today);
+  return [].concat(
+    p.basic.map((_,i)=>'basic:'+i),
+    (p.upgrade||[]).map((_,i)=>'up:'+i),
+    (p.combo||[]).map((_,i)=>'combo:'+i));
+}
+function histOf(tk){ return ((state.hist||{})[tk]) || []; }
+function doneCount(prefix,total){let n=0;for(let i=0;i<total;i++){if(histOf(prefix+':'+i).length)n++;}return n;}
 function planProgress(){
   const p=planOf(state.today);
-  const cnt=(k,st)=>Object.keys(state[st]||{}).length;
-  setTxt('basicProg',`${cnt('basic','ssent')}/${p.basic.length}`);
-  setTxt('upProg',`${cnt('upgrade','ssentUp')}/${p.upgrade.length}`);
-  setTxt('comboProg',`${cnt('combo','ssentCombo')}/${p.combo.length}`);
+  setTxt('basicProg',`${doneCount('basic',p.basic.length)}/${p.basic.length}`);
+  setTxt('upProg',`${doneCount('up',(p.upgrade||[]).length)}/${(p.upgrade||[]).length}`);
+  setTxt('comboProg',`${doneCount('combo',(p.combo||[]).length)}/${(p.combo||[]).length}`);
+  const b=document.getElementById('copyAllBtn');
+  if(b) b.textContent=`📋 复制全部（${planKeys().filter(k=>histOf(k).length).length} 题）`;
 }
-function setTxt(id,txt){const e=document.getElementById(id);if(e)e.textContent=txt;}
+
+/* 刷新页面后回填历史：每次作答都留在库里，第 1 次第 2 次互不影响 */
+async function loadAttempts(){
+  try{
+    const d=await api('/sentence/attempts');
+    state.hist={};
+    (d.groups||[]).forEach(g=>{state.hist[g.task_key]=g.attempts||[];});
+  }catch(e){ state.hist=state.hist||{}; }
+}
 
 async function renderSentencePlan(t){
   const p=planOf(t);
+  await loadAttempts();
+  state.tkMeta={};
+
   // ① 基础：每词一句
-  document.getElementById('sentences').innerHTML=p.basic.map((b,i)=>`
-    <div class="sitem">
-      <div class="sq">${b.i}. ${esc(b.task)}${b.focus?' <span class="badge" style="background:#fef3c7;color:#92400e">★重点</span>':''}</div>
-      <input class="sinput" id="sin_${i}" placeholder="写一个英文句子…" style="${(state.ssent&&state.ssent[i])?'border-color:var(--green)':''}">
-      <div class="btnrow"><button class="btn ghost sm" onclick="check(${i})">✍️ 批改</button></div>
-      <div id="sres_${i}"></div>
-    </div>`).join('') || '<div class="sub">今天没有新词。</div>';
+  document.getElementById('sentences').innerHTML=p.basic.map((b,i)=>{
+    const tk='basic:'+i;
+    state.tkMeta[tk]={word:b.word||'', task:b.task||'', label:b.task||''};
+    return itemHtml(tk,
+      `<div class="sq">${b.i}. ${esc(b.task)}${b.focus?' <span class="badge" style="background:#fef3c7;color:#92400e">★重点</span>':''}</div>`,
+      '写一个英文句子…', false);
+  }).join('') || '<div class="sub">今天没有新词。</div>';
 
   // ② 升级：给方向 + 示范句
-  document.getElementById('upgrades').innerHTML=p.upgrade.map((u,i)=>`
-    <div class="sitem" style="background:#fff;border:1px solid #fde68a;border-radius:8px;padding:8px;margin-bottom:8px">
-      <div class="sq">${u.i}. 升级「<b>${esc(u.word)}</b>${u.meaning?'（'+esc(u.meaning)+'）':''}」
+  document.getElementById('upgrades').innerHTML=(p.upgrade||[]).map((u,i)=>{
+    const tk='up:'+i;
+    state.tkMeta[tk]={word:u.word||'', task:u.task||'', label:'升级「'+(u.word||'')+'」'};
+    return itemHtml(tk,
+      `<div class="sq">${u.i}. 升级「<b>${esc(u.word)}</b>${u.meaning?'（'+esc(u.meaning)+'）':''}」
         <span class="badge" style="background:#fef3c7;color:#92400e">${esc(u.direction)}</span>
         ${u.is_review?'<span class="badge" style="background:#fee2e2;color:#b91c1c">复习词</span>':''}</div>
       <div class="sub" style="margin:4px 0">${esc(u.direction_desc)}</div>
       <div class="sub" style="margin:4px 0;color:var(--muted)">示范：${esc(u.sample)}</div>
-      ${u.collocation?`<div class="sub" style="margin:4px 0">可用搭配：<b>${esc(u.collocation)}</b></div>`:''}
-      <input class="sinput" id="up_${i}" placeholder="把第①段的句子改得更自然…" style="${(state.ssentUp&&state.ssentUp[i])?'border-color:var(--green)':''}">
-      <div class="btnrow"><button class="btn ghost sm" onclick="checkUp(${i})">✍️ 批改</button></div>
-      <div id="upres_${i}"></div>
-    </div>`).join('') || '<div class="sub">今天的词还够不上升级，先把基础句写完。</div>';
+      ${u.collocation?`<div class="sub" style="margin:4px 0">可用搭配：<b>${esc(u.collocation)}</b></div>`:''}`,
+      '把第①段的句子改得更自然…', false);
+  }).join('') || '<div class="sub">今天的词还够不上升级，先把基础句写完。</div>';
 
   // ③ 组合：2-3 个词写成连续表达
-  document.getElementById('combos').innerHTML=p.combo.map((c,i)=>`
-    <div class="sitem" style="background:#fff;border:1px solid #e2e8f0;border-radius:8px;padding:8px;margin-bottom:8px">
-      <div class="sq">${c.i}. ${esc(c.scene)}</div>
-      <div class="sub" style="margin:4px 0">${c.words.map(w=>`<span class="badge" style="background:${w.review?'#fee2e2;color:#b91c1c':'var(--primary-bg);color:var(--primary)'}">${esc(w.word)}${w.meaning?'·'+esc(w.meaning):''}${w.review?' 🔁':''}</span>`).join(' ')}</div>
-      <div class="sub" style="margin:4px 0;color:var(--muted)">${esc(c.hint||'建议 2-3 句，写多写少随意，不强制。')}</div>
-      <textarea class="sinput" id="cb_${i}" rows="3" placeholder="写 2-3 句连续表达（写多写少随意）…" style="${(state.ssentCombo&&state.ssentCombo[i])?'border-color:var(--green)':''}"></textarea>
-      <div class="btnrow"><button class="btn ghost sm" onclick="checkCombo(${i})">✍️ 批改</button></div>
-      <div id="cbres_${i}"></div>
-    </div>`).join('') || '<div class="sub">今天没有可组合的词。</div>';
+  document.getElementById('combos').innerHTML=(p.combo||[]).map((c,i)=>{
+    const tk='combo:'+i;
+    state.tkMeta[tk]={word:(c.words||[]).map(w=>w.word).join(' '), task:c.scene||'', label:c.scene||''};
+    return itemHtml(tk,
+      `<div class="sq">${c.i}. ${esc(c.scene)}</div>
+      <div class="sub" style="margin:4px 0">${(c.words||[]).map(w=>`<span class="badge" style="background:${w.review?'#fee2e2;color:#b91c1c':'var(--primary-bg);color:var(--primary)'}">${esc(w.word)}${w.meaning?'·'+esc(w.meaning):''}${w.review?' 🔁':''}</span>`).join(' ')}</div>
+      <div class="sub" style="margin:4px 0;color:var(--muted)">${esc(c.hint||'建议 2-3 句，写多写少随意，不强制。')}</div>`,
+      '写 2-3 句连续表达（写多写少随意）…', true);
+  }).join('') || '<div class="sub">今天没有可组合的词。</div>';
 
-  state.sentencesCount=p.basic.length;
+  planKeys().forEach(tk=>renderAttempts(tk));
   planProgress();
 }
-async function check(i){ await doCheck('sin_'+i,'sres_'+i,'ssent',i); planProgress(); }
-async function checkUp(i){ await doCheck('up_'+i,'upres_'+i,'ssentUp',i); planProgress(); }
-async function checkCombo(i){
-  const r=await doCheck('cb_'+i,'cbres_'+i,'ssentCombo',i);
-  // 额外反馈：这一段里你用到了哪几个建议词（只提示，不判错）
-  const c=(planOf(state.today).combo||[])[i];
-  if(c){
-    const txt=(document.getElementById('cb_'+i).value||'').toLowerCase();
-    const used=c.words.filter(w=>txt.includes(String(w.word).toLowerCase()));
-    const miss=c.words.filter(w=>!txt.includes(String(w.word).toLowerCase()));
-    const box=document.getElementById('cbres_'+i);
-    const line=`<div class="sub" style="margin-top:6px">🎯 用到 ${used.length}/${c.words.length} 个建议词`
-      + (used.length?`：<b>${used.map(w=>esc(w.word)).join('、')}</b>`:'')
-      + (miss.length?` · 没用上的：${miss.map(w=>esc(w.word)).join('、')}（下次可以试试）`:' · 全部用上了 👍')
-      + `</div>`;
-    box.insertAdjacentHTML('beforeend',line);
+
+/* 单题外壳：题干 + 输入框 + 批改按钮 + 结果区 + 历史区 */
+function itemHtml(tk, headHtml, ph, isArea){
+  const n=histOf(tk).length;
+  const inp=isArea
+    ? `<textarea class="sinput" id="in_${tk}" rows="3" placeholder="${esc(ph)}"></textarea>`
+    : `<input class="sinput" id="in_${tk}" placeholder="${esc(ph)}">`;
+  return `<div class="sitem">
+    ${headHtml}
+    ${inp}
+    <div class="btnrow">
+      <button class="btn ghost sm" data-act="check" data-val="${tk}">✍️ 批改${n?'（第 '+(n+1)+' 次）':''}</button>
+      <button class="btn ghost sm" data-act="redo" data-val="${tk}" style="${n?'':'display:none'}" id="redo_${tk}">✏️ 重新作答</button>
+      <button class="btn ghost sm" data-act="copyOne" data-val="${tk}" data-val2="last" style="${n?'':'display:none'}" id="cp_${tk}">📋 复制</button>
+    </div>
+    <div id="res_${tk}"></div>
+  </div>`;
+}
+
+/* ---------- 提交批改 ---------- */
+async function submitSentence(tk){
+  const inp=document.getElementById('in_'+tk);
+  const v=(inp&&inp.value||'').trim();
+  if(!v){toast('先写一个句子');return;}
+  const meta=(state.tkMeta||{})[tk]||{};
+  const btn=document.querySelector('[data-act="check"][data-val="'+tk+'"]');
+  if(btn){btn.disabled=true;btn.textContent='批改中…';}
+  try{
+    const r=await api('/sentence/check',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({sentence:v, word:meta.word||'', task_key:tk})});
+    if(!r||r.error){toast((r&&r.error)||'批改失败');return;}
+    state.hist=state.hist||{}; state.hist[tk]=state.hist[tk]||[];
+    state.hist[tk].push({
+      id:r.sentence_id, attempt:r.attempt, sentence:r.original, corrected:r.corrected,
+      score:r.score, verdict:r.verdict, ok:!!r.ok, error_type:r.error_type,
+      errors:r.errors||[], optimizations:r.optimizations||[], created_at:r.created_at});
+    renderAttempts(tk);
+    planProgress();
+    // 组合题额外反馈：用到了哪几个建议词（只提示，不判错）
+    if(tk.indexOf('combo:')===0) comboHint(tk,v);
+  }catch(e){ toast('批改失败：'+e.message); }
+  finally{ if(btn){btn.disabled=false;btn.textContent='✍️ 批改（第 '+(histOf(tk).length+1)+' 次）';} }
+}
+function comboHint(tk,txt){
+  const c=(planOf(state.today).combo||[])[parseInt(tk.split(':')[1],10)];
+  if(!c) return;
+  const low=(txt||'').toLowerCase();
+  const used=(c.words||[]).filter(w=>low.includes(String(w.word).toLowerCase()));
+  const miss=(c.words||[]).filter(w=>!low.includes(String(w.word).toLowerCase()));
+  const box=document.getElementById('res_'+tk);
+  if(!box) return;
+  box.insertAdjacentHTML('afterbegin',
+    `<div class="sub" style="margin:6px 0">🎯 用到 ${used.length}/${(c.words||[]).length} 个建议词`
+    + (used.length?`：<b>${used.map(w=>esc(w.word)).join('、')}</b>`:'')
+    + (miss.length?` · 没用上的：${miss.map(w=>esc(w.word)).join('、')}（下次可以试试）`:' · 全部用上了 👍')
+    + `</div>`);
+}
+function redoSentence(tk){
+  const inp=document.getElementById('in_'+tk);
+  if(inp){inp.value='';inp.focus();}
+  toast('已清空，重新写一句吧 ✏️（上一次的作答已保留）');
+}
+
+/* ---------- 结果渲染：判定 / 分数 / 哪里错 / 为什么 / 正确 / 可优化 ---------- */
+function renderAttempts(tk){
+  const box=document.getElementById('res_'+tk);
+  if(!box)return;
+  const list=histOf(tk);
+  const cp=document.getElementById('cp_'+tk), rd=document.getElementById('redo_'+tk);
+  if(cp)cp.style.display=list.length?'':'none';
+  if(rd)rd.style.display=list.length?'':'none';
+  if(!list.length){box.innerHTML='';return;}
+  box.innerHTML=list.map((a,i)=>attemptCard(a,tk,i,i===list.length-1)).join('');
+}
+function attemptCard(a,tk,i,isLast){
+  const sc=Number(a.score||0), pass=sc>=85;
+  const errs=a.errors||[], opts=a.optimizations||[];
+  const head=pass
+    ? `<div style="font-size:15.5px;font-weight:800;color:var(--green)">✅ 正确 · ${sc}/100 · 基本掌握</div>`
+    : `<div style="font-size:15.5px;font-weight:800;color:var(--red)">❌ 有错误 · ${sc}/100 · 需要改进</div>`;
+  const errHtml = errs.length
+    ? `<div style="margin-top:7px;font-size:13px;font-weight:800;color:var(--red)">🔍 哪里错了 / 为什么错</div>`
+      + errs.map((e,j)=>`<div style="background:#fff;border:1px solid #fecaca;border-radius:9px;padding:8px 10px;margin:6px 0">
+        <div style="font-size:13.5px">❌ <b>哪里错了：</b><span style="color:var(--red);font-weight:700">${esc(e.where)}</span>
+          ${e.type?`<span class="errtype" style="margin-left:5px">${esc(e.type)}</span>`:''}</div>
+        <div style="font-size:13.5px;color:#475569;margin-top:4px">💡 <b>为什么错：</b>${esc(e.explanation)}</div>
+        <div style="font-size:13.5px;margin-top:4px">✅ <b>正确表达：</b><b style="color:var(--green)">${esc(e.correct)}</b></div>
+      </div>`).join('')
+    : `<div style="margin-top:6px;font-size:13.5px;color:var(--muted)">✅ 没有明显错误</div>`;
+  const corHtml = (!pass && a.corrected && a.corrected!==a.sentence)
+    ? `<div style="margin-top:6px;font-size:13.5px">📗 <b>整句正确写法：</b><b style="color:var(--green)">${esc(a.corrected)}</b></div>`:'';
+  const optHtml = opts.length
+    ? `<div style="margin-top:7px;font-size:13px;font-weight:800;color:#92400e">💡 可以优化（原句没错，仅供参考，不扣分）</div>`
+      + opts.map((o,j)=>`<div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:9px;padding:8px 10px;margin:6px 0">
+        <div style="font-size:13.5px">✨ <b>可以优化：</b>${o.suggestion?`<b style="color:var(--green)">${esc(o.suggestion)}</b>`:'<span style="color:var(--muted)">（见说明）</span>'}</div>
+        <div style="font-size:13px;color:#475569;margin-top:4px">${esc(o.reason||'')}</div>
+      </div>`).join('')
+    : '';
+  return `<div class="res ${pass?'good':''}" style="margin-top:8px;${isLast?'':'opacity:.72'}">
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px">
+      <div style="min-width:0">
+        <div style="font-size:12px;color:var(--muted)">第 ${a.attempt||i+1} 次作答${isLast?' · <b style="color:var(--primary)">最新</b>':''}</div>
+        ${head}
+      </div>
+      <button class="btn ghost sm" style="flex-shrink:0" data-act="copyOne" data-val="${tk}" data-val2="${a.attempt}">📋 复制</button>
+    </div>
+    <div style="margin-top:5px;font-size:14px;line-height:1.6">${esc(a.sentence)}</div>
+    ${errHtml}${corHtml}${optHtml}
+  </div>`;
+}
+
+/* ---------- 复制 ---------- */
+function copyOne(tk, which){
+  const list=histOf(tk);
+  if(!list.length){toast('还没有批改记录');return;}
+  const a = (which==='last'||which===''||which==null) ? list[list.length-1]
+          : (list.find(x=>String(x.attempt)===String(which)) || list[list.length-1]);
+  copyText(attemptCopyText(tk,a));
+}
+function attemptCopyText(tk,a){
+  const meta=(state.tkMeta||{})[tk]||{};
+  const sc=Number(a.score||0);
+  const L=[];
+  L.push('【造句批改】');
+  L.push('单词：'+(meta.word||'—'));
+  if(meta.task) L.push('题目：'+meta.task);
+  L.push('第 '+(a.attempt||1)+' 次作答');
+  L.push('我的句子：'+(a.sentence||''));
+  L.push('得分：'+sc+'/100');
+  L.push('判定：'+(a.ok?'✅ 正确':'❌ 有错误')+'（≥85 基本掌握，<85 需要改进）');
+  if((a.errors||[]).length){
+    (a.errors||[]).forEach((e,j)=>{
+      L.push('错误'+(j+1)+' · 哪里错了：'+e.where);
+      L.push('错误'+(j+1)+' · 类型：'+(e.type||'—'));
+      L.push('错误'+(j+1)+' · 为什么错：'+e.explanation);
+      L.push('错误'+(j+1)+' · 正确表达：'+e.correct);
+    });
+    if(a.corrected) L.push('整句正确写法：'+a.corrected);
+  }else{
+    L.push('哪里错了：没有明显错误');
   }
-  planProgress();
+  if((a.optimizations||[]).length){
+    (a.optimizations||[]).forEach((o,j)=>{
+      L.push('可优化'+(j+1)+'：'+(o.suggestion||'（见说明）'));
+      L.push('可优化'+(j+1)+' 说明：'+(o.reason||''));
+    });
+  }else{
+    L.push('可优化表达：无');
+  }
+  return L.join('\n');
 }
-async function doCheck(inputId,resId,stateKey,idx){
-  const v=document.getElementById(inputId).value.trim();
-  if(!v){toast('先写一个句子');return null;}
-  const r=await api('/sentence/check',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sentence:v})});
-  const b=document.getElementById(resId);
-  if(r.good){b.innerHTML=`<div class="res good">✅ 很好！<br><b>${esc(r.corrected)}</b>
-      ${r.expand_hint?`<div class="sub" style="margin-top:6px">💡 ${esc(r.expand_hint)}</div>`:''}</div>`;}
-  else{b.innerHTML=`<div class="res">
-      <div style="color:#475569">你写的：${esc(r.original)}</div>
-      <div style="margin-top:3px">建议：<b style="color:var(--green)">${esc(r.corrected)}</b></div>
-      ${r.error_type?`<span class="errtype">${esc(r.error_type)}</span>`:''}
-      ${r.explanation?`<div class="sub" style="margin-top:6px">${esc(r.explanation)}</div>`:''}
-    </div>`;}
-  state[stateKey]=state[stateKey]||{};state[stateKey][idx]=1;
-  return r;
+function copyAllText(){
+  const t=state.today||{}, pr=t.progress||{};
+  const keys=planKeys().filter(k=>histOf(k).length);
+  if(!keys.length) return '';
+  const L=['【今日造句批改记录】',
+    '日期：'+new Date().toISOString().slice(0,10),
+    '进度：阶段'+pr.stage+' · W'+pr.week+' · D'+pr.day,
+    '共 '+keys.length+' 题'];
+  keys.forEach(tk=>{
+    L.push('', '───────────────');
+    histOf(tk).forEach((a,i)=>{ if(i)L.push(''); L.push(attemptCopyText(tk,a)); });
+  });
+  return L.join('\n');
+}
+function copyAll(){ copyText(copyAllText() || '', '今天还没批改过句子'); }
+async function copyText(txt, emptyMsg){
+  if(!txt){toast(emptyMsg||'没有可复制的内容');return false;}
+  try{
+    if(navigator.clipboard && window.isSecureContext){
+      await navigator.clipboard.writeText(txt); toast('已复制 ✅ 可直接粘贴给 AI 追问'); return true;
+    }
+    throw new Error('no-clipboard-api');
+  }catch(e){
+    const ta=document.createElement('textarea');
+    ta.value=txt; ta.setAttribute('readonly','');
+    ta.style.cssText='position:fixed;top:0;left:0;width:1px;height:1px;opacity:0';
+    document.body.appendChild(ta); ta.focus(); ta.select(); ta.setSelectionRange(0,txt.length);
+    let ok=false; try{ ok=document.execCommand('copy'); }catch(_){}
+    ta.remove();
+    toast(ok?'已复制 ✅ 可直接粘贴给 AI 追问':'复制失败，请长按选中文本手动复制');
+    return ok;
+  }
 }
 
 /* ============ 复习页 ============ */
@@ -788,13 +968,16 @@ function currentPage(){const a=document.querySelector('.bottomnav a.active');ret
 
 /* ============ 错误 / 薄弱项页（独立入口）============ */
 pages.errors=async function(el){
-  const errs=await api('/errors');
-  state.errs=errs;
+  const [errs, bank] = await Promise.all([api('/errors'), api('/error-bank')]);
+  state.errs=errs; state.bank=bank;
   refreshProg();
   const active=errs.filter(e=>e.count_30d>0).length;
   el.innerHTML=`
     <h1>🎯 薄弱项 <span style="float:right;font-size:12px;color:var(--muted)">近30天有错 ${active} 类</span></h1>
     <div class="sub" style="margin-top:2px">造句中的错误会自动归类沉淀，点开看规律与补课建议。</div>
+
+    ${bankHtml(bank)}
+
     ${errs.length===0?`<div class="card"><div style="font-size:15px;font-weight:700">✨ 暂无错误记录</div>
       <div class="sub" style="margin:4px 0">去「学习」页多写几句英文，系统会用本地规则帮你揪错并长期记录。</div></div>`:''}
 
@@ -803,6 +986,37 @@ pages.errors=async function(el){
     </div>
     <div id="errdetail" class="card" style="display:none"></div>`;
 };
+/* 错题本：只有明确错误才进；第一次的记录永久保留，写对了只标「已改正」，不删除 */
+function bankHtml(bank){
+  const items=(bank&&bank.items)||[];
+  if(!items.length) return `<div class="card" style="border:1.5px solid var(--red)">
+    <div style="font-size:15px;font-weight:700">📕 错题本 · 暂无错题</div>
+    <div class="sub" style="margin:4px 0">写对了的句子<b>不会</b>进这里（即便给了优化建议）；只有明确的语法/用法错误才会自动记录。</div></div>`;
+  const g={};
+  items.forEach(x=>{const k=x.word||'（其他）';(g[k]=g[k]||[]).push(x);});
+  const fmt=t=>(t||'').slice(0,16).replace('T',' ');
+  return `<div class="card" style="border:1.5px solid var(--red)">
+    <div style="display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:6px 10px">
+      <h2 style="margin:0">📕 错题本</h2>
+      <span class="badge" style="background:#fee2e2;color:#b91c1c">未改正 ${bank.unfixed} · 共 ${bank.total}</span>
+    </div>
+    <div class="sub" style="margin-top:2px">第一次犯的错<b>永久保留</b>；后来这个词写对了只标记「已改正」，历史记录不会消失。</div>
+    ${Object.keys(g).map(w=>`
+      <div style="margin-top:10px;padding-top:8px;border-top:1px solid var(--border)">
+        <div style="font-size:14px;font-weight:800">${esc(w)}</div>
+        ${g[w].map(x=>`
+          <div style="background:${x.fixed?'#f0fdf4':'#fef2f2'};border:1px solid ${x.fixed?'#bbf7d0':'#fecaca'};border-radius:9px;padding:8px 10px;margin:6px 0">
+            <div style="font-size:13px;color:#475569;line-height:1.5">✗ 我写的：${esc(x.sentence_text||x.original)}</div>
+            <div style="font-size:13.5px;margin-top:3px">❌ 错误：<b style="color:var(--red)">${esc(x.error_text||x.original)}</b>
+              <span class="errtype" style="margin-left:4px">${esc(x.error_type)}</span>
+              ${x.fixed?'<span class="badge" style="background:#dcfce7;color:var(--green);margin-left:4px">已改正</span>':''}</div>
+            <div style="font-size:13px;color:#475569;margin-top:3px;line-height:1.5">💡 为什么错：${esc(x.explanation)}</div>
+            <div style="font-size:13px;margin-top:3px;line-height:1.5">✅ 正确：<b style="color:var(--green)">${esc(x.corrected)}</b></div>
+            <div style="font-size:12px;color:var(--muted);margin-top:3px">首次错误 ${esc(fmt(x.first_at))} · 出现 ${x.times} 次${x.times>1?' · 最近 '+esc(fmt(x.last_at)):''}${x.fixed?' · 改正于 '+esc(fmt(x.fixed_at)):''}</div>
+          </div>`).join('')}
+      </div>`).join('')}
+  </div>`;
+}
 function errRow(w){
   const col=w.level==='🔴'?'var(--red)':(w.level==='🟡'?'var(--amber)':'var(--muted)');
   return `<div class="word" style="border-left:5px solid ${col}" data-act="openErr" data-val="${esc(w.type)}">

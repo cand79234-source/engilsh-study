@@ -1,5 +1,6 @@
 """进度、错误分析、周测 业务逻辑。"""
 import json
+import re
 from datetime import date, datetime, timedelta
 from db import get_conn, ts, today_str, ERROR_TYPES
 
@@ -51,15 +52,61 @@ def get_week(stage, week):
     }
 
 
+def normalize_collocations(word_obj):
+    """把词条的搭配统一成 [{phrase, meaning, example}] 数组。
+
+    历史上有两种写法混在一起：
+      - 新格式：collocations = [{"phrase": ..., "meaning": ..., "example": ...}, ...]
+      - 老格式（自动填充/导入生成）：collocation = "an apple / eat an apple"（斜杠分隔字符串）
+    接口只读新字段时，老词条的搭配会凭空消失（前端搭配区空白）。
+    这里做一次归一化，两种格式都能拿到数组。
+    """
+    out = []
+    for c in (word_obj.get("collocations") or []):
+        if isinstance(c, dict):
+            phrase = (c.get("phrase") or "").strip()
+            if phrase:
+                out.append({"phrase": phrase,
+                            "meaning": c.get("meaning") or "",
+                            "example": c.get("example") or ""})
+        elif isinstance(c, str) and c.strip():
+            out.append({"phrase": c.strip(), "meaning": "", "example": ""})
+    if out:
+        return out
+    raw = word_obj.get("collocation")
+    if isinstance(raw, str) and raw.strip():
+        for part in re.split(r"\s*/\s*|\s*[;；]\s*", raw.strip()):
+            part = part.strip()
+            if part:
+                out.append({"phrase": part, "meaning": "", "example": ""})
+    return out
+
+
+def collocation_text(word_obj_or_body):
+    """把搭配拍平成一行文本，供 SRS 卡片答案面等纯文本场景使用。"""
+    items = normalize_collocations(word_obj_or_body)
+    return " / ".join(i["phrase"] for i in items)
+
+
 def update_week(stage, week, title=None, grammar=None, topics=None, vocab=None):
     """用户编辑每周内容（需求第七节）。vocab 为词对象列表。"""
     conn = get_conn()
     existing = conn.execute("SELECT * FROM weeks WHERE stage=? AND week_no=?", (stage, week)).fetchone()
     if existing:
-        conn.execute(
-            "UPDATE weeks SET title=COALESCE(?,title), grammar=COALESCE(?,grammar),"
-            " topics=COALESCE(?,topics), vocab_json=? WHERE stage=? AND week_no=?",
-            (title, grammar, topics, json.dumps(vocab or [], ensure_ascii=False), stage, week))
+        if vocab is None:
+            # 关键修复：vocab=None 表示「这次不动词汇」（例如只改标题或语法）。
+            # 原来无条件写 json.dumps(vocab or []) ，会把整周词汇覆盖成 []，
+            # 用户改个标题就丢掉一整周的词 —— 真实数据丢失。
+            # 只有调用方明确传 [] 才代表主动清空。
+            conn.execute(
+                "UPDATE weeks SET title=COALESCE(?,title), grammar=COALESCE(?,grammar),"
+                " topics=COALESCE(?,topics) WHERE stage=? AND week_no=?",
+                (title, grammar, topics, stage, week))
+        else:
+            conn.execute(
+                "UPDATE weeks SET title=COALESCE(?,title), grammar=COALESCE(?,grammar),"
+                " topics=COALESCE(?,topics), vocab_json=? WHERE stage=? AND week_no=?",
+                (title, grammar, topics, json.dumps(vocab, ensure_ascii=False), stage, week))
     else:
         conn.execute(
             "INSERT INTO weeks (stage, week_no, title, grammar, topics, vocab_json) VALUES (?,?,?,?,?,?)",

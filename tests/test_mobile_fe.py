@@ -1,6 +1,12 @@
 """手机视口端到端测试 v2 - 分场景验证，避免相互污染。
 场景A：当前周填词→主页/主线立即可见
 场景B：调进度到新周→新周空状态引导录入
+
+⚠️ 本文件已过时（针对两代之前的界面）：它依赖的设置页 #we_vocab、
+   「解析并预览」「保存本周内容」在当前前端已全部不存在（词汇录入改为导入弹窗）。
+   当前界面的等价覆盖见 tests/test_new_ui_v2.py，
+   造句相关覆盖见 tests/test_sentence_e2e.py。
+   保留此文件仅作历史参考，后续要么按新 UI 重写，要么删除。
 """
 import time
 from playwright.sync_api import sync_playwright

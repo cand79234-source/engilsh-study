@@ -260,6 +260,21 @@ SEED_WEEK3_VOCAB = [
 ]
 
 
+def insert_get_id(conn, sql, params=None):
+    """插入一行并返回新 id。
+
+    SQLite 用 lastrowid；PostgreSQL 下 psycopg2 的 lastrowid 恒为 0，
+    必须走 `INSERT ... RETURNING id`，否则拿到的 id 永远是 0。
+    """
+    if USING_PG:
+        cur = conn._raw.cursor()
+        cur.execute(_tr(sql).rstrip().rstrip(";") + " RETURNING id", _norm(params))
+        row = cur.fetchone()
+        return int(row[0]) if row else 0
+    cur = conn.execute(sql, params)
+    return cur.lastrowid
+
+
 def get_conn():
     if USING_PG:
         import psycopg2
@@ -309,30 +324,47 @@ def init_db():
         created_at TEXT
     );
 
-    -- 用户造句 + AI 批改
+    -- 用户造句 + 本地规则批改
+    -- 每次作答都追加一行（同一道题可提交多次：attempt 递增，历史永不覆盖）
     CREATE TABLE IF NOT EXISTS sentences (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         stage INTEGER NOT NULL,
         week INTEGER NOT NULL,
         day INTEGER NOT NULL,
+        word TEXT DEFAULT '',           -- 本题对应的单词（组合题为多个词，空格分隔）
+        task_key TEXT DEFAULT '',       -- 前端题目标识：'basic:0' / 'up:2' / 'combo:3'
+        attempt INTEGER DEFAULT 1,      -- 第几次作答（同一 task_key 内递增）
         original TEXT NOT NULL,
         corrected TEXT DEFAULT '',
         error_type TEXT DEFAULT '',
         explanation TEXT DEFAULT '',
-        ai_source TEXT DEFAULT '',     -- 'llm' | 'rule'
+        ai_source TEXT DEFAULT '',     -- 恒为 'rule'（纯本地，无 AI）
         good INTEGER DEFAULT 0,        -- 是否完全正确
+        score INTEGER DEFAULT 0,       -- 0-100
+        verdict TEXT DEFAULT '',       -- '正确' / '有错误'
+        errors_json TEXT DEFAULT '[]', -- 结构化错误明细
+        opts_json TEXT DEFAULT '[]',   -- 可优化表达
         created_at TEXT
     );
 
-    -- 错误库（长期累积）
+    -- 错误库（长期累积，兼作错题本）
     CREATE TABLE IF NOT EXISTS errors (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         error_type TEXT NOT NULL,
-        original TEXT NOT NULL,
-        corrected TEXT NOT NULL,
+        original TEXT NOT NULL,        -- 错误片段（如 very like）
+        corrected TEXT NOT NULL,       -- 正确片段（如 really like）
         explanation TEXT DEFAULT '',
         source TEXT DEFAULT '',        -- 来自造句 / 复习 / 周测
-        created_at TEXT
+        created_at TEXT,
+        word TEXT DEFAULT '',          -- 出错的单词（错题本按词聚合）
+        task_key TEXT DEFAULT '',
+        error_text TEXT DEFAULT '',    -- 错误片段（与 original 同，便于精确去重）
+        sentence_text TEXT DEFAULT '', -- 出错的完整原句
+        times INTEGER DEFAULT 1,       -- 出现次数（同一 word+error_text 累加）
+        first_at TEXT,                 -- 第一次错误时间
+        last_at TEXT,                  -- 最近一次错误时间
+        fixed INTEGER DEFAULT 0,       -- 0 未改正 1 已改正
+        fixed_at TEXT DEFAULT ''       -- 改正时间
     );
 
     -- SRS 复习卡
@@ -421,7 +453,9 @@ def init_db():
 
     CREATE INDEX IF NOT EXISTS idx_reviews_due ON reviews(next_due);
     CREATE INDEX IF NOT EXISTS idx_errors_type ON errors(error_type);
+    CREATE INDEX IF NOT EXISTS idx_errors_word ON errors(word);
     CREATE INDEX IF NOT EXISTS idx_sentences_day ON sentences(stage, week, day);
+    CREATE INDEX IF NOT EXISTS idx_sentences_task ON sentences(task_key);
     CREATE INDEX IF NOT EXISTS idx_dict_word ON dictionary(word);
     CREATE INDEX IF NOT EXISTS idx_ex_word ON example_sentences(word);
     CREATE INDEX IF NOT EXISTS idx_colloc_word ON collocations(word);
@@ -452,7 +486,28 @@ def init_db():
                 )
 
     # 轻量迁移：给旧库补新列（已存在则跳过）
+    # 造句号：多次作答、评分、错题本所需的列，都是后来加的，线上 Neon 老库靠这里补齐
     _ensure_columns(conn, "reviews", {"last_reviewed": "TEXT"})
+    _ensure_columns(conn, "sentences", {
+        "word": "TEXT DEFAULT ''",
+        "task_key": "TEXT DEFAULT ''",
+        "attempt": "INTEGER DEFAULT 1",
+        "score": "INTEGER DEFAULT 0",
+        "verdict": "TEXT DEFAULT ''",
+        "errors_json": "TEXT DEFAULT '[]'",
+        "opts_json": "TEXT DEFAULT '[]'",
+    })
+    _ensure_columns(conn, "errors", {
+        "word": "TEXT DEFAULT ''",
+        "task_key": "TEXT DEFAULT ''",
+        "error_text": "TEXT DEFAULT ''",
+        "sentence_text": "TEXT DEFAULT ''",
+        "times": "INTEGER DEFAULT 1",
+        "first_at": "TEXT",
+        "last_at": "TEXT",
+        "fixed": "INTEGER DEFAULT 0",
+        "fixed_at": "TEXT DEFAULT ''",
+    })
 
     # 内置基础词库导入（幂等；复用当前 conn，运行时 import 避免循环引用）
     try:

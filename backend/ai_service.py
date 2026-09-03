@@ -1,13 +1,21 @@
-"""句子本地规则纠错服务（纯本地，无 AI / 无 API）。
+"""句子本地规则批改服务（纯本地，无 AI / 无 LLM / 无第三方 API）。
 
-本系统明确不接入任何 AI/LLM。用户造句后，用本地规则引擎找出并纠正
-常见错误（固定搭配、主谓一致、时态、冠词、介词等），返回结构化结果。
-批改结果：错误类型 + 修正句 + 解释 + 是否入错误库 + 是否需复习。
+本系统明确不接入任何 AI/LLM。用户造句后，用本地规则引擎找出并纠正常见错误，
+返回：是否正确 / 分数 / 哪里错了 / 为什么错 / 正确表达 / 可优化的表达。
+
+批改结果同时写入：
+  - sentences：每次作答都追加一行（重新作答不会覆盖上一次）
+  - errors   ：只有「真错」才写入（正确句最多给优化建议，绝不进错题本）
+
+评分规则（>=85 基本掌握，<85 需要改进）：
+  - 没错：90 分起，写得够丰富最多加到 100 —— 简单但正确的句子**绝不低分**
+  - 有错：90 - 各错误扣分（重度 30 / 中度 20 / 轻微 12），下限 20
+  这样「有任何错误」一定 <85，「没错」一定 >=85，「优化建议」完全不影响分数。
 """
+import json
 import re
-from datetime import date
 
-from db import get_conn, ts
+from db import get_conn, ts, insert_get_id
 from srs import schedule_review
 
 ERROR_TYPES = [
@@ -15,357 +23,1018 @@ ERROR_TYPES = [
     "固定搭配", "词性", "拼写", "句型", "其他",
 ]
 
-# 常见动词过去式/过去分词
-PAST = {
-    "go": "went", "eat": "ate", "watch": "watched", "play": "played",
-    "like": "liked", "enjoy": "enjoyed", "work": "worked", "have": "had",
-    "do": "did", "get": "got", "make": "made", "see": "saw",
-    "read": "read", "swim": "swam", "drive": "drove", "buy": "bought",
-    "study": "studied", "finish": "finished", "start": "started",
-    "travel": "traveled", "cook": "cooked", "love": "loved",
+PASS_LINE = 85          # >=85 基本掌握
+BASE_SCORE = 90         # 无错基准分
+PENALTY = {"heavy": 30, "medium": 20, "light": 12}
+MIN_SCORE = 20
+
+
+# =====================================================================
+# 词形工具
+# =====================================================================
+
+# 不规则动词：base -> (三单, 过去式)
+_IRREGULAR = {
+    "go": ("goes", "went"), "do": ("does", "did"), "have": ("has", "had"),
+    "be": ("is", "was"), "get": ("gets", "got"), "make": ("makes", "made"),
+    "say": ("says", "said"), "see": ("sees", "saw"), "take": ("takes", "took"),
+    "come": ("comes", "came"), "know": ("knows", "knew"), "give": ("gives", "gave"),
+    "find": ("finds", "found"), "tell": ("tells", "told"),
+    "become": ("becomes", "became"), "leave": ("leaves", "left"),
+    "feel": ("feels", "felt"), "bring": ("brings", "brought"),
+    "begin": ("begins", "began"), "keep": ("keeps", "kept"),
+    "hold": ("holds", "held"), "write": ("writes", "wrote"),
+    "stand": ("stands", "stood"), "hear": ("hears", "heard"),
+    "let": ("lets", "let"), "mean": ("means", "meant"), "set": ("sets", "set"),
+    "meet": ("meets", "met"), "run": ("runs", "ran"), "pay": ("pays", "paid"),
+    "sit": ("sits", "sat"), "speak": ("speaks", "spoke"), "lead": ("leads", "led"),
+    "read": ("reads", "read"), "grow": ("grows", "grew"), "lose": ("loses", "lost"),
+    "fall": ("falls", "fell"), "send": ("sends", "sent"),
+    "build": ("builds", "built"),
+    "understand": ("understands", "understood"), "draw": ("draws", "drew"),
+    "break": ("breaks", "broke"), "spend": ("spends", "spent"),
+    "cut": ("cuts", "cut"), "drive": ("drives", "drove"), "buy": ("buys", "bought"),
+    "wear": ("wears", "wore"), "choose": ("chooses", "chose"),
+    "eat": ("eats", "ate"), "drink": ("drinks", "drank"), "swim": ("swims", "swam"),
+    "sing": ("sings", "sang"), "sleep": ("sleeps", "slept"),
+    "teach": ("teaches", "taught"), "think": ("thinks", "thought"),
+    "catch": ("catches", "caught"), "put": ("puts", "put"), "win": ("wins", "won"),
+    "forget": ("forgets", "forgot"), "fight": ("fights", "fought"),
+    "sell": ("sells", "sold"), "throw": ("throws", "threw"),
+    "wake": ("wakes", "woke"), "ride": ("rides", "rode"), "hide": ("hides", "hid"),
+    "steal": ("steals", "stole"), "strike": ("strikes", "struck"),
+    "stick": ("sticks", "stuck"), "swing": ("swings", "swung"),
+    "freeze": ("freezes", "froze"), "forgive": ("forgives", "forgave"),
+    "flee": ("flees", "fled"), "feed": ("feeds", "fed"), "bleed": ("bleeds", "bled"),
+    "shoot": ("shoots", "shot"), "shake": ("shakes", "shook"),
+    "sink": ("sinks", "sank"), "lie": ("lies", "lay"), "lay": ("lays", "laid"),
+    "rise": ("rises", "rose"), "seek": ("seeks", "sought"),
+    "tear": ("tears", "tore"), "swear": ("swears", "swore"),
+    "bear": ("bears", "bore"), "bind": ("binds", "bound"),
+    "deal": ("deals", "dealt"), "dig": ("digs", "dug"), "spin": ("spins", "spun"),
+    "split": ("splits", "split"), "spread": ("spreads", "spread"),
+    "spring": ("springs", "sprang"), "sting": ("stings", "stung"),
 }
-_VERB_STEMS = set(PAST.keys()) | {
-    "think", "know", "want", "need", "learn", "help", "live", "run",
-    "walk", "listen", "talk", "call", "help",
+
+# 常用规则动词（原形）。主谓一致 / 时态判定只认这里收录的词，
+# 以此避免把名词误判成动词（"He water" 才改，"He dog" 不动）。
+_REGULAR = """
+accept achieve add admit adopt advise afford agree allow answer apologise apologize
+appear apply argue arrange arrive ask attack attend avoid bake balance ban bargain
+bark base bathe bear beat become beg believe belong borrow bounce bow brush burn
+call cancel care carry celebrate change charge chat cheat check cheer chew clap
+clean clear climb close collect comb compare compete complain complete concern
+confirm connect consider consist contain continue cook copy correct cough count
+cover crash create cry cycle damage dance dare deal decide declare decorate
+defeat defend delay deliver depend describe design destroy develop die dig disagree
+disappear discover discuss dislike divide double doubt drag dream dress drink
+drop dry earn edit educate elect empty encourage end enjoy enter escape examine
+exist expand expect explain explore express extend fade fail fasten favour favor
+fear fetch fill film finish fish fix flash float flow focus fold follow forbid
+force forget form found free gain gather glow grab greet grin guess guard hammer
+hand handle hang happen harm hate head heal help hire hug hunt hurry identify
+ignore imagine impress improve include increase indicate influence inform insist
+install introduce invent invest invite involve iron join joke judge jump kick kiss
+knit knock label last laugh launch learn lick lift light like limit link list
+listen live load lock long look lose love maintain manage mark marry match matter
+mean measure meet melt memorize mend mention mind miss mix move murmur name need
+note notice number obey object observe obtain occur offer open operate order
+organise organize owe own pack paint park pass pause perform pick pin place plan
+plant play please plug point polish pop possess post pour practise practice praise
+pray preach prefer prepare present preserve press pretend prevent print produce
+promise pronounce protect prove provide publish pull punch purchase push put
+question quit race raise reach realize realise receive recognize recommend record
+recover reduce refer reflect refuse regret reject relax release rely remain
+remember remind remove repair repeat replace reply report represent request
+require rescue research resemble resist respect respond rest retire return reveal
+review ride ring rise roll rub ruin rule rush sail save scratch scream search
+seat select send separate serve set settle shake share shave shed shine shiver
+shock shoot shop shout show shrug shut sign sing sink sit skate skip sleep slide
+slip slow smash smell smile smoke sneeze sniff snore soak solve sort sound spare
+spell spend spill spin spoil spray spread spring sprout squeeze stain stamp stand
+stare start state stay steal steer step stir stitch stop store stretch strike
+strip study suck suffer suggest supply support suppose surprise surround survive
+swallow swear sweep swell swim swing switch talk tame tap taste tease telephone
+tell tempt tend terrify test thank threaten tick tickle tie time tip tire touch
+tour tow trace track trade train transfer translate transport trap travel treat
+trip trust try turn twist type use vanish visit wait wake walk wander want warm
+warn wash waste watch wave wear weigh welcome whisper whistle wink wipe wish
+withdraw wobble work worry wrap wreck write yell yawn
+"""
+
+VERBS = set(_REGULAR.split()) | set(_IRREGULAR.keys())
+
+# 明确的「活动类动词」：用于 like/enjoy/finish + doing 判定。
+# 刻意不含 work / study 这类常作名词的词，避免 "I finish work at 5" 被误判。
+_ACTIVITY = {
+    "swim", "read", "cook", "play", "watch", "run", "walk", "dance", "sing",
+    "draw", "travel", "shop", "eat", "drive", "write", "paint", "fish",
+    "camp", "hike", "jog", "ski", "skate", "cycle", "climb", "chat", "talk",
+    "speak", "smoke", "drink", "sleep", "wait", "exercise", "clean", "type",
+    "surf", "bake", "garden", "text", "call", "learn", "teach", "practice",
+    "practise", "relax", "explore", "photograph", "go", "come", "stay",
+    "visit", "see", "meet", "leave", "start", "stop", "try", "help",
 }
 
-# 固定搭配规则：把常见的错误简写纠正。 (正则, 正确写法, 中文说明)
-COLLOC_RULES = [
-    (r"\bgo\s+work\b", "go to work", "go to work 是固定搭配"),
-    (r"\bgo\s+school\b", "go to school", "go to school 是固定搭配"),
-    (r"\bgo\s+bed\b", "go to bed", "go to bed 是固定搭配"),
-    (r"\blike\s+do\b", "like doing", "like 后接 doing"),
-    (r"\benjoy\s+to\s+doing\b", "enjoy doing", "enjoy 后接 doing"),
-    (r"\blike\s+swim\b", "like swimming", "like 后接 doing"),
-    (r"\benjoy\s+swim\b", "enjoy swimming", "enjoy 后接 doing"),
-    (r"\bhate\s+do\b", "hate doing", "hate 后接 doing"),
-    (r"\bgo\s+swimming\b", "go swimming", "go swimming 是固定搭配"),
-    (r"\bplay\s+basketball\s+game\b", "play basketball", "play 后接运动名"),
-    (r"\benjoy\s+work\b", "enjoy working", "enjoy 后接 doing"),
-    (r"\bfinish\s+do\b", "finish doing", "finish 后接 doing"),
-    (r"\bwant\s+doing\b", "want to do", "want 后接 to do"),
-    (r"\bneed\s+doing\b", "need to do", "need 后接 to do"),
-    (r"\blearn\s+english\b", "learn English", "English 应大写"),
-    (r"\bmake\s+friend\b", "make friends", "make friends 中 friends 用复数"),
-]
+# -ing 结尾但其实是名词的词：want/need + 这些词不是「该改成 to do」
+_ING_NOUNS = {
+    "something", "anything", "everything", "nothing", "thing", "morning",
+    "evening", "meeting", "training", "building", "painting", "drawing",
+    "writing", "reading", "shopping", "parking", "swimming", "beginning",
+    "wedding", "clothing", "interesting", "boring", "exciting", "ceiling",
+    "feeling", "saving", "earning", "meaning", "opening", "warning",
+}
 
-# 第三人称单数变形
-def _stem(v):
-    if v.endswith("es"):
-        return v[:-2]
-    if v.endswith("s") and not v.endswith("ss") and not v.endswith("is"):
-        return v[:-1]
-    return v
+# 不该被当成「动词原形」处理的词（be / 助动词 / 情态动词 / 常见副词）
+_AUX_BE = {"am", "is", "are", "was", "were", "be", "been", "being"}
+_MODALS = {"will", "would", "can", "could", "shall", "should", "may", "might",
+           "must", "ought", "do", "does", "did", "done", "doing",
+           "have", "has", "had", "having", "not", "no", "never", "too", "also",
+           "just", "still", "even", "now", "then", "there", "here", "always",
+           "often", "sometimes", "usually", "really", "very", "quite", "so",
+           "get", "gets", "getting", "to", "and", "or", "but", "if", "when"}
 
-def _third_singular(v):
-    base = _stem(v)
-    if base.endswith(("s", "x", "z", "ch", "sh", "o")):
-        return base + "es"
-    return base + "s"
+_PAST_MARKER = re.compile(r"\b(yesterday|ago|last\s+\w+)\b")
 
-def _is_verb(v):
-    return _stem(v) in _VERB_STEMS
-
-
-def _rule_correct(sentence):
-    """本地规则纠错。返回 {'correct':bool,'corrected':str,'errors':[...]} 或 None（无明确错误）。"""
-    s = sentence.strip()
-    if not s:
-        return None
-    lowered = " " + s.lower() + " "
-    errors = []
-
-    # 1) 固定搭配/拼写类规则（含大小写修正占位，实际替换时按原句词性处理）
-    #    这里先用 lower 匹配，替换时按原句精确替换片段。
-    for pat, fix, expl in COLLOC_RULES:
-        m = re.search(pat, lowered)
-        if m:
-            # 在原文找到该片段做替换
-            frag = m.group(0).strip()
-            # 找到原文对应位置
-            idx = s.lower().find(frag)
-            if idx >= 0:
-                orig_frag = s[idx:idx + len(frag)]
-                errors.append({
-                    "type": "固定搭配", "original": orig_frag, "correct": fix,
-                    "explanation": expl,
-                })
-
-    # 1.5) 一般 V+doing 规则：like/enjoy/hate/finish/mind/love + 动作动词(原形) → doing
-    for m in re.finditer(r"\b(like|enjoy|hate|finish|mind|love|keep)\s+(swim|read|cook|play|watch|listen|run|walk|dance|sing|draw|travel|shop|eat|drive|study|work|write|learn|make|help)\b", lowered):
-        head, vb = m.group(1), m.group(2)
-        # 排除已是进行/被动态结构 "like watching" 等（前面动词已是ing则不命中，因为正则要求裸动词）
-        errors.append({
-            "type": "固定搭配",
-            "original": f"{head} {vb}",
-            "correct": f"{head} {_ing_form(vb)}",
-            "explanation": f"{head} 后接动词要用 doing 形式（{head} {_ing_form(vb)}）。",
-        })
-
-    # 2) 主谓一致：he/she/it/人名 + 一般现在时动词（无s）
-    #    若有明确过去时间(yesterday/ago)或将来时间(tomorrow/next)，主谓一致的"-s"不是首要问题，
-    #    交给后面的时态规则处理，避免把"I went"误改回三单。
-    has_past_marker = bool(re.search(r"\b(yesterday|ago|last\s+\w+)\b", lowered))
-    has_future_marker = bool(re.search(r"\b(tomorrow|tonight|next\s+\w+)\b", lowered))
-    for m in re.finditer(r"\b(he|she|it|tom|mary|my mother|my father|my sister|my brother)\s+([a-z]+)\b", lowered):
-        verb = m.group(2)
-        stem = _stem(verb)
-        if has_past_marker or has_future_marker:
-            continue
-        if _is_verb(verb) and verb == stem and not verb.endswith("s") and stem in PAST or (stem in _VERB_STEMS and verb not in ("has", "is", "does", "was")):
-            if verb in ("am", "is", "are", "has", "does", "was", "were"):
-                continue
-            errors.append({
-                "type": "主谓一致",
-                "original": f"{m.group(1)} {verb}",
-                "correct": f"{m.group(1)} {_third_singular(verb)}",
-                "explanation": f"{m.group(1)} 是第三人称单数，一般现在时动词要加 -s/-es。",
-            })
-
-    # 3) 时态：yesterday 用过去式；tomorrow/will 用将来
-    if re.search(r"\byesterday\b", lowered):
-        for m in re.finditer(r"\b(i|he|she|we|they|tom|mary)\s+(go|eat|watch|play|like|enjoy|work|study|finish|start|travel|cook|buy|see|swim|drive|have|make|do|get|read)\b", lowered):
-            verb = m.group(2)
-            if verb in PAST:
-                errors.append({
-                    "type": "时态", "original": f"{m.group(1)} {verb}",
-                    "correct": f"{m.group(1)} {PAST[verb]}",
-                    "explanation": f"有 yesterday（过去时间），动词 {verb} 应改为过去式 {PAST[verb]}。",
-                })
-
-    # 4) 简单冠词：a apple -> an apple 等（基础）
-    for m in re.finditer(r"\ba\s+([aeiou][a-z]*)\b", lowered):
-        # 排除 a/an 之后确实独立的可数词，仅当后接的是名词性元音词
-        if m.group(1) in ("and", "or", "about", "after", "always", "also", "around", "up", "our", "on"):
-            continue
-        errors.append({
-            "type": "冠词", "original": m.group(0).strip(),
-            "correct": "an " + m.group(1),
-            "explanation": f"{m.group(1)} 是元音开头，前面要用 an 而不是 a。",
-        })
-
-    # 5) 单复数：可数单数名词直接跟在数词/ many/ these / those 之后应加复数（常用词集合）
-    #    用启发式：名词出现在句首 of 主谓后的表意位置很难可靠判断，只处理明确列表词。
-    _PLURALIZE_IF_BARE = {
-        # 词 -> (确定性触发词列表：其后可数名词必为复数)
-        "friend": ["many", "these", "those", "two", "three", "several"],
-        "book": ["many", "these", "those", "two", "three", "several"],
-        "apple": ["many", "two", "three", "some"],
-        "egg": ["many", "two", "three", "some"],
-        "pen": ["many", "two", "three", "some"],
-        "student": ["many", "these", "those", "two", "three", "several"],
-        "day": ["many", "two", "three", "several", "seven"],
-        "child": [], "man": [], "woman": [],  # 不规则变形走固定处理
-    }
-    for bare, triggers in _PLURALIZE_IF_BARE.items():
-        for tg in triggers:
-            for m in re.finditer(rf"\b{tg}\s+{bare}\b", lowered):
-                errors.append({
-                    "type": "单复数", "original": m.group(0).strip(),
-                    "correct": f"{tg} {_plural_of(bare)}",
-                    "explanation": f"{tg} 表示多个，{bare} 要用复数 {_plural_of(bare)}。",
-                })
-
-    # 6) 介词：基础搭配纠正（at the morning->in the morning 等）
-    #    (正则, 修正短语, 中文说明)。fix 需是完整可替换短语。
-    PREP_RULES = [
-        (r"\bat\s+the\s+morning\b", "in the morning", "morning 前用 in the（in the morning）"),
-        (r"\bat\s+the\s+afternoon\b", "in the afternoon", "afternoon 前用 in the（in the afternoon）"),
-        (r"\bat\s+the\s+evening\b", "in the evening", "evening 前用 in the（in the evening）"),
-        (r"\b(in|on)\s+beijing\b", "in Beijing", "城市名 Beijing 前用 in"),
-        (r"\blisten\s+music\b", "listen to music", "listen 后接 to（listen to music）"),
-        (r"\bgood\s+in\s+english\b", "good at English", "擅长英语用 be good at English"),
-        (r"\barrive\s+to\b", "arrive at", "到达地点用 arrive at/in（arrive to 是错的）"),
-        (r"\bgo\s+to\s+home\b", "go home", "go home 不用 to"),
-        (r"\bget\s+to\s+home\b", "get home", "get home 不用 to"),
-        (r"\benjoy\s+at\s+doing\b", "enjoy doing", "enjoy 后直接接 doing，不加 at"),
-        (r"\bgood\s+with\s+english\b", "good at English", "擅长英语用 good at English"),
-    ]
-    for pat, fix, expl in PREP_RULES:
-        m = re.search(pat, lowered)
-        if m:
-            frag = m.group(0).strip()
-            # fix 中若含 {time}/{n} 占位则替换为原文中的对应数字
-            actual = fix
-            if "{time}" in actual or "{n}" in actual:
-                dig = re.search(r"\d+", frag)
-                actual = actual.replace("{time}", dig.group(0)).replace("{n}", dig.group(0)) if dig else actual
-            idx = s.lower().find(frag)
-            if idx >= 0:
-                orig_frag = s[idx:idx + len(frag)]
-                errors.append({
-                    "type": "介词", "original": orig_frag, "correct": actual,
-                    "explanation": expl,
-                })
-
-    # 7) 将来时：tomorrow / next 里出现一般现在/过去式裸动词 → 改成 will + do
-    if re.search(r"\b(tomorrow|tonight|next\s+\w+)\b", lowered):
-        for m in re.finditer(
-                r"\b(i|he|she|we|they|tom|mary|you)\s+(go|eat|watch|play|like|enjoy|work|study|finish|start|travel|cook|buy|see|swim|drive|have|make|do|get|read)\b",
-                lowered):
-            verb = m.group(2)
-            if _is_verb(verb):
-                errors.append({
-                    "type": "时态", "original": f"{m.group(1)} {verb}",
-                    "correct": f"{m.group(1)} will {verb}",
-                    "explanation": f"有 tomorrow/next（将来时间），可用 will + 动词原形 {verb} 表达计划。",
-                })
-
-    if not errors:
-        return None
-    # 先按 (original, correct) 去重，避免同一条目(如COLLOC与通用规则都命中)被重复替换导致叠加
-    seen_pair = set()
-    _errors = []
-    for e in errors:
-        k = (e["original"], e["correct"])
-        if k in seen_pair:
-            continue
-        seen_pair.add(k)
-        _errors.append(e)
-    errors = _errors
-    # 生成修正句：按在原句中的位置从右到左替换，避免前面替换后影响后面片段的定位
-    # 先记录每个错误在原句中的位置与要替换的片段
-    candidates = []
-    for e in errors:
-        orig = e["original"]
-        if not orig or orig == e["correct"]:
-            continue
-        idx = s.lower().find(orig.lower())
-        if idx < 0:
-            continue  # 该片段未被识别到，跳过
-        fix = e["correct"]
-        # 若被替换片段位于句首且原句此处为大写开头，则修正词首字母也大写
-        if idx == 0 and s[:1].isupper() and fix and fix[0].islower():
-            fix = fix[0].upper() + fix[1:]
-        candidates.append((idx, orig, fix))
-    # 去重同位置同长度的重叠替换冲突：按位置升序保留首次，移除被覆盖的同起点重复
-    # 从右往左应用，避免索引漂移
-    corrected = s
-    for idx, orig, fix in sorted(candidates, key=lambda c: -c[0]):
-        corrected = corrected[:idx] + fix + corrected[idx + len(orig):]
-    # 已成功应用、且 original != correct 的错误作为最终返回（便于前端展示解释）
-    applied = [e for e in errors if e["original"] and e["original"] != e["correct"]]
-    # 去重错误（按 original 去重，保留首次出现）
-    seen = set()
-    uniq = []
-    for e in applied:
-        if e["original"] not in seen:
-            seen.add(e["original"])
-            uniq.append(e)
-    if not uniq:
-        return None
-    return {"correct": False, "corrected": corrected, "errors": uniq}
+# 第三人称单数主语（内置一层捕获组：group 1 = 主语）
+_S3 = (
+    r"(he|she|it|tom|mary|john|amy|lisa|david|peter|mike|sarah|lucy|jack|"
+    r"my\s+(?:mother|father|mom|dad|sister|brother|friend|teacher|boss|wife|"
+    r"husband|son|daughter|manager|colleague|team|cat|dog)|"
+    r"his\s+(?:mother|father|sister|brother|friend|wife|husband|son|daughter)|"
+    r"her\s+(?:mother|father|sister|brother|friend|wife|husband|son|daughter)|"
+    r"the\s+(?:boy|girl|man|woman|teacher|student|doctor|nurse|driver|"
+    r"dog|cat|bird|car|bus|train|book|movie|film|company|team|manager|boss|"
+    r"meeting|report|weather|food|price|problem))"
+)
+_S3_RE = re.compile(r"\b" + _S3 + r"\b")
+# 主语与动词之间允许出现的副词（不含 very —— very 由专门规则处理）
+_ADV_WORD = (r"usually|always|often|sometimes|never|rarely|seldom|normally|"
+             r"generally|frequently|also|just|really|still|even|already|simply|"
+             r"actually|definitely|probably|quite|truly|deeply|only")
+_S3_ADV = r"(?:" + _ADV_WORD + r")\s+"
+# 注意：`((?:...)\s+)*` 里的 * 只会作用在 \s+ 上，会触发 multiple repeat；
+# 必须再包一层非捕获组：((?:(?:...)\s+)*)
+_S3_ADVS = r"(?:(?:" + _ADV_WORD + r")\s+)*"
 
 
-# 简单名词复数（覆盖基础不规则）
-_PLURAL_IRREG = {"child": "children", "man": "men", "woman": "women",
-                 "foot": "feet", "tooth": "teeth", "person": "people"}
+def _third(v):
+    if v in _IRREGULAR:
+        return _IRREGULAR[v][0]
+    if v.endswith(("s", "x", "z", "ch", "sh", "o")):
+        return v + "es"
+    if v.endswith("y") and len(v) > 1 and v[-2] not in "aeiou":
+        return v[:-1] + "ies"
+    return v + "s"
 
 
-def _plural_of(noun):
-    if noun in _PLURAL_IRREG:
-        return _PLURAL_IRREG[noun]
-    if noun.endswith(("s", "x", "z", "ch", "sh")):
-        return noun + "es"
-    if noun.endswith("y") and not noun.endswith(("ay", "ey", "oy", "uy")):
-        return noun[:-1] + "ies"
-    if noun.endswith("f"):
-        return noun[:-1] + "ves"
-    return noun + "s"
+def _past(v):
+    if v in _IRREGULAR:
+        return _IRREGULAR[v][1]
+    if v.endswith("e"):
+        return v + "d"
+    if v.endswith("y") and len(v) > 1 and v[-2] not in "aeiou":
+        return v[:-1] + "ied"
+    _DOUBLE = {"stop", "plan", "shop", "drop", "prefer", "travel", "cancel",
+               "admit", "begin", "control", "occur", "refer", "regret", "chat",
+               "fit", "grab", "hug", "jog", "nod", "pat", "pin", "rub", "slip",
+               "step", "swap", "tip", "trap", "wrap", "quit"}
+    if v in _DOUBLE:
+        return v + v[-1] + "ed"
+    return v + "ed"
 
 
-def _ing_form(v):
-    """动词转进行时/动名词形式（基础规则 + 常见需双写尾辅音的动词白名单）。"""
+def _ing(v):
     if v.endswith("ie"):
         return v[:-2] + "ying"
     if v.endswith("e") and not v.endswith(("ee", "ye", "oe")):
         return v[:-1] + "ing"
     _DOUBLE_LAST = {"swim", "run", "get", "sit", "shop", "stop", "begin",
                     "plan", "drop", "put", "cut", "win", "dig", "jog", "chat",
-                    "let", "set", "fit", "hit", "nod", "rub"}
+                    "let", "set", "fit", "hit", "nod", "rub", "travel",
+                    "cancel", "control", "prefer", "refer", "occur"}
     if v in _DOUBLE_LAST:
         return v + v[-1] + "ing"
     return v + "ing"
 
 
-def _simple_expand(sentence):
-    """对过于简单的句子给出扩展示例（不判错、不修改原句，仅作友好提示）。"""
-    s = sentence.strip().rstrip(".!?")
-    low = s.lower()
-    words = low.split()
-    if len(words) <= 1:
-        return "句子太短了，试着加上你是谁、做什么或喜欢什么。"
-    # 模式1：I am / He is / She is / My name is ... 等自我介绍
-    m = re.match(r"^(i|he|she|my name|his name|her name)\s+(am|is|are)\s+(.+)$", s, re.I)
-    if m:
-        name = m.group(3).strip()
-        return (
-            f"你可以写成：I'm {name}, and I'm a student / I work as a ... "
-            "再补一句你来自哪里或喜欢什么，会让句子更丰富。"
-        )
-    # 注：原「模式2 My name is ...」已删除——模式1 的分组已含 my name 且命中即 return，
-    # 该分支永远不可达，属死代码（删除后行为完全不变）。
-    # 模式3：主语 + be + 表语（不超过5词且无标点）
-    if len(words) <= 5 and re.match(r"^[a-z]+\s+(am|is|are)\s+[a-z]+\s*$", low):
-        return "可以补充 because / and / but / usually / every day 等，把一句话拉长成两句。"
-    # 模式4：极短陈述句（<=5词且无连词/标点）
-    if len(words) <= 5 and not any(p in sentence for p in ",.;:!"):
-        return "试试用 and / because / so 把两个短信息连起来，例如 I like apples because they are sweet."
-    return None
+def _plural_of(noun):
+    _IR = {"child": "children", "man": "men", "woman": "women",
+           "foot": "feet", "tooth": "teeth", "person": "people"}
+    if noun in _IR:
+        return _IR[noun]
+    if noun.endswith(("s", "x", "z", "ch", "sh")):
+        return noun + "es"
+    if noun.endswith("y") and len(noun) > 1 and noun[-2] not in "aeiou":
+        return noun[:-1] + "ies"
+    if noun.endswith("f"):
+        return noun[:-1] + "ves"
+    return noun + "s"
 
 
-def correct_sentence(sentence, stage=0, week=3, day=1):
-    """纯本地批改主入口：返回统一结构，并把错误写入错误库、安排复习。无任何 AI。"""
-    expand_hint = _simple_expand(sentence)
-    result = _rule_correct(sentence)
-    if result is None:
-        result = {"correct": True, "corrected": sentence, "errors": []}
-    source = "rule"
+def _safe_lower(s):
+    """逐字符小写，保证 len 不变（str.lower() 对个别 Unicode 字符会改变长度）。"""
+    return "".join(c.lower() if "A" <= c <= "Z" else c for c in s)
 
-    good = bool(result.get("correct"))
-    errors = result.get("errors") or []
-    primary_type = errors[0]["type"] if errors else ""
-    explanation = "；".join(e["explanation"] for e in errors) if errors else ""
 
-    # 持久化到 sentences 表
+def _normalize(s):
+    """弯引号/撇号统一成 ASCII，避免 I'm 被正则切断（长度 1:1 不变）。"""
+    return (s.replace("\u2019", "'").replace("\u2018", "'")
+             .replace("\u201c", '"').replace("\u201d", '"'))
+
+
+def _err(etype, where, correct, expl, span, repl, severity="medium"):
+    """一条错误。where/correct 用于**展示**，span/repl 用于**改句**。"""
+    return {"type": etype, "where": where, "correct": correct,
+            "explanation": expl, "span": span, "repl": repl,
+            "severity": severity}
+
+
+# =====================================================================
+# 主语判断（主谓一致用）
+# =====================================================================
+
+_CLAUSE_BREAKS = (".", ";", ",", "!", "?", " but ", " because ", " so ",
+                  " which ", " who ", " when ", " if ", " although ", " that ")
+
+
+def _coordinated(seg, subj_start):
+    """主语是否与前面的名词并列（Tom and Mary go —— 复数，不该判三单）。"""
+    before = seg[:subj_start]
+    b = 0
+    for br in _CLAUSE_BREAKS:
+        idx = before.rfind(br)
+        if idx >= 0:
+            b = max(b, idx + len(br))
+    clause = before[b:]
+    if not re.search(r"\b(and|or)\b", clause):
+        return False
+    return not any(w in VERBS for w in clause.split())
+
+
+def _find_subject3(low, verb_start):
+    """在 verb_start 之前找最近的第三人称单数主语，返回 (Match, 是否并列主语)。"""
+    head = low[:verb_start]
+    seg = head[-50:] if len(head) > 50 else head
+    m = None
+    for mm in _S3_RE.finditer(seg):
+        m = mm
+    if m is None:
+        return None, False
+    # seg 结束于动词之前。若它本身以 and / or 收尾，说明主语是并列结构里的
+    # 第二个（Tom and Mary go → 复数，不该加 -s）；中间若出现过动词则不是并列主语。
+    if re.search(r"\b(and|or)\s+$", seg) and not any(w in VERBS for w in seg.split()):
+        return m, True
+    if _coordinated(seg, m.start()):
+        return m, True
+    return m, False
+
+
+def _is_third_person(low, verb_start):
+    """动词 verb_start 处的主语是否为第三人称单数（中间只允许副词）。"""
+    m, coord = _find_subject3(low, verb_start)
+    if m is None or coord:
+        return False
+    head = low[:verb_start]
+    seg = head[-50:] if len(head) > 50 else head
+    tail = seg[m.end():]
+    return re.fullmatch(r"[,]?\s*(?:(?:" + _ADV_WORD + r"|\w+ly)\s+)*", tail) is not None
+
+
+# =====================================================================
+# 规则集：每条返回错误列表，span 一律基于**原句**坐标
+# =====================================================================
+
+_PRON_SUBJ = {"me": "I", "him": "he", "her": "she", "us": "we",
+              "them": "they", "you": "you", "it": "it"}
+
+
+# 常作形容词用的词：be + 这些词完全正确（I am free / It is live），不能要求 -ing
+_ADJ_NOT_VERB = {
+    "free", "live", "clean", "clear", "close", "open", "dry", "warm", "cold",
+    "cool", "empty", "own", "long", "short", "slow", "fast", "present",
+    "separate", "light", "dark", "sound", "right", "wrong", "safe", "sure",
+    "ready", "busy", "full", "quiet", "calm", "content", "flat", "loose",
+    "plain", "prime", "spare", "subject", "worth", "due", "faint", "level",
+    "round", "square", "thin", "thick", "sharp", "smooth", "cheap", "dear",
+    "firm", "brief", "chief", "vast", "rare", "dull", "fond", "glad", "upset",
+}
+
+
+def _r_be_verb(s, low):
+    """be + 动词：I am agree with you / He is go home。"""
+    out = []
+    for m in re.finditer(r"\b(am|is|are|was|were|be)\s+(agree|disagree)\b", low):
+        be, verb = m.group(1), m.group(2)
+        new = _past(verb) if be in ("was", "were") else verb
+        out.append(_err(
+            "句型", f"{be} {verb}", new,
+            f"agree（同意）本身就是动词，前面不能再加 be 动词（{be}）。"
+            f"直接说「主语 + {new}」就够了，例如 I {new} with you。",
+            m.span(), new, "heavy"))
+    for m in re.finditer(r"\b(am|is|are|was|were)\s+([a-z]+)\b", low):
+        be, verb = m.group(1), m.group(2)
+        if (verb in _AUX_BE or verb in _MODALS or verb not in VERBS
+                or verb in _ADJ_NOT_VERB):
+            continue
+        new = _ing(verb)
+        out.append(_err(
+            "句型", f"{be} {verb}", f"{be} {new}",
+            f"be 动词（{be}）后面要接 -ing 构成进行时，不能直接接动词原形 {verb}。"
+            f"想说习惯性的动作用一般现在时，想说正在做就用 {be} {new}。",
+            (m.start(2), m.end(2)), new, "heavy"))
+    return out
+
+
+def _r_very_verb(s, low):
+    """very + 情感动词：I very like you."""
+    out = []
+    for m in re.finditer(
+            r"\bvery\s+(like|love|enjoy|hate|want|need|agree|prefer|miss|mind|"
+            r"appreciate|admire|recommend|suggest)\b", low):
+        verb = m.group(1)
+        third = _is_third_person(low, m.start())
+        target = _third(verb) if third else verb
+        out.append(_err(
+            "词性", f"very {verb}", f"really {target}",
+            f"very 不能直接放在动词 {verb} 前面修饰它。very 只修饰形容词和副词"
+            f"（very good / very quickly）；修饰「喜欢、想要」这类动词时要用 "
+            f"really（放在动词前面）或 very much（放在句末）。"
+            f"所以「非常喜欢」要说 really {target}"
+            + ("（这里主语是第三人称单数，动词还要加 -s/-es）。" if third else "。"),
+            m.span(), f"really {target}", "heavy"))
+    return out
+
+
+def _r_very_much_order(s, low):
+    """like very much this movie → like this movie very much（中式语序）。"""
+    out = []
+    pat = r"\b(like|love|enjoy|hate|miss)\s+very\s+much\s+([a-z']+(?:\s+[a-z']+)*?)([.,;!?]|$)"
+    for m in re.finditer(pat, low):
+        verb, obj = m.group(1), (m.group(2) or "").strip()
+        if not obj:
+            continue
+        third = _is_third_person(low, m.start())
+        target = _third(verb) if third else verb
+        new = f"{target} {obj} very much"
+        out.append(_err(
+            "词序", f"{verb} very much {obj}", new,
+            "very much 修饰动词时要放在**宾语后面或句末**，不能夹在动词和宾语中间。"
+            "英文的语序是「主语 + 动词 + 宾语 + very much」；中文的「很喜欢这个」"
+            "不能逐字翻成 like very much this。",
+            (m.start(1), m.end(2)), new, "heavy"))
+    return out
+
+
+def _r_suggest_to(s, low):
+    """suggest sb to do → suggest (that) sb do。"""
+    out = []
+    for m in re.finditer(
+            r"\b(suggest|suggests|suggested|recommend|recommends|recommended)\s+"
+            r"(me|him|her|us|them|you|it)\s+to\s+([a-z]+)\b", low):
+        head, obj, verb = m.group(1), m.group(2), m.group(3)
+        subj = _PRON_SUBJ.get(obj, obj)
+        new = f"{head} that {subj} {verb}"
+        out.append(_err(
+            "固定搭配", f"{head} {obj} to {verb}", new,
+            f"{head} 后面不能接「人 + to do」。它要么接名词或动名词"
+            f"（{head} going），要么接 that 从句（{new}）。"
+            f"中文的「建议我去」最容易在这里直译成英文出错。",
+            m.span(), new, "heavy"))
+    return out
+
+
+def _r_look_forward(s, low):
+    """look forward to see → look forward to seeing（这里的 to 是介词）。"""
+    out = []
+    for m in re.finditer(r"\blook\w*\s+forward\s+to\s+([a-z]+)\b", low):
+        verb = m.group(1)
+        if verb in VERBS and not verb.endswith("ing"):
+            new = _ing(verb)
+            out.append(_err(
+                "固定搭配", f"look forward to {verb}", f"look forward to {new}",
+                "look forward to 里的 to 是**介词**，不是不定式的 to，"
+                "所以后面必须接名词或动名词（-ing）。「期待见到你」要说 "
+                f"look forward to {new} you。",
+                (m.start(1), m.end(1)), new, "heavy"))
+    return out
+
+
+def _r_make_let_to(s, low):
+    """make / let / see / hear sb to do → sb do（使役与感官动词不加 to）。"""
+    out = []
+    for m in re.finditer(
+            r"\b(make|makes|made|let|lets|see|sees|saw|hear|hears|heard|"
+            r"watch|watches|watched)\s+(me|him|her|us|them|you|it)\s+to\s+([a-z]+)\b",
+            low):
+        head, obj, verb = m.group(1), m.group(2), m.group(3)
+        new = f"{head} {obj} {verb}"
+        out.append(_err(
+            "固定搭配", f"{head} {obj} to {verb}", new,
+            f"{head} 是使役/感官动词，后面接「人 + 动词原形」，中间**不加 to**。"
+            f"去掉 to 就行：{new}。",
+            m.span(), new, "heavy"))
+    return out
+
+
+_GERUND_HEADS = (r"like|likes|love|loves|loved|enjoy|enjoys|enjoyed|hate|hates|"
+                 r"hated|finish|finishes|finished|mind|minds|keep|keeps|kept|"
+                 r"practise|practises|practice|practices|practiced|avoid|avoids|"
+                 r"miss|misses|missed|consider|considers|suggest|suggests|"
+                 r"admit|admits|deny|denies|imagine|imagines")
+
+
+def _r_verb_pattern(s, low):
+    """like/enjoy/finish + 原形 → doing；want/need/decide + doing → to do。"""
+    out = []
+    for m in re.finditer(rf"\b({_GERUND_HEADS})\s+([a-z]+)\b", low):
+        head, verb = m.group(1), m.group(2)
+        if verb not in _ACTIVITY or verb.endswith("ing"):
+            continue
+        new = _ing(verb)
+        out.append(_err(
+            "固定搭配", f"{head} {verb}", f"{head} {new}",
+            f"{head} 后面接动作动词时，要用 doing（动名词）形式，不能接原形 {verb}。"
+            f"应写成 {head} {new}。",
+            (m.start(2), m.end(2)), new, "medium"))
+    for m in re.finditer(
+            r"\b(want|wants|wanted|need|needs|needed|decide|decides|decided|"
+            r"hope|hopes|hoped|plan|plans|planned|promise|promises|agree|agrees|"
+            r"would\s+like)\s+([a-z]+ing)\b", low):
+        head, ger = m.group(1), m.group(2)
+        if ger in _ING_NOUNS:
+            continue
+        base = ger[:-3]
+        if base not in _ACTIVITY:
+            continue
+        out.append(_err(
+            "固定搭配", f"{head} {ger}", f"{head} to {base}",
+            f"{head} 后面要接**带 to 的不定式**（to do），不接 doing。"
+            f"应写成 {head} to {base}。",
+            (m.start(2), m.end(2)), f"to {base}", "medium"))
+    return out
+
+
+# 冗余/中式搭配：(正则, 替换(None=用最后一组), 类型, 说明, 严重度, 只替换最后一组?)
+_REDUNDANT = [
+    (r"\bcan\s+able\s+to\b", "can", "句型",
+     "can 和 be able to 都表示「能够」，两个不能叠着用。保留 can 就够了"
+     "（想强调可以说 am able to）。", "heavy"),
+    (r"\bmore\s+(better|worse|easier|harder|bigger|smaller|faster|slower|"
+     r"cheaper|older|younger|longer|shorter|higher|lower|safer|smarter)\b",
+     None, "词性",
+     "比较级重复了：more 已经表示「更」，后面就不能再加 -er 的比较级，二选一即可。",
+     "heavy"),
+    (r"\bdiscuss\s+about\b", "discuss", "介词",
+     "discuss（讨论）是及物动词，后面直接接讨论的内容，不用加 about。",
+     "medium"),
+    (r"\bmarry\s+with\b", "marry", "介词",
+     "marry 是及物动词，「和某人结婚」说 marry sb，不加 with。", "medium"),
+    (r"\bcontact\s+with\b", "contact", "介词",
+     "contact 是及物动词，「联系某人」说 contact sb，不加 with。", "medium"),
+    (r"\breturn\s+back\b", "return", "固定搭配",
+     "return 本身已经含有「回」的意思，再加 back 就重复了。", "medium"),
+    (r"\brepeat\s+again\b", "repeat", "固定搭配",
+     "repeat 本身就是「再说一遍」，再加 again 就重复了。", "medium"),
+    (r"\bemphasize\s+on\b", "emphasize", "介词",
+     "emphasize 是及物动词，后面直接接宾语，不加 on。", "medium"),
+    (r"\baccording\s+to\s+my\s+opinion\b", "in my opinion", "固定搭配",
+     "according to 后面接「来源/依据」，不接 my opinion。表达个人看法用 in my opinion。",
+     "heavy"),
+    (r"\bplay\s+the\s+(basketball|football|soccer|volleyball|baseball|"
+     r"badminton|tennis|ping-?pong|chess)\b", None, "冠词",
+     "球类运动和棋类前面不加 the。打篮球是 play basketball。", "medium"),
+    (r"\b(open|close)\s+the\s+(light|lights|tv|television|radio|fan)\b",
+     None, "固定搭配",
+     "中文的「开/关灯、开/关电视」在英文里要用 turn on / turn off，不用 open / close。",
+     "medium"),
+    (r"\bgo\s+to\s+(home|there|here|abroad|downtown|upstairs|downstairs)\b",
+     None, "介词",
+     "home / there / here / abroad 这类词是副词，前面不加 to。回家是 go home。",
+     "medium"),
+    (r"\b(listen|listens|listened)\s+music\b", None, "介词",
+     "listen 是不及物动词，要先加 to 再接听的内容：listen to music。",
+     "medium"),
+    (r"\barrive\s+to\b", "arrive at", "介词",
+     "arrive 后面接地点用 at（小地方）或 in（大城市、国家），不用 to。",
+     "medium"),
+]
+
+
+def _r_redundant(s, low):
+    """中式英语里最高频的冗余与搭配错误。"""
+    out = []
+    for pat, repl, etype, expl, sev in _REDUNDANT:
+        for m in re.finditer(pat, low):
+            frag = m.group(0)
+            if repl:
+                new = repl
+            elif "play" in pat:
+                new = "play " + m.group(m.re.groups)
+            elif pat.startswith(r"\bgo\s+to\s+"):
+                new = "go " + m.group(m.re.groups)
+            elif pat.startswith(r"\b(open|close)"):
+                vb = "turn on" if m.group(1).lower() == "open" else "turn off"
+                new = f"{vb} the {m.group(2)}"
+            elif pat.startswith(r"\b(listen"):
+                new = f"{m.group(1)} to music"
+            else:
+                new = m.group(m.re.groups)
+            if new == frag:
+                continue
+            out.append(_err(etype, frag, new, expl, m.span(), new, sev))
+    return out
+
+
+def _r_although_but(s, low):
+    """Although ..., but ... —— 英文里两者不能同时出现。"""
+    out = []
+    for m in re.finditer(r"\b(?:although|though)\b[^.!?]{0,80}?,\s*but\b", low):
+        pos = m.group(0).lower().rfind("but")
+        start = m.start() + pos
+        out.append(_err(
+            "句型", "but", "（把 but 删掉）",
+            "英文里 although（虽然）和 but（但是）**不能用在同一个句子里**，"
+            "这和中文的「虽然…但是…」不一样。用了 although，后面就直接说结果。",
+            (start, start + 3), "", "medium"))
+    return out
+
+
+def _r_aux_agree(s, low):
+    """he don't → he doesn't；I doesn't → I don't。"""
+    out = []
+    for m in re.finditer(r"\b(he|she|it|tom|mary)\s+(don't|do\s+not)\b", low):
+        out.append(_err(
+            "主谓一致", f"{m.group(1)} {m.group(2)}", f"{m.group(1)} doesn't",
+            f"{m.group(1)} 是第三人称单数，否定要用 doesn't，不是 don't。",
+            (m.start(2), m.end(2)), "doesn't", "heavy"))
+    for m in re.finditer(r"\b(i|we|you|they)\s+(doesn't|does\s+not)\b", low):
+        out.append(_err(
+            "主谓一致", f"{m.group(1)} {m.group(2)}", f"{m.group(1)} don't",
+            f"{m.group(1)} 不是第三人称单数，否定用 don't，不用 doesn't。",
+            (m.start(2), m.end(2)), "don't", "heavy"))
+    return out
+
+
+def _r_subj_verb(s, low):
+    """主谓一致：he/she/it + 动词原形 → 加 -s/-es。"""
+    out = []
+    if _PAST_MARKER.search(low):
+        return out  # 有过去时间标志时交给时态规则，避免把 went 又改回三单
+    for m in re.finditer(rf"\b{_S3}\s+({_S3_ADVS})([a-z]+)\b", low):
+        subj, verb = m.group(1), m.group(3)
+        if verb in _AUX_BE or verb in _MODALS or verb not in VERBS:
+            continue
+        if _find_subject3(low, m.start())[1]:
+            continue  # 并列主语（Tom and Mary go）是复数，不该加 -s
+        new = _third(verb)
+        out.append(_err(
+            "主谓一致", f"{subj} {verb}", f"{subj} {new}",
+            f"{subj} 是第三人称单数。在一般现在时里，它后面的动词要加 -s / -es，"
+            f"所以 {verb} 要写成 {new}。只有当句子是过去时，或者前面有 "
+            f"can / will / must 这类情态动词时，才用动词原形。",
+            (m.start(3), m.end(3)), new, "heavy"))
+    return out
+
+
+def _r_past_tense(s, low):
+    """有过去时间标志却用了动词原形 / 现在时。"""
+    out = []
+    if not _PAST_MARKER.search(low):
+        return out
+    for m in re.finditer(
+            r"\b(i|you|we|they|he|she|it|tom|mary)\s+(?:(?:" + _ADV_WORD + r")\s+)*([a-z]+)\b",
+            low):
+        verb = m.group(2)
+        if verb in _AUX_BE or verb in _MODALS or verb not in VERBS:
+            continue
+        new = _past(verb)
+        out.append(_err(
+            "时态", f"{m.group(1)} {verb}", f"{m.group(1)} {new}",
+            f"句子里有 yesterday / ago / last … 这样的过去时间，动词要用**过去式**。"
+            f"{verb} 的过去式是 {new}。",
+            (m.start(2), m.end(2)), new, "heavy"))
+    for m in re.finditer(r"\b(i|he|she|it)\s+(am|is)\b", low):
+        out.append(_err(
+            "时态", f"{m.group(1)} {m.group(2)}", f"{m.group(1)} was",
+            "句子说的是过去的事，be 动词要用过去式：I / he / she / it 都用 was。",
+            (m.start(2), m.end(2)), "was", "heavy"))
+    for m in re.finditer(r"\b(we|you|they)\s+(are)\b", low):
+        out.append(_err(
+            "时态", f"{m.group(1)} are", f"{m.group(1)} were",
+            "句子说的是过去的事，be 动词要用过去式：we / you / they 都用 were。",
+            (m.start(2), m.end(2)), "were", "heavy"))
+    return out
+
+
+# 介词规则：(正则, 替换(None=on + 组2 / "in"=in the + 组1), 说明)
+_PREP_RULES = [
+    (r"\bat\s+the\s+(morning|afternoon|evening)\b", "in",
+     "表示「在早上 / 下午 / 晚上」要用 in，固定说 in the morning / in the afternoon / in the evening。"),
+    (r"\bin\s+the\s+floor\b", "on the floor",
+     "在「地板上 / 几楼」用 on：on the floor、on the second floor。"),
+    (r"\bby\s+the\s+(bus|car|train|bike|plane|subway)\b", None,
+     "by + 交通工具中间不加冠词：by bus / by car / by train。"),
+    (r"\bgood\s+(in|with)\s+english\b", "good at English",
+     "表示「擅长…」用 be good at，介词固定是 at。"),
+    (r"\b(in|at)\s+(sunday|monday|tuesday|wednesday|thursday|friday|saturday)\b",
+     "weekday",
+     "星期几前面用 on：on Monday / on Sunday。"),
+    (r"\bin\s+the\s+weekend\b", "at the weekend",
+     "英式英语说 at the weekend，美式说 on the weekend；不要混成 in the weekend。"),
+]
+
+
+def _r_prep(s, low):
+    """高频介词错误。"""
+    out = []
+    for pat, repl, expl in _PREP_RULES:
+        for m in re.finditer(pat, low):
+            frag = m.group(0)
+            if repl == "in":
+                new = "in the " + m.group(1)
+            elif repl == "weekday":
+                new = "on " + m.group(2)
+            elif repl is None:
+                new = "by " + m.group(1)
+            else:
+                new = repl
+            if new == frag:
+                continue
+            out.append(_err("介词", frag, new, expl, m.span(), new, "medium"))
+    return out
+
+
+def _r_colloc(s, low):
+    """固定搭配与大小写。"""
+    out = []
+    for m in re.finditer(r"\bgo\s+(work|school|bed)\b", low):
+        new = "to " + m.group(1)
+        out.append(_err(
+            "固定搭配", m.group(0), f"go {new}",
+            "go 后面接目的地要加 to：go to work（去上班）/ go to school（去上学）"
+            "/ go to bed（去睡觉）。",
+            (m.start(1), m.end(1)), new, "medium"))
+    for m in re.finditer(r"\bmake\s+friend\b", low):
+        out.append(_err(
+            "固定搭配", "make friend", "make friends",
+            "「交朋友」是 make friends，friend 要用复数。",
+            m.span(), "make friends", "medium"))
+    # 单独的英文单词 i 必须大写（只在原句里真的是小写时才报）
+    for m in re.finditer(r"\bi\b", low):
+        if s[m.start():m.end()] == "i":
+            out.append(_err("其他", "i", "I",
+                            "英文里表示「我」的 I 永远要大写，不管它在句子的哪个位置。",
+                            m.span(), "I", "light"))
+            break
+    return out
+
+
+_AN_EXCEPT = {"university", "uniform", "useful", "useless", "user", "unit",
+              "union", "unique", "universal", "european", "one", "once",
+              "used", "usual", "utility", "euro"}
+_AN_REQUIRE = {"hour", "honest", "honor", "honour", "heir", "honorable"}
+
+
+def _r_article(s, low):
+    """a / an 误用。"""
+    out = []
+    for m in re.finditer(r"\ba\s+([a-z][a-z-]*)\b", low):
+        w = m.group(1)
+        if w in _AN_EXCEPT:
+            continue
+        if w[0] in "aeiou" or w in _AN_REQUIRE:
+            tip = (f"{w} 的 h 不发音，实际以元音开头，前面要用 an。"
+                   if w in _AN_REQUIRE else
+                   f"{w} 以元音开头，前面要用 an 不是 a（看读音，不是看字母）。")
+            out.append(_err("冠词", f"a {w}", f"an {w}", tip,
+                            m.span(), f"an {w}", "medium"))
+    for m in re.finditer(r"\ban\s+([a-z][a-z-]*)\b", low):
+        w = m.group(1)
+        if w in _AN_EXCEPT:
+            out.append(_err(
+                "冠词", f"an {w}", f"a {w}",
+                f"{w} 虽然以字母 u 开头，但读音是 /juː/（辅音开头），前面用 a 不用 an。",
+                m.span(), f"a {w}", "medium"))
+    return out
+
+
+_PLURAL_TRIGGER = {
+    "friend": ["many", "these", "those", "two", "three", "several", "four", "five"],
+    "book": ["many", "these", "those", "two", "three", "several"],
+    "apple": ["many", "two", "three", "some", "four"],
+    "egg": ["many", "two", "three", "some"],
+    "pen": ["many", "two", "three", "some"],
+    "student": ["many", "these", "those", "two", "three", "several"],
+    "day": ["many", "two", "three", "several", "seven", "five"],
+    "hour": ["many", "two", "three", "several"],
+    "idea": ["many", "these", "those", "two", "three"],
+    "child": ["many", "these", "those", "two", "three"],
+}
+
+
+def _r_plural(s, low):
+    """数量词后面的可数名词应当用复数。"""
+    out = []
+    for bare, triggers in _PLURAL_TRIGGER.items():
+        for tg in triggers:
+            for m in re.finditer(rf"\b{tg}\s+{bare}\b", low):
+                new = f"{tg} {_plural_of(bare)}"
+                out.append(_err(
+                    "单复数", f"{tg} {bare}", new,
+                    f"{tg} 表示「不止一个」，后面的可数名词 {bare} 要用复数 "
+                    f"{_plural_of(bare)}。",
+                    m.span(), new, "medium"))
+    return out
+
+
+# 规则按优先级排列：越靠前越具体，重叠区间里先命中的胜出
+RULES = [
+    _r_be_verb,          # I am agree / He is go
+    _r_very_verb,        # I very like
+    _r_very_much_order,  # like very much this movie
+    _r_suggest_to,       # suggested me to go
+    _r_look_forward,     # look forward to see
+    _r_make_let_to,      # made me to cry
+    _r_redundant,        # can able to / discuss about / ...
+    _r_although_but,     # Although ..., but ...
+    _r_aux_agree,        # he don't
+    _r_subj_verb,        # he go -> he goes
+    _r_past_tense,       # yesterday + go -> went
+    _r_verb_pattern,     # like swim -> like swimming
+    _r_prep,             # at the morning
+    _r_colloc,           # go work -> go to work
+    _r_article,          # a apple -> an apple
+    _r_plural,           # two friend -> two friends
+]
+
+
+def _dedupe(errors):
+    """去掉区间重叠的错误；越靠前（越具体）的规则胜出，同位置取更长的区间。"""
+    accepted = []
+    for e in sorted(errors, key=lambda x: (x["span"][0], -(x["span"][1] - x["span"][0]))):
+        a, b = e["span"]
+        if any(a < y["span"][1] and y["span"][0] < b for y in accepted):
+            continue
+        accepted.append(e)
+    return sorted(accepted, key=lambda x: x["span"][0])
+
+
+def _apply(s, errors):
+    """按区间从右往左把修正写回原句。"""
+    out = s
+    for e in sorted(errors, key=lambda x: -x["span"][0]):
+        a, b = e["span"]
+        repl = e["repl"]
+        if a == 0 and out[:1].isupper() and repl[:1].islower():
+            repl = repl[0].upper() + repl[1:]
+        out = out[:a] + repl + out[b:]
+    return re.sub(r"\s{2,}", " ", out).replace(" ,", ",").replace(" .", ".").strip()
+
+
+# =====================================================================
+# 优化建议（只在**没有错误**时给出，绝不判错、绝不扣分）
+# =====================================================================
+
+_DEGREE = ("really", "very much", "a lot", "so much", "deeply", "truly",
+           "quite", "absolutely", "definitely", "extremely", "particularly",
+           "especially", "greatly", "totally", "pretty")
+_CONNECT = ("because", "so", "and", "but", "although", "when", "if", "which",
+            "that", "while", "after", "before", "since", "however", "though")
+
+
+def _optimizations(s, low):
+    """正确句的可优化表达（仅供参考，不影响判定与分数）。"""
+    opts = []
+    if s and s[-1] not in ".!?":
+        opts.append({
+            "where": "句末", "suggestion": s + ".",
+            "reason": "英文句子末尾要加句号。这是书写习惯，不是语法错误。",
+        })
+    m = re.search(r"\b(i|you|we|they|he|she)\s+(like|likes|love|loves|enjoy|enjoys)\b",
+                  low)
+    if m and not any(d in low for d in _DEGREE):
+        verb = m.group(2)
+        a, b = m.start(2), m.end(2)
+        more = "a lot" if verb.endswith("s") else "very much"
+        opts.append({
+            "where": verb,
+            "suggestion": s[:a] + "really " + s[a:b] + s[b:],
+            "reason": f"原句完全正确。{verb} 前面加 really 只是让语气更强一点，"
+                      f"不代表原句有错；也可以说 {verb} ... {more}。",
+        })
+    words = re.findall(r"[A-Za-z']+", s)
+    if len(words) <= 5 and not any(re.search(r"\b" + c + r"\b", low)
+                                   for c in _CONNECT):
+        opts.append({
+            "where": "整句", "suggestion": "",
+            "reason": "句子没错，但比较短。加上 because（原因）或时间、地点，"
+                      "一句话就能带出两段信息，练到更多结构。",
+        })
+    return opts[:2]
+
+
+# =====================================================================
+# 分析入口（纯函数，不碰数据库，便于测试）
+# =====================================================================
+
+def analyze(sentence):
+    """纯本地分析，返回结构化批改结果（不写库、无副作用）。"""
+    raw = _normalize((sentence or "").strip())
+    if not raw:
+        return None
+    low = _safe_lower(raw)
+
+    raw_errors = []
+    for rule in RULES:
+        try:
+            raw_errors.extend(rule(raw, low) or [])
+        except Exception as e:  # 单条规则出错不影响整体批改
+            print("[ai_service] 规则 %s 执行失败(已跳过): %s" % (rule.__name__, e))
+    errors = _dedupe(raw_errors)
+    corrected = _apply(raw, errors) if errors else raw
+
+    if errors:
+        score = BASE_SCORE - sum(PENALTY.get(e["severity"], 20) for e in errors)
+        score = max(MIN_SCORE, min(100, score))
+    else:
+        score = BASE_SCORE
+        if len(re.findall(r"[A-Za-z']+", raw)) >= 8:
+            score += 5
+        if any(re.search(r"\b" + c + r"\b", low) for c in _CONNECT):
+            score += 5
+        score = min(100, score)
+
+    ok = not errors
+    return {
+        "original": raw,
+        "corrected": corrected,
+        "ok": ok,
+        "score": score,
+        "verdict": "正确" if ok else "有错误",
+        "level": "基本掌握" if score >= PASS_LINE else "需要改进",
+        "error_type": errors[0]["type"] if errors else "",
+        "explanation": ("；".join(e["explanation"] for e in errors)
+                        if errors else "没有明显错误。"),
+        "errors": [{"type": e["type"], "where": e["where"],
+                    "correct": e["correct"], "explanation": e["explanation"]}
+                   for e in errors],
+        "optimizations": _optimizations(raw, low) if ok else [],
+    }
+
+
+# =====================================================================
+# 批改主入口：分析 + 落库 + 错题本
+# =====================================================================
+
+def correct_sentence(sentence, stage=0, week=3, day=1, word="", task_key=""):
+    """纯本地批改主入口。
+
+    - sentences：每次作答追加一行，attempt 递增，**绝不覆盖上一次答案**。
+    - errors（错题本）：只有真错才写；同一个 word + 错误片段累加 times；
+      该词后来写对了只把 fixed 标成 1，**不删除**历史记录。
+    全程无任何 AI 参与。
+    """
+    res = analyze(sentence)
+    if res is None:
+        return None
+
+    word = (word or "").strip()
+    task_key = (task_key or "").strip()
+    now = ts()
+
     conn = get_conn()
-    cur = conn.execute(
-        "INSERT INTO sentences (stage, week, day, original, corrected, error_type,"
-        " explanation, ai_source, good, created_at) VALUES (?,?,?,?,?,?,?,?,?,?)",
-        (stage, week, day, sentence, result["corrected"], primary_type,
-         explanation, source, 1 if good else 0, ts()))
-    sentence_id = cur.lastrowid
+    row = conn.execute(
+        "SELECT MAX(attempt) a FROM sentences WHERE stage=? AND week=? AND day=?"
+        " AND task_key=?", (stage, week, day, task_key)).fetchone()
+    attempt = int(row["a"] or 0) + 1 if row else 1
 
-    # 错误写入错误库
-    need_review = False
-    for e in errors:
-        conn.execute(
-            "INSERT INTO errors (error_type, original, corrected, explanation,"
-            " source, created_at) VALUES (?,?,?,?,?,?)",
-            (e["type"], e.get("original", ""), e.get("correct", ""),
-             e.get("explanation", ""), "sentence", ts()))
-        need_review = True
+    sentence_id = insert_get_id(
+        conn,
+        "INSERT INTO sentences (stage, week, day, word, task_key, attempt,"
+        " original, corrected, error_type, explanation, ai_source, good, score,"
+        " verdict, errors_json, opts_json, created_at)"
+        " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        (stage, week, day, word, task_key, attempt, res["original"],
+         res["corrected"], res["error_type"], res["explanation"], "rule",
+         1 if res["ok"] else 0, res["score"], res["verdict"],
+         json.dumps(res["errors"], ensure_ascii=False),
+         json.dumps(res["optimizations"], ensure_ascii=False), now))
 
-    # 为错误类型安排一张"高频错误"复习卡
+    # 错题本：只有真错才写入；同一 word + 错误片段只是累加次数
+    bank_ids = []
+    for e in res["errors"]:
+        where, etype = e["where"], e["type"]
+        exist = conn.execute(
+            "SELECT id, times FROM errors WHERE source='sentence' AND word=?"
+            " AND error_text=? AND error_type=?", (word, where, etype)).fetchone()
+        if exist:
+            conn.execute(
+                "UPDATE errors SET times=?, last_at=?, sentence_text=? WHERE id=?",
+                (int(exist["times"] or 0) + 1, now, res["original"], exist["id"]))
+            bank_ids.append(exist["id"])
+        else:
+            bank_ids.append(insert_get_id(
+                conn,
+                "INSERT INTO errors (error_type, original, corrected, explanation,"
+                " source, created_at, word, task_key, error_text, sentence_text,"
+                " times, first_at, last_at, fixed)"
+                " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                (etype, where, e["correct"], e["explanation"], "sentence", now,
+                 word, task_key, where, res["original"], 1, now, now, 0)))
+
+    # 写对了 → 把该词此前未改正的错题标记为已改正（不删除）
+    fixed_ids = []
+    if res["ok"] and word:
+        for r in conn.execute(
+                "SELECT id FROM errors WHERE source='sentence' AND word=?"
+                " AND fixed=0", (word,)).fetchall():
+            conn.execute("UPDATE errors SET fixed=1, fixed_at=? WHERE id=?",
+                         (now, r["id"]))
+            fixed_ids.append(r["id"])
+
+    # 有错 → 安排一张「高频错误」复习卡
+    need_review = bool(res["errors"])
     if need_review:
-        schedule_review(conn, "error", primary_type,
-                        f"改正错误：{result['corrected']}",
-                        result["corrected"], stage, week, day)
+        schedule_review(conn, "error", res["error_type"],
+                        f"改正错误：{res['corrected']}",
+                        res["corrected"], stage, week, day)
 
     conn.commit()
     conn.close()
 
-    return {
+    out = dict(res)
+    out.update({
         "sentence_id": sentence_id,
-        "original": sentence,
-        "corrected": result["corrected"],
-        "good": good,
-        "error_type": primary_type,
-        "explanation": explanation,
-        "errors": errors,
-        "ai_source": source,
+        "attempt": attempt,
+        "word": word,
+        "task_key": task_key,
+        "created_at": now,
+        "good": res["ok"],
+        "ai_source": "rule",
         "needs_review": need_review,
         "to_error_bank": need_review,
-        "expand_hint": expand_hint,
-    }
+        "error_bank_ids": bank_ids,
+        "fixed_error_ids": fixed_ids,
+        "expand_hint": (res["optimizations"][0]["reason"]
+                        if res["optimizations"] else ""),
+    })
+    return out
 
+
+def attempts_of(conn, stage, week, day, task_key):
+    """取某道题的全部作答历史（按 attempt 升序）。"""
+    rows = conn.execute(
+        "SELECT id, attempt, original, corrected, score, verdict, good,"
+        " error_type, errors_json, opts_json, created_at"
+        " FROM sentences WHERE stage=? AND week=? AND day=? AND task_key=?"
+        " ORDER BY attempt, id",
+        (stage, week, day, task_key)).fetchall()
+    out = []
+    for r in rows:
+        try:
+            errs = json.loads(r["errors_json"] or "[]")
+        except Exception:
+            errs = []
+        try:
+            opts = json.loads(r["opts_json"] or "[]")
+        except Exception:
+            opts = []
+        out.append({
+            "id": r["id"], "attempt": r["attempt"], "sentence": r["original"],
+            "corrected": r["corrected"], "score": r["score"],
+            "verdict": r["verdict"] or ("正确" if r["good"] else "有错误"),
+            "ok": bool(r["good"]), "error_type": r["error_type"],
+            "errors": errs, "optimizations": opts, "created_at": r["created_at"],
+        })
+    return out
+
+
+def today_attempts(conn, stage, week, day, since):
+    """当天全部作答，按 task_key 分组（用于页面刷新后回填历史）。"""
+    rows = conn.execute(
+        "SELECT id, word, task_key, attempt, original, corrected, score,"
+        " verdict, good, error_type, errors_json, opts_json, created_at"
+        " FROM sentences WHERE stage=? AND week=? AND day=? AND created_at>=?"
+        " ORDER BY id", (stage, week, day, since)).fetchall()
+    groups = {}
+    for r in rows:
+        tk = r["task_key"] or f"free:{r['id']}"
+        try:
+            errs = json.loads(r["errors_json"] or "[]")
+        except Exception:
+            errs = []
+        try:
+            opts = json.loads(r["opts_json"] or "[]")
+        except Exception:
+            opts = []
+        groups.setdefault(tk, {"task_key": tk, "word": r["word"] or "",
+                               "attempts": []})
+        groups[tk]["attempts"].append({
+            "id": r["id"], "attempt": r["attempt"], "sentence": r["original"],
+            "corrected": r["corrected"], "score": r["score"],
+            "verdict": r["verdict"] or ("正确" if r["good"] else "有错误"),
+            "ok": bool(r["good"]), "error_type": r["error_type"],
+            "errors": errs, "optimizations": opts, "created_at": r["created_at"],
+        })
+    return list(groups.values())

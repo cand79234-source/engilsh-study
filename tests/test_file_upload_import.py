@@ -1,4 +1,10 @@
-"""新功能测试：导入弹窗上传 docx 文件 → 提取回填 → 解析导入 → 学习页可见。"""
+"""新功能测试：导入弹窗上传 docx 文件 → 提取回填 → 解析导入 → 学习页可见。
+
+原来这里硬编码了一份临时上传的 docx 绝对路径，那个文件早已不存在，
+测试一跑就 FileNotFoundError。现在改为运行时自动生成一份等价 fixture
+（同样是「第2周｜工作与日常｜120词」+ 6 个 Day 分组 + 110 个词），
+测试自包含，不依赖任何外部文件。
+"""
 import os, sys
 os.environ["EOS_DB"] = "/tmp/eos_file_upload_test.db"
 if os.path.exists("/tmp/eos_file_upload_test.db"):
@@ -8,7 +14,47 @@ sys.path.insert(0, "backend")
 from playwright.sync_api import sync_playwright
 
 BASE = "http://127.0.0.1:8000"
-DOCX = "/root/uploads/1788357014841193152-写作.docx"
+DOCX = "/tmp/eos_import_fixture.docx"
+
+# Day 名称固定 6 天，词数合计 110（Day1~Day5 各 18，Day6 20）
+_DAY_NAMES = ["第一天上班", "同事与会议", "项目与进度", "邮件与汇报",
+              "客户与谈判", "周末与生活"]
+_WORDS = """
+colleague manager schedule deadline meeting agenda report project budget client
+contract invoice proposal feedback summary progress deliver assign approve review
+revise submit confirm postpone reschedule attend prepare present discuss negotiate
+clarify update follow remind arrange handle solve improve reduce increase achieve
+target result issue risk plan strategy priority resource workload overtime
+promotion salary bonus benefit training skill experience position department
+branch headquarters supplier partner competitor market customer service quality
+standard process system platform tool document template version backup access
+permission password account profile setting notice policy rule guideline
+procedure record archive folder attachment reply forward inbox outbox draft
+signature calendar reminder invitation venue lunch coffee weekend holiday
+""".split()
+
+
+def _ensure_fixture():
+    """生成一份与用户真实 docx 结构等价的导入文件。"""
+    if os.path.exists(DOCX):
+        os.remove(DOCX)
+    from docx import Document
+    doc = Document()
+    doc.add_paragraph("第2周｜工作与日常｜120词")
+    idx = 0
+    for d, name in enumerate(_DAY_NAMES, start=1):
+        doc.add_paragraph(f"Day {d}｜{name}")
+        n = 20 if d == 6 else 18
+        for _ in range(n):
+            w = _WORDS[idx % len(_WORDS)]
+            idx += 1
+            doc.add_paragraph(f"{w} — 释义{idx}")
+            doc.add_paragraph(f"- This is a sentence about {w}.")
+            doc.add_paragraph(f"这是关于{w}的句子。")
+    doc.save(DOCX)
+
+
+_ensure_fixture()
 
 passed = failed = 0
 def check(name, cond, extra=""):

@@ -1,4 +1,12 @@
-"""手机视口测试 - 新3入口简洁版 UI + 纯本地纠错 + 贴词匹配 + 周自动填充"""
+"""手机视口测试 - 新3入口简洁版 UI + 纯本地纠错 + 贴词匹配 + 周自动填充
+
+⚠️ 本文件已过时（针对两代之前的界面），第 3 步之后不可用。
+   它引用的 #imp_words、「设为本周词汇」等元素在当前前端已全部不存在，
+   前 2 步（学习页加载 / 单词展开）仍有效并通过。
+   当前界面的等价覆盖见 tests/test_new_ui_v2.py，
+   造句相关覆盖见 tests/test_sentence_e2e.py + tests/test_sentence_v2.py。
+   保留此文件仅作历史参考，后续要么按新 UI 重写，要么删除。
+"""
 import time
 from playwright.sync_api import sync_playwright
 

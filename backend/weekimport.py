@@ -118,6 +118,28 @@ def _bank_colloc(conn, word, phrase, meaning):
     return True
 
 
+def _resolve_stage(text_stage, forced_stage):
+    """确定这次导入落到哪个阶段。
+
+    优先级：文本里明确写的「阶段N」> 调用方传入的 forced_stage > 当前进度所在阶段。
+
+    历史 bug：parse_import 在文本没写阶段时返回 stage=None（键存在、值为 None），
+    于是 `parsed.get("stage", 0)` 的默认值 0 根本不生效，None 被直接写进
+    weeks.stage，撞 NOT NULL 约束 → 线上导入接口 500。
+    前端导入从来不传 stage，所以只要粘贴的文本没写「阶段N」就必崩。
+    另外原来的顺序把 forced_stage 排在文本前面，与「文本优先」的约定相反，
+    会把明确写了阶段的内容错误地塞进前端当前阶段。
+    """
+    if text_stage is not None:
+        return int(text_stage)
+    if forced_stage is not None:
+        return int(forced_stage)
+    try:
+        return int(svc.get_progress().get("stage") or 1)
+    except Exception:
+        return 1
+
+
 def import_rich_week(text, forced_stage=None, forced_week=None):
     """主入口。返回导入结果摘要（供前端展示成功/警告/分组统计）。
 
@@ -127,7 +149,7 @@ def import_rich_week(text, forced_stage=None, forced_week=None):
     from importer import parse_import
     parsed = parse_import(text)
     week = parsed.get("week") or forced_week
-    stage = forced_stage if forced_stage is not None else parsed.get("stage", 0)
+    stage = _resolve_stage(parsed.get("stage"), forced_stage)
     title = parsed.get("title", "")
     groups = parsed.get("groups", [])
     if not groups:
@@ -293,7 +315,7 @@ def import_rich_week_merge(text, forced_stage=None, forced_week=None):
     from importer import parse_import
     parsed = parse_import(text)
     week = parsed.get("week") or forced_week
-    stage = forced_stage if forced_stage is not None else parsed.get("stage", 0)
+    stage = _resolve_stage(parsed.get("stage"), forced_stage)
     title = parsed.get("title", "")
     groups = parsed.get("groups") or []
     if not groups:
