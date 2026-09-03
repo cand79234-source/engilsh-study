@@ -63,6 +63,8 @@ h2{font-size:15px;font-weight:700;display:flex;align-items:center;gap:8px}
 .colloc{background:#e0e7ff;color:var(--primary);border-radius:6px;padding:2px 9px;font-size:13px;font-weight:800;display:inline-block;margin:3px 6px 3px 0;cursor:pointer;user-select:none;border:1px solid #cdd6f6}
 .colloc:active{background:var(--primary);color:#fff;transform:scale(.96)}
 .hl{color:var(--primary);font-weight:800;background:transparent}
+.tk{cursor:pointer;border-bottom:1px dotted rgba(59,130,246,.4)}
+.tk:active{background:var(--primary-bg)}
 .detail .row.exrow .tran .hl{background:none}
 .detail .row.exrow{margin:9px 0 0;padding-top:8px;border-top:1px dashed #e0e7ff}
 .exrow .tran{margin-left:0}
@@ -160,6 +162,7 @@ document.addEventListener('click', function(e){
   else if (act === 'toggleW') toggleW(v);
   else if (act === 'master') master(v);
   else if (act === 'openErr') openErr(v);
+  else if (act === 'wlookup') wordLookup(v);
   if (act === 'showColloc') showColloc(v, el.getAttribute('data-val2') || '');
   else if (act === 'check') submitSentence(v);
   else if (act === 'redo') redoSentence(v);
@@ -368,12 +371,16 @@ function hlColloc(sentence, phrases){
       if(done)break;
     }
   }
-  // 拼接
+  // 拼接：每个英文词包成可点 span（欧陆式点词查义），搭配词组保持加粗
   let out='';
   for(let i=0;i<segs.length;i++){
     const s=segs[i];
-    if(marked[i]&&s.w!=null)out+='<b class="hl">'+esc(s.txt)+'</b>';
-    else out+=esc(s.txt);
+    if(s.w!=null){
+      const inner = marked[i] ? '<b class="hl">'+esc(s.txt)+'</b>' : esc(s.txt);
+      out += '<span class="tk" data-act="wlookup" data-val="'+esc(s.txt.toLowerCase())+'">'+inner+'</span>';
+    } else {
+      out += esc(s.txt);
+    }
   }
   return out;
 }
@@ -391,6 +398,30 @@ function showColloc(phrase,meaning){
   </div>`;
   document.body.appendChild(ov);
   requestAnimationFrame(()=>ov.classList.add('show'));
+}
+/* 欧陆式点词查义：点例句里的单词，弹层显示音标/词性/释义 + 🔊 朗读。本地词典，无 AI。 */
+async function wordLookup(word){
+  const ov=document.createElement('div');ov.className='overlay';
+  ov.onclick=(e)=>{if(e.target===ov)ov.remove();};
+  ov.style.cssText='align-items:flex-end;z-index:97;display:flex';
+  ov.innerHTML=`<div class="sheet" style="max-width:480px">
+    <button class="close" onclick="this.closest('.overlay').remove()">✕</button>
+    <div style="font-size:18px;font-weight:800;color:var(--primary)">${esc(word)}
+      <span class="spk" style="margin-left:4px" data-act="speak" data-val="${esc(word)}">🔊</span></div>
+    <div id="wlookup_body" style="margin-top:8px;font-size:14px;color:var(--muted)">查询中…</div>
+  </div>`;
+  document.body.appendChild(ov);
+  requestAnimationFrame(()=>ov.classList.add('show'));
+  try{
+    const r=await api('/dict/lookup',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({word})});
+    const body=ov.querySelector('#wlookup_body');
+    if(!r||!r.found){ body.textContent='本地词典未收录该词'; return; }
+    const ph=r.phonetic?`/${esc(r.phonetic)}/ `:'';
+    const pos=r.pos?`<span class="badge" style="background:var(--primary-bg);color:var(--primary)">${esc(r.pos)}</span> `:'';
+    body.innerHTML=`<div style="font-size:15px;line-height:1.7;margin-top:4px">${pos}${ph}${esc(r.meaning)||'（无释义）'}</div>`;
+  }catch(e){
+    const body=ov.querySelector('#wlookup_body'); if(body)body.textContent='查询失败，请重试';
+  }
 }
 async function toggleW(word){state.openWord=(state.openWord===word)?null:word;renderWordsInto();}
 function renderWordsInto(){const t=state.today;document.getElementById('wordlist').innerHTML=renderWords(t.words);}

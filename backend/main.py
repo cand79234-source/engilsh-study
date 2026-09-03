@@ -360,6 +360,24 @@ def dict_count():
     return {"count": svc._dictionary_count()}
 
 
+@app.post("/api/dict/lookup")
+def dict_lookup(body: dict = None):
+    """欧陆式点词查义：从本地词典(ECDICT)返回音标/词性/中文释义。无 AI、无外部调用。"""
+    word = ((body or {}).get("word", "") or "").strip()
+    if not word or len(word) > 60:
+        return {"found": False, "word": word}
+    r = svc.lookup_word(word)
+    if not r:
+        return {"found": False, "word": word}
+    return {
+        "found": True,
+        "word": r.get("word", word),
+        "phonetic": r.get("phonetic", "") or "",
+        "pos": r.get("pos", "") or "",
+        "meaning": r.get("meaning", "") or "",
+    }
+
+
 @app.get("/api/dbinfo")
 def dbinfo():
     """只读诊断：确认当前连的是 Neon(PostgreSQL) 还是本地 SQLite。
