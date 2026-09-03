@@ -466,14 +466,6 @@ def init_db():
         UNIQUE(word, phrase)
     );
 
-    CREATE INDEX IF NOT EXISTS idx_reviews_due ON reviews(next_due);
-    CREATE INDEX IF NOT EXISTS idx_errors_type ON errors(error_type);
-    CREATE INDEX IF NOT EXISTS idx_errors_word ON errors(word);
-    CREATE INDEX IF NOT EXISTS idx_sentences_day ON sentences(stage, week, day);
-    CREATE INDEX IF NOT EXISTS idx_sentences_task ON sentences(task_key);
-    CREATE INDEX IF NOT EXISTS idx_dict_word ON dictionary(word);
-    CREATE INDEX IF NOT EXISTS idx_ex_word ON example_sentences(word);
-    CREATE INDEX IF NOT EXISTS idx_colloc_word ON collocations(word);
     """)
 
     # 初始化进度（仅一条记录）
@@ -523,6 +515,23 @@ def init_db():
         "fixed": "INTEGER DEFAULT 0",
         "fixed_at": "TEXT DEFAULT ''",
     })
+
+    # 建索引（必须在 _ensure_columns 补列之后：旧库缺 word/task_key 时，先建索引会报
+    # column "word" does not exist，导致启动崩溃、Render 部署失败 update_failed）
+    for _idx in (
+        "CREATE INDEX IF NOT EXISTS idx_reviews_due ON reviews(next_due)",
+        "CREATE INDEX IF NOT EXISTS idx_errors_type ON errors(error_type)",
+        "CREATE INDEX IF NOT EXISTS idx_errors_word ON errors(word)",
+        "CREATE INDEX IF NOT EXISTS idx_sentences_day ON sentences(stage, week, day)",
+        "CREATE INDEX IF NOT EXISTS idx_sentences_task ON sentences(task_key)",
+        "CREATE INDEX IF NOT EXISTS idx_dict_word ON dictionary(word)",
+        "CREATE INDEX IF NOT EXISTS idx_ex_word ON example_sentences(word)",
+        "CREATE INDEX IF NOT EXISTS idx_colloc_word ON collocations(word)",
+    ):
+        try:
+            c.execute(_idx)
+        except Exception as _e:
+            print("[db.init_db] 建索引跳过:", _idx, _e)
 
     # 内置基础词库导入（幂等；复用当前 conn，运行时 import 避免循环引用）
     try:
