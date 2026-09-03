@@ -13,7 +13,22 @@ DB_PATH = os.environ.get("EOS_DB", os.path.join(os.path.dirname(__file__), "..",
 
 # ---- Postgres 适配（DATABASE_URL 存在时启用，Neon 等托管库）----
 DATABASE_URL = os.environ.get("DATABASE_URL")
-USING_PG = bool(DATABASE_URL)
+
+
+def _using_pg():
+    """运行时判断是否使用 Postgres：每次连接重新读取环境变量，避免导入期一次性决定后无法纠正。
+    生产环境若漏配 DATABASE_URL，由下方 FATAL 校验拦截，绝不静默回落 SQLite。"""
+    return bool(os.environ.get("DATABASE_URL"))
+
+
+# 生产环境防护：运行在 Render 却没配 DATABASE_URL → 直接拒绝启动。
+# 否则会静默写入临时 SQLite（Render 重启/重部署即丢数据），且日志毫无提示。
+if os.environ.get("RENDER") and not os.environ.get("DATABASE_URL"):
+    raise SystemExit(
+        "[db] FATAL: 检测到运行环境为 Render，但未设置 DATABASE_URL。\n"
+        "为避免数据写入临时 SQLite（重启即丢），已拒绝启动。\n"
+        "请在 Render 控制台 Environment 中手动粘贴 Neon 连接串(postgresql://...)，然后 Redeploy。"
+    )
 
 
 def _mask_url(u):
@@ -26,7 +41,7 @@ def _mask_url(u):
 
 # 启动时明确打印当前连的是哪个库。没有这行的话，一旦 Render 上漏配 DATABASE_URL，
 # 代码会静默回落到本地 SQLite（重启即丢数据），而日志里完全看不出来。
-if USING_PG:
+if _using_pg():
     print("[db] 数据库 = PostgreSQL (Neon): %s" % _mask_url(DATABASE_URL))
 else:
     print("[db] ⚠️ 未检测到 DATABASE_URL，当前使用本地 SQLite 文件: %s" % DB_PATH)
@@ -266,7 +281,7 @@ def insert_get_id(conn, sql, params=None):
     SQLite 用 lastrowid；PostgreSQL 下 psycopg2 的 lastrowid 恒为 0，
     必须走 `INSERT ... RETURNING id`，否则拿到的 id 永远是 0。
     """
-    if USING_PG:
+    if _using_pg():
         cur = conn._raw.cursor()
         cur.execute(_tr(sql).rstrip().rstrip(";") + " RETURNING id", _norm(params))
         row = cur.fetchone()
@@ -276,7 +291,7 @@ def insert_get_id(conn, sql, params=None):
 
 
 def get_conn():
-    if USING_PG:
+    if _using_pg():
         import psycopg2
         raw = psycopg2.connect(DATABASE_URL, connect_timeout=15)
         return _PGConn(raw)
@@ -540,7 +555,7 @@ def init_db():
 
 def _ensure_columns(conn, table, columns):
     """给已存在的表补列。columns: {列名: SQL类型}。"""
-    if USING_PG:
+    if _using_pg():
         existing = {r[0] for r in conn.execute(
             "SELECT column_name FROM information_schema.columns WHERE table_name = %s",
             (table,)).fetchall()}

@@ -379,9 +379,9 @@ def dbinfo():
     finally:
         conn.close()
     return {
-        "engine": "postgresql" if _db.USING_PG else "sqlite",
-        "target": _db._mask_url(_db.DATABASE_URL) if _db.USING_PG else _db.DB_PATH,
-        "using_pg": bool(_db.USING_PG),
+        "engine": "postgresql" if _db._using_pg() else "sqlite",
+        "target": _db._mask_url(os.environ.get("DATABASE_URL")) if _db._using_pg() else _db.DB_PATH,
+        "using_pg": bool(_db._using_pg()),
         "dictionary_words": total,
         "themed_words": themed,
     }
