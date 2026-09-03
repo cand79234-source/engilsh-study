@@ -1,13 +1,11 @@
 """English OS - 个人英语学习 OS 后端入口（纯本地，无 AI）。"""
-import hmac
 import json
 import re
 from datetime import date
 from fastapi import FastAPI, File, Form, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse, JSONResponse
-from starlette.middleware.base import BaseHTTPMiddleware
+from fastapi.responses import FileResponse
 import os
 
 from db import init_db, get_conn, ts, today_str, STAGES
@@ -20,65 +18,7 @@ app = FastAPI(title="English OS")
 app.add_middleware(
     CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
-# ---------- 访问口令（公网部署保护） ----------
-# 不设 EOS_TOKEN → 完全开放（本地个人使用，run.sh 默认如此）。
-# 设了 EOS_TOKEN → 所有 /api/* 写/读接口都要求携带口令，否则 401。
-# 口令通过请求头 X-Auth-Token 或 Authorization: Bearer <token> 传递。
-ACCESS_TOKEN = (os.environ.get("EOS_TOKEN") or "").strip()
-# 健康检查/保活不鉴权：Render 的 healthCheck 与 UptimeRobot 无法带自定义头
-PUBLIC_API_PATHS = {"/api/health"}
-
-
-class TokenAuthMiddleware(BaseHTTPMiddleware):
-    """公网部署时防止任何人随意读写你的学习数据。"""
-
-    async def dispatch(self, request, call_next):
-        if not ACCESS_TOKEN:
-            return await call_next(request)          # 本地模式：不鉴权
-        path = request.url.path
-        if not path.startswith("/api/") or path in PUBLIC_API_PATHS:
-            return await call_next(request)
-        token = (request.headers.get("x-auth-token") or "").strip()
-        if not token:
-            auth = request.headers.get("authorization") or ""
-            if auth.lower().startswith("bearer "):
-                token = auth[7:].strip()
-        if not hmac.compare_digest(token, ACCESS_TOKEN):
-            return JSONResponse(
-                {"ok": False, "error": "未授权：缺少或错误的访问口令（EOS_TOKEN）。"},
-                status_code=401)
-        return await call_next(request)
-
-
-# 注意顺序：CORS 先注册（外层，负责 OPTIONS 预检），鉴权后注册（内层）
-app.add_middleware(TokenAuthMiddleware)
-
 init_db()
-
-
-def _first_collocation(body):
-    """从请求体里取一个搭配短语（用于拼 SRS 复习提示）。
-
-    项目统一契约是 collocations: [{"phrase":..., "meaning":...}, ...]，
-    但历史上前端/脚本发过单数字符串 collocation，这里两种都兼容。
-    """
-    collocs = body.get("collocations")
-    if isinstance(collocs, list) and collocs:
-        c0 = collocs[0]
-        if isinstance(c0, dict):
-            return (c0.get("phrase") or "").strip()
-        return str(c0 or "").strip()
-    return (body.get("collocation") or "").strip()
-
-
-@app.get("/api/health")
-def health():
-    """健康检查 / 保活探针（永不鉴权）。
-
-    Render 的 healthCheckPath 与 UptimeRobot 都打这个地址：它们无法携带
-    自定义请求头，所以必须排除在鉴权之外（只返回存活状态，不含任何学习数据）。
-    """
-    return {"ok": True, "auth_required": bool(ACCESS_TOKEN)}
 
 
 # ---------- 主页 ----------
@@ -150,9 +90,9 @@ def today():
             "SELECT * FROM day_items WHERE stage=? AND week=? AND day=? AND kind='vocab' AND ref_key=?",
             (p["stage"], p["week"], p["day"], key)).fetchone()
         mastered = row["mastered"] if row else 0
-        # 兼容两种内容形态，对外统一成 A 的形态：
+        # 兼容两种内容形态：
         #  A) 富文本导入(块状)：examples=[{sentence,translation}], collocations=[{phrase,meaning}]
-        #  B) 早期/自动填充：example+translation 字符串、collocation 字符串
+        #  B) 早期/自动填充：example+translation 字符串
         examples = w.get("examples") or []
         if not examples and (w.get("example") or w.get("extra_examples")):
             first = w.get("example") or ""
@@ -160,12 +100,19 @@ def today():
             examples = [{"sentence": first, "translation": w.get("translation", "")}] \
                 if first else []
             examples += [{"sentence": s, "translation": ""} for s in extras]
-        collocations = w.get("collocations") or []
-        if not collocations and w.get("collocation"):
-            collocations = [{"phrase": w.get("collocation"), "meaning": ""}]
+        _pos = w.get("pos", "")
+        _ph = w.get("phonetic", "")
+        # 导入词常缺词性/音标：从全量词典补（只读补全，不落库，不影响合并/导入逻辑）
+        if not _pos or not _ph:
+            drow = conn.execute(
+                "SELECT pos, phonetic FROM dictionary WHERE word=?", (key,)).fetchone()
+            if drow:
+                _pos = _pos or (drow["pos"] or "")
+                _ph = _ph or (drow["phonetic"] or "")
         day_items[key] = {
-            "word": key, "meaning": w.get("meaning", ""), "pos": w.get("pos", ""),
-            "collocations": collocations,
+            "word": key, "meaning": w.get("meaning", ""), "pos": _pos,
+            "phonetic": _ph,
+            "collocations": w.get("collocations") or [],
             "examples": examples,
             "ex_source": w.get("ex_source", ""),
             "day": w.get("day", 1), "group_name": w.get("group_name", ""),
@@ -235,7 +182,7 @@ def word_master(body: dict):
     if mastered == 2:
         word = body.get("meaning", key)
         srs.schedule_review(conn, "vocab", key, f"回忆并造句使用：{key}",
-                            key + " " + _first_collocation(body),
+                            key + " " + body.get("collocation", ""),
                             p["stage"], p["week"], p["day"])
         conn.execute(
             "INSERT INTO history (date, stage, week, day, action, detail, created_at) VALUES (?,?,?,?,?,?,?)",

@@ -87,6 +87,11 @@ class _PGConn:
         cur.execute(_tr(sql), _norm(params))
         return _PGCursor(cur)
 
+    def executemany(self, sql, params_seq):
+        cur = self._raw.cursor()
+        cur.executemany(_tr(sql), params_seq)
+        return self
+
     def cursor(self):
         return _PGCursor(self._raw.cursor())
 
@@ -438,6 +443,14 @@ def init_db():
         import_into_db(conn)
     except Exception as e:
         print("[db.init_db] 内置词库导入失败:", e)
+
+    # 全量 ECDICT 词典合并（幂等：仅补充缺失词，不覆盖现有精选词；种子缺失则跳过）
+    try:
+        from seed_ecdict import import_into_db as _ecdict_import
+        _r = _ecdict_import(conn)
+        print("[db.init_db] ECDICT 词典合并:", _r)
+    except Exception as e:
+        print("[db.init_db] ECDICT 词典合并失败(可忽略):", e)
 
     conn.commit()
     conn.close()

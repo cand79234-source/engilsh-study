@@ -33,10 +33,8 @@ check("今日10句引导", len(r["sentence_prompts"])==10)
 check("语法为 like/enjoy/hate", "like" in r["grammar"])
 
 print("=== 3. 学词 + SRS 入队 ===")
-# 契约：/api/today 返回 collocations=[{phrase,meaning}]，master 也按数组回传
-# （此前测试读单数 w["collocation"]，字段早已不存在 → KeyError）
 for w in r["words"][:3]:
-    client.post("/api/word/master", json={"word": w["word"], "mastered": 2, "meaning": w["meaning"], "collocations": w.get("collocations") or []})
+    client.post("/api/word/master", json={"word": w["word"], "mastered": 2, "meaning": w["meaning"], "collocation": w.get("collocation", "")})
 r = client.get("/api/home").json()
 check("主页显示今日词完成3/20", r["today"]["vocab_done"]>=3)
 

@@ -342,8 +342,9 @@ def pick_words_for_theme(theme, limit=20):
             "SELECT * FROM dictionary WHERE theme=? ORDER BY bnc, word LIMIT ?", (theme, limit)).fetchall()
     if len(rows) < limit:
         have = {r["word"] for r in rows}
+        # 仅从「有主题归属」的精选词补足，避免全量 ECDICT 词（theme 为空）污染空周预设填充
         more = conn.execute(
-            "SELECT * FROM dictionary ORDER BY bnc, word").fetchall()
+            "SELECT * FROM dictionary WHERE theme!='' ORDER BY bnc, word").fetchall()
         for r in more:
             if len(rows) >= limit:
                 break

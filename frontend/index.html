@@ -53,6 +53,7 @@ h2{font-size:15px;font-weight:700;display:flex;align-items:center;gap:8px}
 .word:active{background:var(--primary-bg)}
 .word .en{font-weight:700;font-size:15px}
 .word .cn{color:var(--muted);font-size:12.5px}
+.word .ph{color:var(--muted);font-weight:500;font-size:12px;margin-left:5px}
 .word.done{background:var(--green-bg);border-color:#bbf7d0}
 .word.done .en{color:var(--green)}
 .word.open{border-color:var(--primary);background:var(--primary-bg)}
@@ -143,28 +144,7 @@ textarea{font-family:monospace;font-size:13px;min-height:110px;line-height:1.6}
   <div class="sheet" id="progSheet"></div>
 </div>
 <script>
-// 访问口令：后端设了 EOS_TOKEN 时需要（公网部署保护）。
-// 存在 localStorage，一次性输入后所有请求自动携带；本地部署不带口令也不影响。
-const EOS_TOKEN_KEY='eos_token';
-function eosToken(){try{return localStorage.getItem(EOS_TOKEN_KEY)||'';}catch(e){return '';}}
-function askEosToken(msg){
-  return new Promise(res=>{
-    const t=prompt(msg||'请输入访问口令（后端环境变量 EOS_TOKEN）');
-    if(t&&t.trim()){try{localStorage.setItem(EOS_TOKEN_KEY,t.trim());}catch(e){} res(true);}else res(false);
-  });
-}
-const api=async(p,opt)=>{
-  opt=opt||{};
-  const h=Object.assign({},opt.headers||{});
-  const tk=eosToken(); if(tk) h['X-Auth-Token']=tk;
-  opt.headers=h;
-  let res=await fetch('/api'+p,opt);
-  if(res.status===401){
-    const got=await askEosToken('需要访问口令才能读写数据\n（后端 EOS_TOKEN，输入一次会记住）');
-    if(got){h['X-Auth-Token']=eosToken();opt.headers=h;res=await fetch('/api'+p,opt);}
-  }
-  return res.json();
-};
+const api=(p,opt)=>fetch('/api'+p,opt).then(r=>r.json());
 function esc(s){return (s==null?'':String(s)).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
 function toast(m){const t=document.createElement('div');t.textContent=m;
   t.style.cssText='position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:#1e293b;color:#fff;padding:11px 18px;border-radius:10px;font-size:13.5px;z-index:99;opacity:0;transition:.25s';
@@ -210,12 +190,13 @@ pages.learn=async function(el){
     </div>
   </div>`:`
   <div class="card">
-    <div style="display:flex;justify-content:space-between;align-items:center">
-      <h2>📖 本周词汇
-        ${t.day_group&&t.day_group.name?`<span class="badge">${esc(t.day_group.name)}</span>`:''}
-        ${t.week_total_words&&t.week_total_words>20?`<span class="badge" style="background:#f8fafc;color:var(--muted)">Day ${t.progress.day}/${t.week_total_words}词/周</span>`:''}
-      </h2>
-      <button class="btn ghost sm" onclick="showImport()">📥 导入本周词</button>
+    <div style="display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:8px 12px">
+      <h2 style="margin:0;flex:1 1 200px;min-width:0">📖 本周词汇</h2>
+      <button class="btn ghost sm" style="flex-shrink:0" onclick="showImport()">📥 导入本周词</button>
+    </div>
+    <div style="margin-top:6px;display:flex;flex-wrap:wrap;gap:6px">
+      ${t.day_group&&t.day_group.name?`<span class="badge">${esc(t.day_group.name)}</span>`:''}
+      ${t.week_total_words&&t.week_total_words>20?`<span class="badge" style="background:#f8fafc;color:var(--muted)">Day ${t.progress.day}/${t.week_total_words}词/周</span>`:''}
     </div>
     <div class="sub" style="margin-top:2px">点单词看例句和搭配 · 点 <b>🔊</b> 听发音 · 记住后点「记住了」</div>
     <div id="wordlist">${renderWords(t.words)}</div>
@@ -261,7 +242,7 @@ function renderWords(words){
     const exs=(w.examples||[]).filter(e=>e&&e.sentence);
     return `<div>
       <div class="word ${done?'done':''} ${isOpen?'open':''}" onclick="toggleW('${esc(w.word)}')">
-        <div><div class="en">${esc(w.word)}</div><div class="cn">${esc(w.meaning)||''}</div></div>
+        <div><div class="en">${esc(w.word)} ${w.phonetic?`<span class="ph">${esc(w.phonetic)}</span>`:''}</div><div class="cn">${esc(w.meaning)||''}</div></div>
         <div style="display:flex;align-items:center;gap:7px">
           <span class="spk" data-role="spk" title="听发音" onclick="event.stopPropagation();speak('${esc(w.word)}')">🔊</span>
           ${w.pos?`<span class="badge" style="${done?'background:#dcfce7;color:var(--green)':''}">${esc(w.pos)}</span>`:''}
@@ -392,7 +373,7 @@ async function toggleW(word){state.openWord=(state.openWord===word)?null:word;re
 function renderWordsInto(){const t=state.today;document.getElementById('wordlist').innerHTML=renderWords(t.words);}
 async function master(word){
   const w=state.today.words.find(x=>x.word===word); if(!w)return;
-  await api('/word/master',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({word,mastered:2,meaning:w.meaning,collocations:w.collocations||[]})});
+  await api('/word/master',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({word,mastered:2,meaning:w.meaning,collocation:w.collocation})});
   toast(`已掌握「${word}」`); refreshProg(); pages.learn(document.getElementById('content'));
 }
 async function showImport(){
@@ -460,7 +441,7 @@ async function runImport(){
   const box=document.getElementById('imp_rich_result');
   let r;
   try{
-    r=await api('/words/import',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:raw, merge:true, stage:p.stage, week:p.week})});
+    r=await api('/words/import',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:raw, merge:true, week:p.week})});
   }catch(e){box.innerHTML=`<div class="res" style="background:#fee2e2;border-color:#fecaca;color:var(--red)">导入请求失败：${esc(e.message)}</div>`;btn.textContent='🚀 解析并导入';btn.disabled=false;return;}
   if(!r.ok){
     box.innerHTML=`<div class="res" style="background:#fee2e2;border-color:#fecaca;color:var(--red)">${esc(r.error||'未识别到内容')}</div>`;
@@ -473,32 +454,28 @@ async function runImport(){
       <b>✅ 已合并到 第${r.week}周「${esc(r.title||'未命名')}」</b><br>
       <span style="color:var(--muted)">本次：${dayTxt?dayTxt:'若干词'} · 当前周共 ${r.total} 词 / ${r.days} 天</span><br>
       <span style="color:var(--muted)">词库新增 ${r.added_new} · 自带例句 ${r.added_examples} · 固定搭配 ${r.added_collocations||0} · 自动补例句 ${r.autogen}</span>
-      <br><span style="color:var(--blue)">已自动跳转到第${r.week}周，去学你导入的内容 →</span>
       ${w.length?('<br><span style="color:var(--amber);font-size:13px">'+w.join('<br>')+'</span>'):''}
     </div>`;
   toast(`已合并到第${r.week}周，当前共 ${r.total} 词 / ${r.days} 天`);
   btn.textContent='✅ 完成，点击关闭';
   btn.disabled=false;
-  // 导入成功后自动切到「导入所在的周」，确保立刻能看到自己导入的词。
-  // 旧逻辑依赖一个易被忽略的确认框：关掉就不跳，于是每日任务仍显示旧的内置词（“完全没变”）。
+  // 仅当导入到非当前周才询问跳转；否则直接刷新当前学习页
   const cur=state.learn.d.progress;
   setTimeout(()=>{
-    const overlay=document.querySelector('.overlay');
-    if(overlay) overlay.remove();
-    if(r.week && r.week!==cur.week){
-      setProgressAndGo(r.week);
-      toast(`已切到第${r.week}周，开始学习你导入的内容`);
+    if(r.week!==cur.week){
+      if(confirm(`已导入到第 ${r.week} 周。现在跳到第 ${r.week} 周开始学习吗？`)){
+        document.querySelector('.overlay')&&document.querySelector('.overlay').remove();
+        setProgressAndGo(r.week);
+      }
     } else {
       pages.learn(document.getElementById('content'));
+      document.querySelector('.overlay')&&document.querySelector('.overlay').remove();
     }
   }, 400);
 }
 function setProgressAndGo(week){
-  // 保存进度到该周 Day1，并回学习页。
-  // stage 必须沿用当前阶段（此前写死 0，切周会把阶段拉回阶段0）。
-  const st=(state.learn&&state.learn.d&&state.learn.d.progress)||{};
-  const stage=(st.stage!==undefined&&st.stage!==null)?st.stage:0;
-  api('/progress',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({stage,week,day:1})}).then(()=>{refreshProg();render('learn');});
+  // 保存进度到该周 Day1，并回学习页
+  api('/progress',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({stage:0,week,day:1})}).then(()=>{refreshProg();render('learn');});
 }
 // 离线发音：浏览器本地 TTS（优先选本机已下载的英文语音，无需联网/无外部服务）
 let _voices=[], _voice=null, _voiceReady=false;
