@@ -445,12 +445,22 @@ def init_db():
         print("[db.init_db] 内置词库导入失败:", e)
 
     # 全量 ECDICT 词典合并（幂等：仅补充缺失词，不覆盖现有精选词；种子缺失则跳过）
+    # 放后台线程执行：init_db 在 main.py 导入期被调用，首次部署要灌 76.8 万行，
+    # 若同步阻塞会导致端口迟迟不监听、Render 健康检查失败判定部署失败。
+    # 后台合并期间应用已可正常服务；词典只用于音标/词性补全，缺失不影响任何既有功能。
     try:
+        import threading
         from seed_ecdict import import_into_db as _ecdict_import
-        _r = _ecdict_import(conn)
-        print("[db.init_db] ECDICT 词典合并:", _r)
+
+        def _ecdict_bg():
+            try:
+                print("[db.init_db] ECDICT 词典合并(后台):", _ecdict_import())
+            except Exception as e:
+                print("[db.init_db] ECDICT 词典合并失败(可忽略):", e)
+
+        threading.Thread(target=_ecdict_bg, daemon=True).start()
     except Exception as e:
-        print("[db.init_db] ECDICT 词典合并失败(可忽略):", e)
+        print("[db.init_db] ECDICT 词典合并启动失败(可忽略):", e)
 
     conn.commit()
     conn.close()
