@@ -9,3 +9,7 @@ tests/*.png
 .DS_Store
 .env
 .venv/
+# Allow manifest + app icons
+!frontend/manifest.webmanifest
+!frontend/icon-192.png
+!frontend/icon-512.png

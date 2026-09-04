@@ -503,6 +503,39 @@ def dict_lookup(body: dict = None):
     }
 
 
+@app.get("/api/vocab/all")
+def vocab_all(q: str = "", limit: int = 500):
+    """⑤ 全部词汇浏览：列出用户真正学过的词（学习项 + SRS 卡 + 造句词，去重）。
+
+    只读，不改变 SRS / 五星 / 不产生学习完成记录。支持按英文前缀/子串搜索。
+    不扫描 ECDICT 全表（76 万行），只取用户实际接触过的词。
+    """
+    conn = get_conn()
+    rows = conn.execute(
+        "SELECT DISTINCT ref_key AS w FROM day_items WHERE kind='vocab' AND ref_key<>'' "
+        "UNION SELECT DISTINCT ref_key FROM reviews WHERE kind='vocab' AND ref_key<>'' "
+        "UNION SELECT DISTINCT word FROM sentences WHERE word<>''"
+    ).fetchall()
+    words = [r["w"] for r in rows if r["w"]]
+    if q and q.strip():
+        ql = q.strip().lower()
+        words = [w for w in words if ql in w.lower()]
+    words.sort()
+    out = []
+    for w in words[:limit]:
+        d = conn.execute(
+            "SELECT phonetic, pos, meaning FROM dictionary WHERE word=?",
+            (w.lower(),)).fetchone()
+        out.append({
+            "word": w,
+            "phonetic": (d["phonetic"] if d else "") or "",
+            "pos": (d["pos"] if d else "") or "",
+            "meaning": (d["meaning"] if d else "") or "",
+        })
+    conn.close()
+    return {"words": out, "total": len(words)}
+
+
 @app.get("/api/dbinfo")
 def dbinfo():
     """只读诊断：确认当前连的是 Neon(PostgreSQL) 还是本地 SQLite。

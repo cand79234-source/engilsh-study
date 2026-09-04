@@ -5,6 +5,10 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <meta name="theme-color" content="#4f46e5">
 <title>English OS</title>
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="apple-touch-icon" href="/icon-192.png">
+<link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png">
+<link rel="icon" type="image/png" sizes="512x512" href="/icon-512.png">
 <style>
 :root{
   --bg:#f4f6fb; --card:#fff; --border:#e8ecf4; --text:#1e293b; --muted:#7c8698;
@@ -176,6 +180,7 @@ document.addEventListener('click', function(e){
   else if (act === 'revGrade') gradeFlash(parseInt(v,10));
   else if (act === 'revExit') { state.revMode='home'; render('review'); }
   else if (act === 'revWeak') { state.revMode='weak'; render('review'); }
+  else if (act === 'revAll') { state.revMode='all'; render('review'); }
 });
 function startFlashcard(){
   state.revMode='flash'; state.revIdx=0; state.revFlipped=false; state.revLog=[];
@@ -981,6 +986,7 @@ pages.review=async function(el){
   const mode=state.revMode||'home';
   if(mode==='flash') renderFlashcard(el);
   else if(mode==='weak') pages.errors(el);
+  else if(mode==='all') await renderAllWords(el);
   else renderReviewHome(el);
 };
 
@@ -1008,9 +1014,49 @@ function renderReviewHome(el){
       <button class="btn" style="margin-top:11px" data-act="revWeak">查看薄弱项</button>
     </div>
 
+    <div class="card" style="margin-top:10px">
+      <div style="font-weight:700;font-size:15.5px">📚 全部词汇</div>
+      <div class="sub" style="margin-top:2px">词库浏览 · 只查看，不改变复习与五星</div>
+      <button class="btn" style="margin-top:11px" data-act="revAll">浏览全部词汇</button>
+    </div>
+
     <div style="text-align:center;margin-top:14px">
       <button class="btn ghost sm" data-act="revExit">← 返回</button>
     </div>`;
+}
+
+async function renderAllWords(el){
+  const d=await api('/vocab/all');
+  const list=d.words||[];
+  state.allWords=list;
+  el.innerHTML=`
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px">
+      <h1 style="margin:0">📚 全部词汇</h1>
+      <span class="badge" style="background:var(--primary-bg);color:var(--primary)">${d.total} 词</span>
+    </div>
+    <div class="sub" style="margin-top:2px">浏览你的词库 · 点击 🔊 听发音 · 不改变任何学习状态</div>
+    <input class="sinput" id="vocabSearch" placeholder="搜索英文…" style="margin-top:10px"
+      oninput="renderVocabList(this.value)">
+    <div id="vocabList" style="margin-top:10px"></div>
+    <div style="text-align:center;margin-top:14px"><button class="btn ghost sm" data-act="revExit">← 返回</button></div>`;
+  renderVocabList('');
+}
+function renderVocabList(q){
+  const box=document.getElementById('vocabList');
+  if(!box) return;
+  const ql=(q||'').trim().toLowerCase();
+  const list=(state.allWords||[]).filter(w=>!ql || w.word.toLowerCase().includes(ql));
+  if(!list.length){ box.innerHTML=`<div class="card"><div class="sub" style="margin:0">没有匹配的单词。先去「学习」页学几个词吧。</div></div>`; return; }
+  box.innerHTML=list.map(w=>`
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;
+      padding:11px 2px;border-bottom:1px solid var(--border)">
+      <div style="min-width:0">
+        <div style="font-size:15px;font-weight:700">${esc(w.word)}
+          ${w.phonetic?`<span style="font-size:12px;color:var(--muted);font-weight:400">　${esc(w.phonetic)}</span>`:''}</div>
+        ${w.meaning?`<div style="font-size:13px;color:#475569;margin-top:2px">${esc(w.meaning)}</div>`:''}
+      </div>
+      <button class="btn ghost sm" data-act="speak" data-val="${esc(w.word)}">🔊</button>
+    </div>`).join('');
 }
 
 function renderFlashcard(el){
