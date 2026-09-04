@@ -222,6 +222,34 @@ def stars_map(words):
     return out
 
 
+def star_recycle_due(words, days=14):
+    """⑤星不再是终态：返回「超过 days 天没主动输出过」的词，供造句计划回流。
+
+    背景：达到 5 星的词原本被永久移出造句计划，导致「忘了写错也掉不了星」，
+    两个维度（SRS 记得 / 五星会用）彻底脱钩。这里给 5 星一个复练冷却期：
+      - 冷却期内（< days 天没碰）→ 不进计划，避免重复练已经熟的
+      - 超过 days 天没碰     → 回流一次，真的写错就掉星回常规循环
+    未记录的词（没造过句）一律不算到期复练，不编造数据。
+    """
+    out = set()
+    if not words or days is None:
+        return out
+    # ts() 生成本地时间 ISO 串，这里同样用本地时间，保证可比
+    cutoff = (datetime.now() - timedelta(days=int(days))).isoformat()
+    conn = get_conn()
+    for w in set((x or "").strip().lower() for x in words if x and x.strip()):
+        row = conn.execute(
+            "SELECT last_at, first_at FROM word_output WHERE word=?", (w,)).fetchone()
+        if not row:
+            continue
+        # last_at / first_at 都是本地 ts() 生成的 ISO 串，用字符串比较即可定序
+        ref = (row["last_at"] or row["first_at"] or "").strip()
+        if not ref or ref < cutoff:
+            out.add(w)
+    conn.close()
+    return out
+
+
 def weak_output_words(threshold=3, limit=20):
     """④ 薄弱项：主动输出熟练度偏低（低于 threshold 星）的词。
 

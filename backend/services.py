@@ -494,6 +494,10 @@ def week_word_count(stage, week):
 # ---------- 动态造句 prompt 生成（纯本地，无 AI） ----------
 
 # 6 个功能/主题类别：名称、单句指令模板、中英文关键词
+# 5 星词的复练冷却天数：达到 5 星后，超过这么久没主动输出过就回流一次。
+# 目的：5 星是「当前稳定」而非「永久毕业」，忘了写错要能掉星回常规循环。
+FIVE_STAR_RECYCLE_DAYS = 14
+
 FUNC_CATEGORIES = [
     ("自我介绍", "用「{w}」写一句关于你自己的话（名字/身份/来自哪里）",
      ["name", "family", "friend", "meet", "hello", "student", "job", "home",
@@ -844,17 +848,25 @@ def build_sentence_plan(today_new, due_vocab, grammar, stage, week, day,
         seed_date = date.today()
     seed = abs(hash(f"{stage}-{week}-{day}-{seed_date.isoformat()}")) % (10 ** 6)
 
-    # ③ 造句五星：达到 5 星的词「主动输出已稳定」，不再进入常规造句计划
-    # （基础句不再出它；升级/组合也不强制编排它）。SRS 是否复习由各自逻辑决定。
+    # ③ 造句五星：达到 5 星的词「主动输出已稳定」，不进常规造句计划。
+    #
+    # 但 5 星不是终态——原实现一旦到 5 星就永久剔除，导致「后来忘了、写错了
+    # 也掉不了星」，五星维度只升不降，与 SRS 彻底脱钩。
+    # 现在改成复练冷却：超过 FIVE_STAR_RECYCLE_DAYS 天没主动输出过就回流一次，
+    # 回流后写错 → 掉到 4 星，重回常规循环；写对 → 回 5 星，重新冷却。
     cand_words = [w.get("word") for w in (today_new or [])] + \
                  [w.get("word") for w in (due_vocab or [])]
     starred = srs.stars_map(cand_words)
     five_star = {w for w, s in starred.items() if s >= 5}
     if five_star:
-        today_new = [w for w in (today_new or [])
-                     if w.get("word", "").strip().lower() not in five_star]
-        due_vocab = [w for w in (due_vocab or [])
-                     if w.get("word", "").strip().lower() not in five_star]
+        # 冷却期内（还没到复练时间）的 5 星词才剔除；到期的保留在池子里
+        recyclable = srs.star_recycle_due(five_star, days=FIVE_STAR_RECYCLE_DAYS)
+        cooldown = five_star - recyclable
+        if cooldown:
+            today_new = [w for w in (today_new or [])
+                         if w.get("word", "").strip().lower() not in cooldown]
+            due_vocab = [w for w in (due_vocab or [])
+                         if w.get("word", "").strip().lower() not in cooldown]
 
     basic = _build_basic(today_new, grammar)
     upgrade = _build_upgrade(today_new, due_vocab, grammar, seed, n_upgrade)

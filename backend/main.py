@@ -243,6 +243,33 @@ def word_master(body: dict):
 
 
 # ---------- 造句 + 本地规则批改（无任何 AI 参与） ----------
+_WORD_RE_CACHE = {}
+
+
+def _word_used_in(sentence, word):
+    """判断某个词是否真的出现在用户写的句子里。
+
+    用「词边界 + 容忍常见屈折后缀」匹配：
+      - work 能命中 work / works / worked / working
+      - 但不会命中 network（有词边界，\b 已排除）
+    目的：组合题只有用户真正用到的词才该 ±1 星，没用到的不动。
+    """
+    w = (word or "").strip().lower().strip(".,!?;:\"'()")
+    if not w or not sentence:
+        return False
+    pat = _WORD_RE_CACHE.get(w)
+    if pat is None:
+        # 只容忍真正的屈折变化：复数/三单 -s -es，过去 -ed，进行 -ing。
+        # 不放 -ly：real 会误命中 really（副词派生是另一个词，不算用到了 real）。
+        # 词根至少 3 字母才允许后缀，避免 "go" 之类过短词乱匹配。
+        if len(w) >= 3:
+            pat = re.compile(r"\b" + re.escape(w) + r"(?:s|es|ed|ing)?\b", re.I)
+        else:
+            pat = re.compile(r"\b" + re.escape(w) + r"\b", re.I)
+        _WORD_RE_CACHE[w] = pat
+    return bool(pat.search(sentence))
+
+
 @app.post("/api/sentence/check")
 def sentence_check(body: dict):
     """提交一句造句，本地规则批改并入库。
@@ -264,9 +291,20 @@ def sentence_check(body: dict):
     # PASS → +1 星；NEEDS_REVIEW / UNCERTAIN → -1 星；星级限制 0~5。
     status = result.get("status") or ("PASS" if result.get("ok") else "NEEDS_REVIEW")
     score = result.get("score", 0)
-    head_word = (word or "").split()[0].lower() if (word or "").split() else ""
-    for w in (word or "").split():
+
+    # 只对「句子里真的用到」的词更新五星。
+    # 组合题的 word 是 2~3 个建议词的名单，原实现对名单里每个词都 ±1，
+    # 于是用户只写了其中一个词，另外几个也跟着白涨星 / 无辜扣星 —— 星级失真。
+    # 现在先在用户原句里找命中，找不到就不动那个词的星级。
+    candidates = [w for w in (word or "").split() if w.strip()]
+    used_words = [w for w in candidates if _word_used_in(text, w)]
+    head_word = used_words[0].lower() if used_words else (
+        candidates[0].lower() if candidates else "")
+    for w in used_words:
         srs.update_output_star(w, status, score)
+
+    result["used_words"] = [w.lower() for w in used_words]
+    result["unused_words"] = [w.lower() for w in candidates if w not in used_words]
     result["output_star"] = srs.word_stars(head_word)["stars"] if head_word else None
     return result
 

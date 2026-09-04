@@ -518,7 +518,11 @@ async function toggleW(word){state.openWord=(state.openWord===word)?null:word;re
 function renderWordsInto(){const t=state.today;document.getElementById('wordlist').innerHTML=renderWords(t.words);}
 async function master(word){
   const w=state.today.words.find(x=>x.word===word); if(!w)return;
-  await api('/word/master',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({word,mastered:2,meaning:w.meaning,collocation:w.collocation})});
+  // 字段名修正：/api/today 给的是 collocations（数组），不是 collocation（单串）。
+  // 原来 collocation:w.collocation 恒为 undefined → JSON 丢弃 → 后端拿到空
+  // → 该词的 SRS 卡片答案面永远没有搭配（静默失败，前端不报错）。
+  // 后端 normalize_collocations 两种格式都吃，这里两个都发，兼容老数据。
+  await api('/word/master',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({word,mastered:2,meaning:w.meaning,collocations:w.collocations||[],collocation:w.collocation||''})});
   toast(`已掌握「${word}」`); refreshProg(); pages.learn(document.getElementById('content'));
 }
 async function showImport(){
