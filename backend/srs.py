@@ -83,20 +83,43 @@ def submit_review(review_id, correct, quality=None):
     return result
 
 
-def due_reviews(limit=50, all_types=True):
+def due_reviews(limit=50, all_types=True, kind=None):
     """今日复习 = 到期卡(next_due<=today) + 今天新学未复习卡(last_score=-1 且当天创建)。
 
-    这样满足"系统自动把复习加入当天"：今天刚学的词/句子立刻出现在今日复习，
-    明天起按 SRS 间隔到期复习。答错提前重排、连续正确拉长间隔。
+    kind 是三状态隔离的关键闸门：
+      - kind='vocab'     → 只有「今日复习闪卡」读（单词词义 SRS）
+      - kind='listening' → 只有听力页读（听觉识别 SRS）
+      - kind=None（默认）→ 全部，保持原有行为不变（零回归）
+
+    不隔离的后果：听力卡会混进单词闪卡、错误卡会混进复习队列，
+    导致「词义 SRS / 主动输出五星 / 听力状态」三个维度互相污染。
     """
     conn = get_conn()
     today = date.today().isoformat()
+    # 参数顺序必须与 SQL 中 ? 的出现顺序一致：
+    #   WHERE: next_due<=?, created_at>=?, [kind=?]  → ORDER BY: created_at>=?  → LIMIT ?
+    params = [today, today + "T00:00:00"]
+    kind_sql = ""
+    if kind:
+        kind_sql = " AND kind = ?"
+        params.append(kind)
+    params.append(today + "T00:00:00")
+    params.append(limit)
     rows = conn.execute(
         "SELECT * FROM reviews WHERE (next_due <= ? OR (created_at >= ? AND last_score = -1))"
+        + kind_sql +
         " ORDER BY (created_at >= ?) DESC, next_due, id LIMIT ?",
-        (today, today + "T00:00:00", today + "T00:00:00", limit)).fetchall()
+        params).fetchall()
     conn.close()
     return [dict(r) for r in rows]
+
+
+def due_vocab_reviews(limit=50):
+    """今日复习闪卡专用：只取单词词义 SRS 卡（kind='vocab'）。
+
+    绝不返回 error 卡（错误归「薄弱项」）或 listening 卡（归听力页）。
+    """
+    return due_reviews(limit=limit, kind="vocab")
 
 
 def due_summary():

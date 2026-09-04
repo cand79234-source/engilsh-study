@@ -404,6 +404,22 @@ def init_db():
         UNIQUE(kind, ref_key, prompt)
     );
 
+    -- 造句五星（主动输出熟练度）
+    -- 与 reviews 的 SRS 完全独立：SRS 记「记不记得」，五星记「能不能主动用」。
+    -- 同一个词可同时存在：vocab SRS 卡 + 五星记录 + listening 卡，三者互不干扰。
+    CREATE TABLE IF NOT EXISTS word_output (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        word TEXT NOT NULL,
+        stars INTEGER DEFAULT 0,        -- 0-5 主动输出熟练度
+        total_attempts INTEGER DEFAULT 0,
+        last_result TEXT DEFAULT '',    -- 'pass'|'needs_review'|'uncertain'
+        last_score INTEGER DEFAULT 0,
+        first_at TEXT,
+        last_at TEXT,
+        updated_at TEXT,
+        UNIQUE(word)
+    );
+
     -- 周测 / 阶段测试
     CREATE TABLE IF NOT EXISTS quizzes (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -520,6 +536,8 @@ def init_db():
     # column "word" does not exist，导致启动崩溃、Render 部署失败 update_failed）
     for _idx in (
         "CREATE INDEX IF NOT EXISTS idx_reviews_due ON reviews(next_due)",
+        "CREATE INDEX IF NOT EXISTS idx_reviews_kind_due ON reviews(kind, next_due)",
+        "CREATE INDEX IF NOT EXISTS idx_word_output_word ON word_output(word)",
         "CREATE INDEX IF NOT EXISTS idx_errors_type ON errors(error_type)",
         "CREATE INDEX IF NOT EXISTS idx_errors_word ON errors(word)",
         "CREATE INDEX IF NOT EXISTS idx_sentences_day ON sentences(stage, week, day)",

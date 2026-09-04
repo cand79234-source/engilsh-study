@@ -357,6 +357,43 @@ def review_submit(body: dict):
     return srs.submit_review(review_id, correct)
 
 
+@app.get("/api/review/flashcards")
+def review_flashcards():
+    """② 今日复习闪卡数据源：只返回单词词义 SRS 到期卡（kind='vocab'）。
+
+    与 /api/review/due 的区别：本接口严格按 kind 过滤，
+    保证错误卡（归「薄弱项」）与听力卡（归听力页）不会混进单词闪卡。
+    """
+    return {"items": srs.due_vocab_reviews()}
+
+
+@app.get("/api/memory/state/{word}")
+def memory_state(word: str):
+    """① 三状态隔离读取：同一个词的三个学习维度彼此独立返回。
+
+    - srs      : 词义记忆（reviews kind='vocab'）
+    - output   : 主动输出五星（word_output 表，不进 SRS）
+    - listening: 听力识别（reviews kind='listening'）
+
+    允许出现「词义 SRS 稳定 + 五星 ★★☆☆☆ + 听力弱」这种组合，
+    三个维度互不覆盖、互不重置。
+    """
+    conn = get_conn()
+    vocab = conn.execute(
+        "SELECT * FROM reviews WHERE kind='vocab' AND ref_key=?", (word,)).fetchone()
+    listening = conn.execute(
+        "SELECT * FROM reviews WHERE kind='listening' AND ref_key=?", (word,)).fetchone()
+    out = conn.execute(
+        "SELECT * FROM word_output WHERE word=?", (word,)).fetchone()
+    conn.close()
+    return {
+        "word": word,
+        "srs": dict(vocab) if vocab else None,
+        "output": dict(out) if out else None,
+        "listening": dict(listening) if listening else None,
+    }
+
+
 # ---------- 错误 / 薄弱项 ----------
 @app.get("/api/errors")
 def errors_breakdown():
