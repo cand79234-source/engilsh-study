@@ -352,9 +352,19 @@ def review_due():
 
 @app.post("/api/review/submit")
 def review_submit(body: dict):
+    """提交一次复习结果。
+
+    quality 三档（来自闪卡的「忘记 / 模糊 / 记得」）：
+      0 = 忘记 → 间隔重排明天、reps 清零、记一次错
+      3 = 模糊 → 算答对但间隔折半（记得不牢 → 更快再见）
+      5 = 记得 → SM-2 正常递增（1→3→7→×ease）
+
+    不传 quality 时按旧的 correct 布尔处理，保证老调用零回归。
+    """
     review_id = body["id"]
     correct = bool(body.get("correct"))
-    return srs.submit_review(review_id, correct)
+    quality = body.get("quality")
+    return srs.submit_review(review_id, correct, quality)
 
 
 @app.get("/api/review/flashcards")
@@ -363,8 +373,10 @@ def review_flashcards():
 
     与 /api/review/due 的区别：本接口严格按 kind 过滤，
     保证错误卡（归「薄弱项」）与听力卡（归听力页）不会混进单词闪卡。
+
+    返回项已附带词典音标/词性/中文释义，供翻牌后展示。
     """
-    return {"items": srs.due_vocab_reviews()}
+    return {"items": srs.flashcard_items()}
 
 
 @app.get("/api/memory/state/{word}")

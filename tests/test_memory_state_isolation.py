@@ -104,9 +104,11 @@ def test_flashcards_endpoint_vocab_only():
     _insert_review("error", W_STAR)
 
     d = client.get("/api/review/flashcards").json()
-    items = d["items"]
-    assert {i["kind"] for i in items} == {"vocab"}
-    assert W_VOCAB in {i["ref_key"] for i in items}
+    words = {i["word"] for i in d["items"]}
+    # 闪卡只应出现 vocab 卡对应的词（底层 due_vocab_reviews 已按 kind 过滤）
+    assert W_VOCAB in words
+    assert W_LISTEN not in words, "听力卡混进了单词闪卡"
+    assert W_STAR not in words, "错误卡混进了单词闪卡"
 
 
 # ---------- ③ 三状态独立读取 ----------

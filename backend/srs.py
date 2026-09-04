@@ -34,7 +34,15 @@ def schedule_review(conn, kind, ref_key, prompt, answer, stage, week, day,
 
 
 def submit_review(review_id, correct, quality=None):
-    """处理一次复习结果。correct: bool。quality 0=错 1=对。"""
+    """处理一次复习结果。
+
+    quality 三档（② 闪卡「忘记 / 模糊 / 记得」）：
+      0 = 忘记 → 间隔重排为明天、reps 清零、ease 下调、记一次错
+      3 = 模糊 → 算答对但间隔折半（记得不牢 → 更快再见）、reps+1、ease 微降
+      5 = 记得 → SM-2 正常递增（1→3→7→×ease）、reps+1、ease 微升
+
+    quality=None 时回退为旧的二值逻辑（correct 布尔），保证老调用零回归。
+    """
     conn = get_conn()
     row = conn.execute("SELECT * FROM reviews WHERE id=?", (review_id,)).fetchone()
     if not row:
@@ -43,15 +51,36 @@ def submit_review(review_id, correct, quality=None):
     ease = row["ease"] or 2.5
     reps = row["reps"] or 0
     interval = row["interval"] or 0
-    q = 1 if correct else 0
 
-    if not correct:
+    # 三档映射；quality 缺失时回退二值判定
+    if quality is not None:
+        quality = int(quality)
+        if quality <= 0:
+            mode, q = "again", 0        # 忘记
+        elif quality < 5:
+            mode, q = "hard", 3         # 模糊
+        else:
+            mode, q = "good", 5         # 记得
+    else:
+        mode = "good" if correct else "again"
+        q = 1 if correct else 0
+
+    if mode == "again":
         # 答错：间隔重排为1天，提前重新进入复习
         reps = 0
         interval = 1
-        # ease 下调
         ease = max(1.3, ease - 0.2)
         total_wrong = row["total_wrong"] + 1
+        total_correct = row["total_correct"]
+        last_score = 0
+    elif mode == "hard":
+        # 模糊：算答对，但不让间隔继续拉长而是折半 → 更快再见
+        reps += 1
+        interval = max(1, round(interval / 2))
+        ease = max(1.3, ease - 0.05)
+        total_wrong = row["total_wrong"]
+        total_correct = row["total_correct"] + 1
+        last_score = 1
     else:
         # 答对：SM-2 间隔递增
         if reps == 0:
@@ -65,17 +94,19 @@ def submit_review(review_id, correct, quality=None):
         reps += 1
         ease = min(3.0, ease + 0.1)
         total_wrong = row["total_wrong"]
-    total_correct = row["total_correct"] + (1 if correct else 0)
+        total_correct = row["total_correct"] + 1
+        last_score = 1
 
     next_due = _due_date(interval)
     conn.execute(
         "UPDATE reviews SET ease=?, interval=?, reps=?, next_due=?, last_score=?,"
         " total_correct=?, total_wrong=?, last_reviewed=? WHERE id=?",
-        (ease, interval, reps, next_due, q, total_correct, total_wrong,
+        (ease, interval, reps, next_due, last_score, total_correct, total_wrong,
          datetime.now().isoformat(timespec="seconds"), review_id))
     conn.commit()
     result = {
-        "id": review_id, "correct": correct, "new_interval": interval,
+        "id": review_id, "correct": last_score == 1, "quality": q, "mode": mode,
+        "new_interval": interval,
         "next_due": next_due, "reps": reps, "ease": ease,
         "kind": row["kind"], "ref_key": row["ref_key"],
     }
@@ -120,6 +151,40 @@ def due_vocab_reviews(limit=50):
     绝不返回 error 卡（错误归「薄弱项」）或 listening 卡（归听力页）。
     """
     return due_reviews(limit=limit, kind="vocab")
+
+
+def flashcard_items(limit=50):
+    """② 今日复习闪卡数据：到期 vocab 卡 + 词典释义（翻牌后才显示中文）。
+
+    - 主测「英文 → 意义识别」：正面只给英文 + 发音，翻牌才给中文。
+    - 成熟卡（reps>=2）中约 1/4 反过来测「中文 → 英文」做主动提取，
+      但绝不让所有卡片都变成中文默写。
+    """
+    conn = get_conn()
+    cards = due_vocab_reviews(limit=limit)
+    out = []
+    for c in cards:
+        word = (c.get("ref_key") or "").strip()
+        if not word:
+            continue
+        drow = conn.execute(
+            "SELECT phonetic, pos, meaning FROM dictionary WHERE word=?",
+            (word.lower(),)).fetchone()
+        reps = c.get("reps") or 0
+        # 成熟卡中约 1/4 做反向主动提取（中文 → 英文）
+        reverse = reps >= 2 and (c["id"] % 4 == 0)
+        out.append({
+            "id": c["id"],
+            "word": word,
+            "phonetic": (drow["phonetic"] if drow else "") or "",
+            "pos": (drow["pos"] if drow else "") or "",
+            "meaning": (drow["meaning"] if drow else "") or "",
+            "direction": "zh2en" if reverse else "en2zh",
+            "reps": reps,
+            "interval": c.get("interval") or 0,
+        })
+    conn.close()
+    return out
 
 
 def due_summary():

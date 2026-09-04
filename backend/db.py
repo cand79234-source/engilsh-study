@@ -296,7 +296,10 @@ def get_conn():
         raw = psycopg2.connect(DATABASE_URL, connect_timeout=15)
         return _PGConn(raw)
     os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
-    conn = sqlite3.connect(DB_PATH)
+    # 后台线程灌 ECDICT 词典（76.8 万行）会长时间占用写锁，
+    # sqlite3 默认忙等超时只有 5s，并发写入会直接抛 "database is locked"。
+    # 放宽到 30s：让写请求排队等待锁释放，而不是立刻失败。
+    conn = sqlite3.connect(DB_PATH, timeout=30)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
     return conn
