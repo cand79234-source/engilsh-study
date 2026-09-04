@@ -435,6 +435,33 @@ def error_detail(error_type: str):
     return svc.error_detail(error_type)
 
 
+@app.get("/api/weakness")
+def weakness():
+    """④ 薄弱项聚合：错误类型 + 主动输出偏弱词 + 针对性训练建议。
+
+    纯本地统计 + 规则生成，不引入 AI、不编造数据。
+    """
+    errs = svc.error_breakdown()
+    low = srs.weak_output_words(threshold=3)
+    recs = []
+    # 高频/反复错误 → 按内置补课建议
+    for e in errs[:3]:
+        if e["count_30d"] > 0:
+            recs.append({
+                "kind": "error", "label": "错误类型 · " + e["type"],
+                "detail": f"近30天 {e['count_30d']} 次，累计 {e['total']} 次",
+                "advice": e.get("remedy") or "",
+            })
+    # 主动输出偏弱词 → 再练一句
+    for w in low[:3]:
+        recs.append({
+            "kind": "output", "label": "主动输出 · " + w["word"],
+            "detail": f"五星 {w['stars']}/5，最近表现 {w['last_result'] or '—'}",
+            "advice": "建议用该词再造一句关于你自己的话，把熟练度拉到 3 星以上。",
+        })
+    return {"error_types": errs, "low_star_words": low, "recommendations": recs}
+
+
 @app.get("/api/error-types")
 def error_types():
     return ERROR_TYPES

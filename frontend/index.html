@@ -1195,14 +1195,16 @@ function currentPage(){const a=document.querySelector('.bottomnav a.active');ret
 
 /* ============ 错误 / 薄弱项页（独立入口）============ */
 pages.errors=async function(el){
-  const [errs, bank] = await Promise.all([api('/errors'), api('/error-bank')]);
-  state.errs=errs; state.bank=bank;
+  const [errs, bank, wk] = await Promise.all([api('/errors'), api('/error-bank'), api('/weakness')]);
+  state.errs=errs; state.bank=bank; state.weak=wk;
   refreshProg();
   const active=errs.filter(e=>e.count_30d>0).length;
   el.innerHTML=`
     <h1>🎯 薄弱项 <span style="float:right;font-size:12px;color:var(--muted)">近30天有错 ${active} 类</span></h1>
-    <div class="sub" style="margin-top:2px">造句中的错误会自动归类沉淀，点开看规律与补课建议。</div>
+    <div class="sub" style="margin-top:2px">错误 + 主动输出薄弱项合并诊断，给出针对性训练建议。</div>
 
+    ${weakRecHtml(wk)}
+    ${lowStarHtml(wk)}
     ${bankHtml(bank)}
 
     ${errs.length===0?`<div class="card"><div style="font-size:15px;font-weight:700">✨ 暂无错误记录</div>
@@ -1213,6 +1215,33 @@ pages.errors=async function(el){
     </div>
     <div id="errdetail" class="card" style="display:none"></div>`;
 };
+function weakRecHtml(wk){
+  const recs=(wk&&wk.recommendations)||[];
+  if(!recs.length) return '';
+  return `<div class="card" style="border:1.5px solid var(--amber)">
+    <h2 style="margin:0">🎯 针对性训练建议</h2>
+    ${recs.map(r=>`<div style="margin-top:9px;padding-top:8px;border-top:1px solid var(--border)">
+      <div style="font-size:14px;font-weight:700">${esc(r.label)}</div>
+      <div style="font-size:12.5px;color:var(--muted);margin-top:2px">${esc(r.detail)}</div>
+      ${r.advice?`<div style="font-size:13px;margin-top:4px;line-height:1.5">💡 ${esc(r.advice)}</div>`:''}
+    </div>`).join('')}
+  </div>`;
+}
+function lowStarHtml(wk){
+  const low=(wk&&wk.low_star_words)||[];
+  if(!low.length) return '';
+  return `<div class="card">
+    <h2>⭐ 主动输出偏弱</h2>
+    <div class="sub" style="margin-top:2px">这些词你「认得」但「主动用」还弱，回学习页再造几句把星级拉高。</div>
+    ${low.map(w=>`<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-top:8px;padding-top:8px;border-top:1px solid var(--border)">
+      <div>
+        <div style="font-size:14px;font-weight:700">${esc(w.word)} <span class="starcs">${'★'.repeat(w.stars)}${'☆'.repeat(5-w.stars)}</span></div>
+        <div style="font-size:12.5px;color:var(--muted)">${esc(w.meaning||'—')}</div>
+      </div>
+      <button class="btn ghost sm" data-act="speak" data-val="${esc(w.word)}">🔊</button>
+    </div>`).join('')}
+  </div>`;
+}
 /* 错题本：只有明确错误才进；第一次的记录永久保留，写对了只标「已改正」，不删除 */
 function bankHtml(bank){
   const items=(bank&&bank.items)||[];

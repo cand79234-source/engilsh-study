@@ -222,6 +222,23 @@ def stars_map(words):
     return out
 
 
+def weak_output_words(threshold=3, limit=20):
+    """④ 薄弱项：主动输出熟练度偏低（低于 threshold 星）的词。
+
+    按星级升序、最近活动优先，用于「强弱项」页面给主动输出弱的词开小灶。
+    仅聚合已记录的词；未造句过的词不出现在这里（不编造 0 星）。
+    """
+    conn = get_conn()
+    rows = conn.execute(
+        "SELECT w.word, w.stars, w.total_attempts, w.last_result, w.last_at, w.updated_at,"
+        " d.meaning, d.pos, d.phonetic"
+        " FROM word_output w LEFT JOIN dictionary d ON d.word = w.word"
+        " WHERE w.stars < ? ORDER BY w.stars ASC, w.updated_at DESC LIMIT ?",
+        (threshold, limit)).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
 def flashcard_items(limit=50):
     """② 今日复习闪卡数据：到期 vocab 卡 + 词典释义（翻牌后才显示中文）。
 
