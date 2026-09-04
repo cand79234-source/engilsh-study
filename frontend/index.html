@@ -168,6 +168,7 @@ document.addEventListener('click', function(e){
   else if (act === 'redo') redoSentence(v);
   else if (act === 'copyOne') copyOne(v, el.getAttribute('data-val2') || '');
   else if (act === 'copyAll') copyAll();
+  else if (act === 'mySentences') toggleMySentences();
 });
 function toast(m){const t=document.createElement('div');t.textContent=m;
   t.style.cssText='position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:#1e293b;color:#fff;padding:11px 18px;border-radius:10px;font-size:13.5px;z-index:99;opacity:0;transition:.25s';
@@ -254,6 +255,16 @@ pages.learn=async function(el){
     <div class="sub" style="margin-top:2px;${d.is_sunday?'color:#fff':''}">测试本周语法与词汇，≥75% 进入下一周</div>
     <div class="btnrow"><button class="btn ${d.is_sunday?'ghost':''}" style="${d.is_sunday?'border-color:#fff;color:#fff':'border:0'}" onclick="renderQuiz()">开始本周测试</button></div>
     <div id="quizarea"></div>
+  </div>`;
+  // 跨天可查的「我的造句记录」面板（修复『昨天造的句子看不见』）
+  el.innerHTML += `
+  <div class="card" style="background:#f1f5f9;border-color:#cbd5e1">
+    <div style="display:flex;justify-content:space-between;align-items:center">
+      <h2>📚 我的造句记录</h2>
+      <button class="btn ghost sm" data-act="mySentences">展开 / 收起</button>
+    </div>
+    <div class="sub" style="margin-top:2px">跨天保留：你写过的每一句都在这里（刷新 / 换天也不会丢）</div>
+    <div id="mySentences" style="display:none;margin-top:8px"></div>
   </div>`;
   if(!t.is_rest_day) renderSentencePlan(t);
 };
@@ -647,11 +658,12 @@ async function renderSentencePlan(t){
   const p=planOf(t);
   await loadAttempts();
   state.tkMeta={};
+  const g=(t&&t.grammar)||'';   // 本周语法要求（如「一般现在时、频率副词」），随批改一起传给后端
 
   // ① 基础：每词一句
   document.getElementById('sentences').innerHTML=p.basic.map((b,i)=>{
     const tk='basic:'+i;
-    state.tkMeta[tk]={word:b.word||'', task:b.task||'', label:b.task||''};
+    state.tkMeta[tk]={word:b.word||'', task:b.task||'', label:b.task||'', grammar:g};
     return itemHtml(tk,
       `<div class="sq">${b.i}. ${esc(b.task)}${b.focus?' <span class="badge" style="background:#fef3c7;color:#92400e">★重点</span>':''}</div>`,
       '写一个英文句子…', false);
@@ -660,7 +672,7 @@ async function renderSentencePlan(t){
   // ② 升级：给方向 + 示范句
   document.getElementById('upgrades').innerHTML=(p.upgrade||[]).map((u,i)=>{
     const tk='up:'+i;
-    state.tkMeta[tk]={word:u.word||'', task:u.task||'', label:'升级「'+(u.word||'')+'」'};
+    state.tkMeta[tk]={word:u.word||'', task:u.task||'', label:'升级「'+(u.word||'')+'」', grammar:g};
     return itemHtml(tk,
       `<div class="sq">${u.i}. 升级「<b>${esc(u.word)}</b>${u.meaning?'（'+esc(u.meaning)+'）':''}」
         <span class="badge" style="background:#fef3c7;color:#92400e">${esc(u.direction)}</span>
@@ -674,7 +686,7 @@ async function renderSentencePlan(t){
   // ③ 组合：2-3 个词写成连续表达
   document.getElementById('combos').innerHTML=(p.combo||[]).map((c,i)=>{
     const tk='combo:'+i;
-    state.tkMeta[tk]={word:(c.words||[]).map(w=>w.word).join(' '), task:c.scene||'', label:c.scene||''};
+    state.tkMeta[tk]={word:(c.words||[]).map(w=>w.word).join(' '), task:c.scene||'', label:c.scene||'', grammar:g};
     return itemHtml(tk,
       `<div class="sq">${c.i}. ${esc(c.scene)}</div>
       <div class="sub" style="margin:4px 0">${(c.words||[]).map(w=>`<span class="badge" style="background:${w.review?'#fee2e2;color:#b91c1c':'var(--primary-bg);color:var(--primary)'}">${esc(w.word)}${w.meaning?'·'+esc(w.meaning):''}${w.review?' 🔁':''}</span>`).join(' ')}</div>
@@ -714,13 +726,15 @@ async function submitSentence(tk){
   if(btn){btn.disabled=true;btn.textContent='批改中…';}
   try{
     const r=await api('/sentence/check',{method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({sentence:v, word:meta.word||'', task_key:tk})});
+      body:JSON.stringify({sentence:v, word:meta.word||'', task_key:tk,
+        grammar:meta.grammar||'', prompt:meta.task||''})});
     if(!r||r.error){toast((r&&r.error)||'批改失败');return;}
     state.hist=state.hist||{}; state.hist[tk]=state.hist[tk]||[];
     state.hist[tk].push({
       id:r.sentence_id, attempt:r.attempt, sentence:r.original, corrected:r.corrected,
       score:r.score, verdict:r.verdict, ok:!!r.ok, error_type:r.error_type,
-      errors:r.errors||[], optimizations:r.optimizations||[], created_at:r.created_at});
+      status:r.status||'', errors:r.errors||[], task_issues:r.task_issues||[],
+      optimizations:r.optimizations||[], created_at:r.created_at});
     renderAttempts(tk);
     planProgress();
     // 组合题额外反馈：用到了哪几个建议词（只提示，不判错）
@@ -760,11 +774,23 @@ function renderAttempts(tk){
   box.innerHTML=list.map((a,i)=>attemptCard(a,tk,i,i===list.length-1)).join('');
 }
 function attemptCard(a,tk,i,isLast){
-  const sc=Number(a.score||0), pass=sc>=85;
-  const errs=a.errors||[], opts=a.optimizations||[];
-  const head=pass
-    ? `<div style="font-size:15.5px;font-weight:800;color:var(--green)">✅ 正确 · ${sc}/100 · 基本掌握</div>`
-    : `<div style="font-size:15.5px;font-weight:800;color:var(--red)">❌ 有错误 · ${sc}/100 · 需要改进</div>`;
+  const sc=Number(a.score||0);
+  const errs=a.errors||[], opts=a.optimizations||[], tasks=a.task_issues||[];
+  const hasErr=errs.length>0, hasTask=tasks.length>0;
+  const pass = sc>=85 && !hasErr && !hasTask;
+  let head;
+  if(pass){
+    head=`<div style="font-size:15.5px;font-weight:800;color:var(--green)">✅ 正确 · ${sc}/100 · 基本掌握</div>`;
+  }else if(hasErr){
+    head=`<div style="font-size:15.5px;font-weight:800;color:var(--red)">❌ 有错误 · ${sc}/100 · 需要改进</div>`;
+  }else if(hasTask){
+    head=`<div style="font-size:15.5px;font-weight:800;color:#b45309">⚠️ 未完成题目要求 · ${sc}/100 · 需要改进</div>`;
+  }else{
+    head=`<div style="font-size:15.5px;font-weight:800;color:var(--red)">❌ 有错误 · ${sc}/100 · 需要改进</div>`;
+  }
+  if(a.status==='UNCERTAIN'){
+    head=`<div style="font-size:15.5px;font-weight:800;color:#b45309">⚠️ 系统无法完全判断 · ${sc}/100</div>`;
+  }
   const errHtml = errs.length
     ? `<div style="margin-top:7px;font-size:13px;font-weight:800;color:var(--red)">🔍 哪里错了 / 为什么错</div>`
       + errs.map((e,j)=>`<div style="background:#fff;border:1px solid #fecaca;border-radius:9px;padding:8px 10px;margin:6px 0">
@@ -773,7 +799,15 @@ function attemptCard(a,tk,i,isLast){
         <div style="font-size:13.5px;color:#475569;margin-top:4px">💡 <b>为什么错：</b>${esc(e.explanation)}</div>
         <div style="font-size:13.5px;margin-top:4px">✅ <b>正确表达：</b><b style="color:var(--green)">${esc(e.correct)}</b></div>
       </div>`).join('')
-    : `<div style="margin-top:6px;font-size:13.5px;color:var(--muted)">✅ 没有明显错误</div>`;
+    : (hasTask?`<div style="margin-top:6px;font-size:13.5px;color:var(--muted)">✅ 没有明显语法错误</div>`
+                :`<div style="margin-top:6px;font-size:13.5px;color:var(--muted)">✅ 没有明显错误</div>`);
+  const taskHtml = tasks.length
+    ? `<div style="margin-top:7px;font-size:13px;font-weight:800;color:#b45309">📋 题目要求（需补齐，不计入语法错误）</div>`
+      + tasks.map((e,j)=>`<div style="background:#fffbeb;border:1px solid #fde68a;border-radius:9px;padding:8px 10px;margin:6px 0">
+        <div style="font-size:13.5px">⚠️ <b>未完成：</b><span style="color:#b45309;font-weight:700">${esc(e.where)}</span></div>
+        <div style="font-size:13.5px;color:#475569;margin-top:4px">💡 ${esc(e.explanation)}</div>
+      </div>`).join('')
+    : '';
   const corHtml = (!pass && a.corrected && a.corrected!==a.sentence)
     ? `<div style="margin-top:6px;font-size:13.5px">📗 <b>整句正确写法：</b><b style="color:var(--green)">${esc(a.corrected)}</b></div>`:'';
   const optHtml = opts.length
@@ -792,7 +826,7 @@ function attemptCard(a,tk,i,isLast){
       <button class="btn ghost sm" style="flex-shrink:0" data-act="copyOne" data-val="${tk}" data-val2="${a.attempt}">📋 复制</button>
     </div>
     <div style="margin-top:5px;font-size:14px;line-height:1.6">${esc(a.sentence)}</div>
-    ${errHtml}${corHtml}${optHtml}
+    ${errHtml}${taskHtml}${corHtml}${optHtml}
   </div>`;
 }
 
@@ -826,6 +860,12 @@ function attemptCopyText(tk,a){
   }else{
     L.push('哪里错了：没有明显错误');
   }
+  if((a.task_issues||[]).length){
+    (a.task_issues||[]).forEach((e,j)=>{
+      L.push('题目要求'+(j+1)+' · 未完成：'+e.where);
+      L.push('题目要求'+(j+1)+' · 说明：'+e.explanation);
+    });
+  }
   if((a.optimizations||[]).length){
     (a.optimizations||[]).forEach((o,j)=>{
       L.push('可优化'+(j+1)+'：'+(o.suggestion||'（见说明）'));
@@ -835,6 +875,35 @@ function attemptCopyText(tk,a){
     L.push('可优化表达：无');
   }
   return L.join('\n');
+}
+async function toggleMySentences(){
+  const box=document.getElementById('mySentences');
+  if(!box) return;
+  if(box.style.display!=='none'){ box.style.display='none'; return; }
+  box.style.display='block';
+  box.innerHTML='<div class="sub" style="margin:0">加载中…</div>';
+  try{
+    const d=await api('/sentence/history');
+    const items=d.items||[];
+    if(!items.length){ box.innerHTML='<div class="sub" style="margin:0">还没有写过句子。</div>'; return; }
+    // 按日期分组（created_at 形如 2026-09-03T...）
+    const byDay={};
+    items.forEach(it=>{ const day=(it.created_at||'').slice(0,10)||'未知';
+      (byDay[day]=byDay[day]||[]).push(it); });
+    box.innerHTML=Object.keys(byDay).sort().reverse().map(day=>{
+      const rows=byDay[day].map(it=>{
+        const ok=it.ok;
+        const tag=ok?'<span style="color:var(--green);font-weight:700">✅</span>'
+                    :'<span style="color:var(--red);font-weight:700">❌</span>';
+        const w=it.word?'<span class="badge" style="background:var(--primary-bg);color:var(--primary)">'+esc(it.word)+'</span> ':'';
+        return `<div style="display:flex;gap:8px;align-items:baseline;padding:5px 0;border-bottom:1px solid #e2e8f0">
+          ${tag} ${w}<span style="font-size:13.5px">${esc(it.sentence)}</span>
+          <span style="color:var(--muted);font-size:12px;margin-left:auto">${Number(it.score||0)}分</span>
+        </div>`;
+      }).join('');
+      return `<div style="margin:10px 0"><div style="font-size:13px;font-weight:800;color:var(--muted);margin-bottom:3px">📅 ${day} · ${byDay[day].length} 句</div>${rows}</div>`;
+    }).join('');
+  }catch(e){ box.innerHTML='<div class="sub" style="margin:0">加载失败：'+esc(e.message)+'</div>'; }
 }
 function copyAllText(){
   const t=state.today||{}, pr=t.progress||{};

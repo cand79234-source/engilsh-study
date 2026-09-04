@@ -250,8 +250,10 @@ def sentence_check(body: dict):
         return {"error": "句子不能为空"}
     word = (body.get("word") or "").strip()
     task_key = (body.get("task_key") or "").strip()
+    grammar = (body.get("grammar") or "").strip()
+    prompt = (body.get("prompt") or "").strip()
     result = correct_sentence(text, p["stage"], p["week"], p["day"],
-                              word, task_key)
+                              word, task_key, grammar, prompt)
     return result
 
 
@@ -278,13 +280,42 @@ def sentence_attempts_one(task_key: str):
     return {"task_key": task_key, "attempts": items}
 
 
+@app.get("/api/sentence/history")
+def sentence_history(limit: int = 300):
+    """跨天可查的全部造句记录（修复「昨天造的句子看不见」）。
+
+    不按当天 stage/week/day 过滤，直接按时间倒序返回全部作答，
+    让用户随时回看自己写过的每一句。
+    """
+    conn = get_conn()
+    rows = conn.execute(
+        "SELECT id, stage, week, day, word, task_key, attempt, original,"
+        " corrected, score, verdict, good, error_type, created_at"
+        " FROM sentences ORDER BY created_at DESC, id DESC LIMIT ?",
+        (limit,)).fetchall()
+    conn.close()
+    items = [{
+        "id": r["id"], "stage": r["stage"], "week": r["week"], "day": r["day"],
+        "word": r["word"] or "", "task_key": r["task_key"] or "",
+        "attempt": r["attempt"], "sentence": r["original"],
+        "corrected": r["corrected"], "score": r["score"],
+        "verdict": r["verdict"] or ("正确" if r["good"] else "有错误"),
+        "ok": bool(r["good"]), "error_type": r["error_type"],
+        "created_at": r["created_at"],
+    } for r in rows]
+    return {"items": items}
+
+
 @app.post("/api/sentence/preview")
 def sentence_preview(body: dict):
     """只看批改结果，不入库（用于前端「重新作答」时的实时预览）。"""
     text = (body.get("sentence") or "").strip()
     if not text:
         return {"error": "句子不能为空"}
-    res = analyze(text)
+    word = (body.get("word") or "").strip()
+    grammar = (body.get("grammar") or "").strip()
+    prompt = (body.get("prompt") or "").strip()
+    res = analyze(text, word, grammar, prompt)
     if res is None:
         return {"error": "无法识别该句子"}
     return res

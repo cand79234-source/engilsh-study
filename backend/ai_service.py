@@ -28,6 +28,65 @@ BASE_SCORE = 90         # 无错基准分
 PENALTY = {"heavy": 30, "medium": 20, "light": 12}
 MIN_SCORE = 20
 
+# 中文检测（中英混杂 → 需要复核，绝不 PASS）
+_CJK = re.compile(r"[\u4e00-\u9fff]+")
+
+# 频率副词（题目要求「频率副词」时，句子必须包含其中之一）
+_FREQ_ADV = {
+    "always", "usually", "often", "sometimes", "rarely", "seldom",
+    "never", "normally", "generally", "frequently", "occasionally",
+    "daily", "weekly", "monthly", "yearly",
+}
+_FREQ_RE = re.compile(
+    r"\b(every\s+(?:day|morning|evening|week|month|year|night)"
+    r"|each\s+(?:day|week|month|year)|most\s+days)\b")
+
+# 任务要求关键词：从题目/语法文本里解析，不硬编码到某个单词
+_REQ_FREQ = ("频率副词", "频率", "frequency adverb", "frequency")
+_REQ_PRESENT = ("一般现在时", "present tense", "simple present", "一般现在")
+_REQ_PAST = ("一般过去时", "past tense", "过去时", "一般过去")
+
+# 高频功能词 / 结构词：永远不会是内容词的拼写错误，近似检查里跳过它们
+# （避免把 to 误判成 go、把 he 误判成 be 等）。
+_COMMON_WORDS = {
+    "the", "a", "an", "and", "or", "but", "if", "when", "because", "so", "to",
+    "of", "in", "on", "at", "for", "with", "by", "from", "as", "is", "are",
+    "was", "were", "be", "been", "being", "do", "does", "did", "done",
+    "have", "has", "had", "he", "she", "it", "we", "they", "you", "i", "my",
+    "your", "his", "her", "its", "our", "their", "this", "that", "these",
+    "those", "me", "him", "us", "them", "not", "no", "yes", "very", "too",
+    "also", "just", "now", "then", "there", "here", "what", "who", "how",
+    "why", "which", "can", "will", "would", "should", "may", "might", "must",
+    "about", "into", "over", "under", "out", "up", "down", "off", "all",
+    "any", "some", "each", "every", "both", "one", "two", "three", "first",
+    "last",
+}
+
+
+def _edit_dist(a, b):
+    """受限编辑距离：长度差 >1 直接返回 99（避免误伤正常词）。"""
+    if abs(len(a) - len(b)) > 1:
+        return 99
+    m, n = len(a), len(b)
+    prev = list(range(n + 1))
+    for i in range(1, m + 1):
+        cur = [i] + [0] * n
+        for j in range(1, n + 1):
+            cost = 0 if a[i - 1] == b[j - 1] else 1
+            cur[j] = min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + cost)
+        prev = cur
+    return prev[n]
+
+
+def _span_of(raw, low, token):
+    """在 raw/low 里定位 token 的 [start,end)（_safe_lower 长度不变，坐标通用）。"""
+    m = re.search(r"(?:(?<=^)|(?<=\s))" + re.escape(token) + r"(?=\s|$|[^a-z'])", low)
+    if not m:
+        m = re.search(re.escape(token), low)
+    if not m:
+        return (0, len(raw))
+    return m.start(), m.end()
+
 
 # =====================================================================
 # 词形工具
@@ -748,6 +807,134 @@ def _r_plural(s, low):
     return out
 
 
+# =====================================================================
+# 新增规则：上下文相关（拼写 / 中文 / I-l / 句法完整性 / 冠词）
+# 这些规则无法从单条「语法规则」覆盖，需要结合目标词与整句判断。
+# 它们产生的都是「硬错误」，会进入错题本（除非调用方显式不写库）。
+# =====================================================================
+
+def _r_chinese(raw, low):
+    """中英混杂：句子里出现中文字符 → 需要复核，绝不 PASS。"""
+    out = []
+    for m in re.finditer(r"[\u4e00-\u9fff]+", raw):
+        s = m.group(0)
+        out.append(_err(
+            "其他", s, s,
+            f"句子里混入了中文「{s}」。英语造句请保持全英文；"
+            f"如果想表达这个意思，请换成英文（例如 city center）。",
+            (m.start(), m.end()), s, "heavy"))
+    return out
+
+
+def _r_i_l(raw, low):
+    """句首的小写 l 当作 I：l like → I like。"""
+    out = []
+    m = re.match(r"\s*l\s+(?=[a-z])", low)
+    if m:
+        out.append(_err(
+            "拼写", "l", "I",
+            "句首的「l」应该是大写字母「I」（英语里“我”永远写成大写 I）。",
+            (m.start(), m.start() + 1), "I", "medium"))
+    return out
+
+
+def _r_no_verb(raw, low):
+    """句法完整性：>=3 个词却没有任何谓语动词 → 不是完整句子。"""
+    out = []
+    toks = re.findall(r"[a-z']+", low)
+    if len(toks) < 3:
+        return out
+    has_verb = any(t in VERBS or t in _AUX_BE or t in _MODALS for t in toks)
+    if not has_verb:
+        out.append(_err(
+            "句型", "（缺少谓语动词）", raw,
+            "这个句子缺少谓语动词，不是一个完整的英文句子。"
+            "请写成「主语 + 动词 + …」的结构，例如加上 be / do / work 等动词。",
+            (0, len(raw)), raw, "medium"))
+    return out
+
+
+def _r_overseas_dept(raw, low):
+    """from/in/at/of/to + overseas department 缺少冠词 the。"""
+    out = []
+    for m in re.finditer(r"\b(from|in|at|of|to)\s+overseas\s+department\b", low):
+        out.append(_err(
+            "冠词", "overseas department", "the overseas department",
+            "「overseas department」前通常要加冠词 the（指“那个海外部门”）。"
+            "更自然的说法是 I am from the overseas department. "
+            "或 I work in the overseas department.",
+            m.span(), "the overseas department", "medium"))
+    return out
+
+
+def _r_target_spelling(raw, low, word):
+    """目标词拼写检查：句子里出现与目标词「等长且仅 1 处替换」的近似词 → 拼写错误。
+
+    例：comoany vs company（等长、o↔p 一处替换）→ 判拼写错误。
+    不误伤：company 本身（精确命中）、companies（前缀匹配）均不触发。
+    """
+    out = []
+    w = (word or "").strip().lower()
+    if not w:
+        return out
+    toks = re.findall(r"[a-z']+", low)
+    if w in toks:
+        return out
+    for t in set(toks):
+        if t in _COMMON_WORDS:
+            continue
+        if len(t) == len(w) and _edit_dist(t, w) == 1:
+            out.append(_err(
+                "拼写", t, w,
+                f"「{t}」看起来是「{w}」的拼写错误，请确认目标词拼写：{w}。",
+                _span_of(raw, low, t), w, "medium"))
+            break
+    return out
+
+
+def _task_issues(raw, low, word, task_grammar, task_prompt):
+    """任务要求检查（软问题，不进错题本，但会阻止 PASS）。
+
+    与硬错误区分：硬错误是「语言本身错了」；这里是「题目没完成」。
+    例如要求频率副词但没用 → 句子可理解，但任务未完成，不能算 PASS。
+    """
+    issues = []
+    req = " ".join([task_grammar or "", task_prompt or ""]).lower()
+
+    # 频率副词
+    if any(k in req for k in _REQ_FREQ):
+        toks = low.split()
+        has_freq = any(f in toks for f in _FREQ_ADV) or bool(_FREQ_RE.search(low))
+        if not has_freq:
+            issues.append({
+                "type": "任务要求", "where": "（频率副词）", "correct": "",
+                "explanation": "题目要求使用频率副词（always / usually / often / "
+                               "sometimes 等），但你的句子里没有。请加上一个频率副词，"
+                               "例如：I usually work for a small company.",
+                "severity": "medium"})
+
+    # 一般现在时 vs 过去时间词
+    if any(k in req for k in _REQ_PRESENT):
+        if _PAST_MARKER.search(low):
+            issues.append({
+                "type": "任务要求", "where": "（时态）", "correct": "",
+                "explanation": "题目是一般现在时，但句子出现了过去时间词"
+                               "（yesterday / ago / last …），时态不一致。",
+                "severity": "medium"})
+
+    # 目标词是否用到
+    w = (word or "").strip().lower()
+    if w:
+        toks = re.findall(r"[a-z']+", low)
+        used = w in toks or any(t.startswith(w) for t in toks)
+        if not used:
+            issues.append({
+                "type": "任务要求", "where": "（目标词）", "correct": "",
+                "explanation": f"没有在句子里用到目标词「{w}」。请围绕「{w}」来写。",
+                "severity": "medium"})
+    return issues
+
+
 # 规则按优先级排列：越靠前越具体，重叠区间里先命中的胜出
 RULES = [
     _r_be_verb,          # I am agree / He is go
@@ -838,8 +1025,17 @@ def _optimizations(s, low):
 # 分析入口（纯函数，不碰数据库，便于测试）
 # =====================================================================
 
-def analyze(sentence):
-    """纯本地分析，返回结构化批改结果（不写库、无副作用）。"""
+def analyze(sentence, word="", task_grammar="", task_prompt=""):
+    """纯本地分析，返回结构化批改结果（不写库、无副作用）。
+
+    判定三态：
+      PASS          —— 语言基本正确 + 句子完整 + 目标词正确 + 题目要求基本完成
+      NEEDS_REVIEW  —— 明确问题：拼写/语法/中英混杂/任务要求未完成/明显表达问题
+      UNCERTAIN     —— 句子过短、信息不足，无法可靠判断（不强行 PASS）
+
+    原则：没有检测到错误 + 任务要求满足 + 目标词正确 + 句子基本完整
+          → PASS；否则不能 PASS。
+    """
     raw = _normalize((sentence or "").strip())
     if not raw:
         return None
@@ -851,21 +1047,69 @@ def analyze(sentence):
             raw_errors.extend(rule(raw, low) or [])
         except Exception as e:  # 单条规则出错不影响整体批改
             print("[ai_service] 规则 %s 执行失败(已跳过): %s" % (rule.__name__, e))
+    # —— 上下文相关的新检查：拼写 / 中文 / I-l / 句法完整性 / 冠词 ——
+    try:
+        raw_errors.extend(_r_chinese(raw, low) or [])
+        raw_errors.extend(_r_i_l(raw, low) or [])
+        raw_errors.extend(_r_no_verb(raw, low) or [])
+        raw_errors.extend(_r_overseas_dept(raw, low) or [])
+        raw_errors.extend(_r_target_spelling(raw, low, word) or [])
+    except Exception as e:
+        print("[ai_service] 新增规则执行失败(已跳过): %s" % e)
     errors = _dedupe(raw_errors)
+    # 中文混杂必须保留：它区间小，会被「整句缺谓语」这类大区间错误在
+    # 去重时吞掉。这里兜底再确认一次，确保中英混杂永远被识别。
+    if _CJK.search(raw) and not any(e["type"] == "其他" for e in errors):
+        for m in _CJK.finditer(raw):
+            s = m.group(0)
+            errors.append(_err(
+                "其他", s, s,
+                f"句子里混入了中文「{s}」。英语造句请保持全英文；"
+                f"如果想表达这个意思，请换成英文（例如 city center）。",
+                (m.start(), m.end()), s, "heavy"))
+        errors.sort(key=lambda x: x["span"][0])
     corrected = _apply(raw, errors) if errors else raw
 
+    # 任务要求检查（软问题，不进错题本，但阻止 PASS）
+    task_issues = _task_issues(raw, low, word, task_grammar, task_prompt)
+
+    # —— 评分与判定：严格区分「语言错误」「任务未完成」「不确定」——
     if errors:
         score = BASE_SCORE - sum(PENALTY.get(e["severity"], 20) for e in errors)
         score = max(MIN_SCORE, min(100, score))
+        status = "NEEDS_REVIEW"
+        ok = False
+    elif task_issues:
+        # 任务要求没完成：不判 PASS，但也不当成语法错误重扣
+        score = min(84, BASE_SCORE - 6)
+        status = "NEEDS_REVIEW"
+        ok = False
     else:
         score = BASE_SCORE
-        if len(re.findall(r"[A-Za-z']+", raw)) >= 8:
+        words = re.findall(r"[A-Za-z']+", raw)
+        if len(words) >= 8:
             score += 5
         if any(re.search(r"\b" + c + r"\b", low) for c in _CONNECT):
             score += 5
         score = min(100, score)
+        # 过短 / 信息不足：不确定，不要强行 PASS
+        if len(words) <= 2:
+            status = "UNCERTAIN"
+            ok = False
+        else:
+            status = "PASS"
+            ok = True
 
-    ok = not errors
+    if errors:
+        explanation = "；".join(e["explanation"] for e in errors)
+        error_type = errors[0]["type"]
+    elif task_issues:
+        explanation = "；".join(i["explanation"] for i in task_issues)
+        error_type = task_issues[0]["type"]
+    else:
+        explanation = "没有明显错误。"
+        error_type = ""
+
     return {
         "original": raw,
         "corrected": corrected,
@@ -873,12 +1117,15 @@ def analyze(sentence):
         "score": score,
         "verdict": "正确" if ok else "有错误",
         "level": "基本掌握" if score >= PASS_LINE else "需要改进",
-        "error_type": errors[0]["type"] if errors else "",
-        "explanation": ("；".join(e["explanation"] for e in errors)
-                        if errors else "没有明显错误。"),
+        "status": status,
+        "error_type": error_type,
+        "explanation": explanation,
         "errors": [{"type": e["type"], "where": e["where"],
                     "correct": e["correct"], "explanation": e["explanation"]}
                    for e in errors],
+        "task_issues": [{"type": i["type"], "where": i["where"],
+                          "correct": i["correct"], "explanation": i["explanation"]}
+                        for i in task_issues],
         "optimizations": _optimizations(raw, low) if ok else [],
     }
 
@@ -887,15 +1134,17 @@ def analyze(sentence):
 # 批改主入口：分析 + 落库 + 错题本
 # =====================================================================
 
-def correct_sentence(sentence, stage=0, week=3, day=1, word="", task_key=""):
+def correct_sentence(sentence, stage=0, week=3, day=1, word="", task_key="",
+                     task_grammar="", task_prompt=""):
     """纯本地批改主入口。
 
     - sentences：每次作答追加一行，attempt 递增，**绝不覆盖上一次答案**。
     - errors（错题本）：只有真错才写；同一个 word + 错误片段累加 times；
       该词后来写对了只把 fixed 标成 1，**不删除**历史记录。
+    - task_issues（任务未完成，如缺频率副词）：只展示、不进错题本、不污染 SRS。
     全程无任何 AI 参与。
     """
-    res = analyze(sentence)
+    res = analyze(sentence, word, task_grammar, task_prompt)
     if res is None:
         return None
 
@@ -953,9 +1202,10 @@ def correct_sentence(sentence, stage=0, week=3, day=1, word="", task_key=""):
                          (now, r["id"]))
             fixed_ids.append(r["id"])
 
-    # 有错 → 安排一张「高频错误」复习卡
-    need_review = bool(res["errors"])
-    if need_review:
+    # 有硬错误 → 安排一张「高频错误」复习卡。
+    # 注意：task_issues（如缺频率副词）是任务未完成，不算语言错误，不污染 SRS。
+    hard_review = bool(res["errors"])
+    if hard_review:
         schedule_review(conn, "error", res["error_type"],
                         f"改正错误：{res['corrected']}",
                         res["corrected"], stage, week, day)
@@ -972,8 +1222,8 @@ def correct_sentence(sentence, stage=0, week=3, day=1, word="", task_key=""):
         "created_at": now,
         "good": res["ok"],
         "ai_source": "rule",
-        "needs_review": need_review,
-        "to_error_bank": need_review,
+        "needs_review": hard_review or bool(res["task_issues"]),
+        "to_error_bank": hard_review,
         "error_bank_ids": bank_ids,
         "fixed_error_ids": fixed_ids,
         "expand_hint": (res["optimizations"][0]["reason"]
