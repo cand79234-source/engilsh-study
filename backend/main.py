@@ -254,6 +254,14 @@ def sentence_check(body: dict):
     prompt = (body.get("prompt") or "").strip()
     result = correct_sentence(text, p["stage"], p["week"], p["day"],
                               word, task_key, grammar, prompt)
+    # ③ 造句五星：以批改三态为唯一信号，更新「主动输出熟练度」（与 SRS 完全无关）
+    # PASS → +1 星；NEEDS_REVIEW / UNCERTAIN → -1 星；星级限制 0~5。
+    status = result.get("status") or ("PASS" if result.get("ok") else "NEEDS_REVIEW")
+    score = result.get("score", 0)
+    head_word = (word or "").split()[0].lower() if (word or "").split() else ""
+    for w in (word or "").split():
+        srs.update_output_star(w, status, score)
+    result["output_star"] = srs.word_stars(head_word)["stars"] if head_word else None
     return result
 
 
@@ -304,6 +312,16 @@ def sentence_history(limit: int = 300):
         "created_at": r["created_at"],
     } for r in rows]
     return {"items": items}
+
+
+@app.post("/api/output/stars")
+def output_stars(body: dict):
+    """③ 批量读取多个词的造句五星熟练度，返回 {word: stars}（仅含已记录的词）。
+
+    供今日造句计划页给每个词打 ★ 用；未记录的词不返回，不编造 0 星。
+    """
+    words = body.get("words") or []
+    return {"stars": srs.stars_map(words)}
 
 
 @app.post("/api/sentence/preview")

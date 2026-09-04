@@ -31,6 +31,7 @@ h2{font-size:15px;font-weight:700;display:flex;align-items:center;gap:8px}
 .content{padding:66px 14px calc(var(--nav-h) + 24px);max-width:620px;margin:0 auto}
 .card{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:15px;margin-bottom:13px;box-shadow:var(--shadow)}
 .badge{background:var(--primary-bg);color:var(--primary);border-radius:20px;padding:2px 9px;font-size:11px;font-weight:700;white-space:nowrap}
+.starcs{color:#f59e0b;font-size:12px;letter-spacing:1px;white-space:nowrap}
 
 /* 按钮 */
 .btn{background:var(--primary);color:#fff;border:none;padding:12px 18px;border-radius:11px;font-size:15px;font-weight:700;cursor:pointer;transition:.15s;min-height:44px}
@@ -674,12 +675,21 @@ async function renderSentencePlan(t){
   state.tkMeta={};
   const g=(t&&t.grammar)||'';   // 本周语法要求（如「一般现在时、频率副词」），随批改一起传给后端
 
+  // ③ 造句五星：拉取每个词的五星熟练度，用于渲染 ★ 徽章（未记录则不显示）
+  const _words=[...p.basic.map(b=>b.word), ...(p.upgrade||[]).map(u=>u.word),
+    ...(p.combo||[]).flatMap(c=>(c.words||[]).map(w=>w.word))].filter(Boolean);
+  try{
+    const _sm=await api('/output/stars',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({words:_words})});
+    state.starMap=(_sm&&_sm.stars)||{};
+  }catch(e){ state.starMap={}; }
+
   // ① 基础：每词一句
   document.getElementById('sentences').innerHTML=p.basic.map((b,i)=>{
     const tk='basic:'+i;
     state.tkMeta[tk]={word:b.word||'', task:b.task||'', label:b.task||'', grammar:g};
     return itemHtml(tk,
-      `<div class="sq">${b.i}. ${esc(b.task)}${b.focus?' <span class="badge" style="background:#fef3c7;color:#92400e">★重点</span>':''}</div>`,
+      `<div class="sq">${b.i}. ${esc(b.task)}${starBadge(b.word)}${b.focus?' <span class="badge" style="background:#fef3c7;color:#92400e">★重点</span>':''}</div>`,
       '写一个英文句子…', false);
   }).join('') || '<div class="sub">今天没有新词。</div>';
 
@@ -688,7 +698,7 @@ async function renderSentencePlan(t){
     const tk='up:'+i;
     state.tkMeta[tk]={word:u.word||'', task:u.task||'', label:'升级「'+(u.word||'')+'」', grammar:g};
     return itemHtml(tk,
-      `<div class="sq">${u.i}. 升级「<b>${esc(u.word)}</b>${u.meaning?'（'+esc(u.meaning)+'）':''}」
+      `<div class="sq">${u.i}. 升级「<b>${esc(u.word)}</b>${starBadge(u.word)}${u.meaning?'（'+esc(u.meaning)+'）':''}」
         <span class="badge" style="background:#fef3c7;color:#92400e">${esc(u.direction)}</span>
         ${u.is_review?'<span class="badge" style="background:#fee2e2;color:#b91c1c">复习词</span>':''}</div>
       <div class="sub" style="margin:4px 0">${esc(u.direction_desc)}</div>
@@ -703,13 +713,19 @@ async function renderSentencePlan(t){
     state.tkMeta[tk]={word:(c.words||[]).map(w=>w.word).join(' '), task:c.scene||'', label:c.scene||'', grammar:g};
     return itemHtml(tk,
       `<div class="sq">${c.i}. ${esc(c.scene)}</div>
-      <div class="sub" style="margin:4px 0">${(c.words||[]).map(w=>`<span class="badge" style="background:${w.review?'#fee2e2;color:#b91c1c':'var(--primary-bg);color:var(--primary)'}">${esc(w.word)}${w.meaning?'·'+esc(w.meaning):''}${w.review?' 🔁':''}</span>`).join(' ')}</div>
+      <div class="sub" style="margin:4px 0">${(c.words||[]).map(w=>`<span class="badge" style="background:${w.review?'#fee2e2;color:#b91c1c':'var(--primary-bg);color:var(--primary)'}">${esc(w.word)}${starBadge(w.word)}${w.meaning?'·'+esc(w.meaning):''}${w.review?' 🔁':''}</span>`).join(' ')}</div>
       <div class="sub" style="margin:4px 0;color:var(--muted)">${esc(c.hint||'建议 2-3 句，写多写少随意，不强制。')}</div>`,
       '写 2-3 句连续表达（写多写少随意）…', true);
   }).join('') || '<div class="sub">今天没有可组合的词。</div>';
 
   planKeys().forEach(tk=>renderAttempts(tk));
   planProgress();
+}
+
+function starBadge(w){
+  const s=state.starMap?state.starMap[(w||'').toLowerCase()]:undefined;
+  if(s===undefined) return '';
+  return ` <span class="starcs" title="主动输出熟练度 ${s}/5">${'★'.repeat(s)}${'☆'.repeat(5-s)}</span>`;
 }
 
 /* 单题外壳：题干 + 输入框 + 批改按钮 + 结果区 + 历史区 */

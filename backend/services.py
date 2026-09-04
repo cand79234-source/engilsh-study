@@ -3,6 +3,7 @@ import json
 import re
 from datetime import date, datetime, timedelta
 from db import get_conn, ts, today_str, ERROR_TYPES
+import srs
 
 
 # ---------- 进度 ----------
@@ -842,6 +843,18 @@ def build_sentence_plan(today_new, due_vocab, grammar, stage, week, day,
     if seed_date is None:
         seed_date = date.today()
     seed = abs(hash(f"{stage}-{week}-{day}-{seed_date.isoformat()}")) % (10 ** 6)
+
+    # ③ 造句五星：达到 5 星的词「主动输出已稳定」，不再进入常规造句计划
+    # （基础句不再出它；升级/组合也不强制编排它）。SRS 是否复习由各自逻辑决定。
+    cand_words = [w.get("word") for w in (today_new or [])] + \
+                 [w.get("word") for w in (due_vocab or [])]
+    starred = srs.stars_map(cand_words)
+    five_star = {w for w, s in starred.items() if s >= 5}
+    if five_star:
+        today_new = [w for w in (today_new or [])
+                     if w.get("word", "").strip().lower() not in five_star]
+        due_vocab = [w for w in (due_vocab or [])
+                     if w.get("word", "").strip().lower() not in five_star]
 
     basic = _build_basic(today_new, grammar)
     upgrade = _build_upgrade(today_new, due_vocab, grammar, seed, n_upgrade)

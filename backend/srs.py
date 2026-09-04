@@ -153,6 +153,75 @@ def due_vocab_reviews(limit=50):
     return due_reviews(limit=limit, kind="vocab")
 
 
+def update_output_star(word, status, score=0):
+    """③ 造句五星：更新一个词的「主动输出熟练度」。
+
+    与 SRS 完全无关——这里只读/写 word_output 表，绝不碰 reviews、不排复习卡。
+    SRS 管「记不记得」，五星管「能不能主动用」。
+
+    规则：
+      - PASS         → +1 星（主动用对了）
+      - NEEDS_REVIEW → -1 星（拼写/语法/中英混杂/任务未完成）
+      - UNCERTAIN    → -1 星（无法确认正确，不算合格输出）
+    星级限制 0~5；同时累加回顾次数与最近表现，保留历史。
+    星级只能由实际造句结果自动变化，不提供手动修改入口。
+    """
+    if not word:
+        return None
+    w = word.strip().lower()
+    if not w:
+        return None
+    delta = 1 if status == "PASS" else -1
+    conn = get_conn()
+    now = ts()
+    row = conn.execute("SELECT * FROM word_output WHERE word=?", (w,)).fetchone()
+    if row:
+        stars = max(0, min(5, (row["stars"] or 0) + delta))
+        conn.execute(
+            "UPDATE word_output SET stars=?, total_attempts=?, last_result=?,"
+            " last_score=?, last_at=?, updated_at=? WHERE word=?",
+            (stars, (row["total_attempts"] or 0) + 1, status,
+             int(score or 0), now, now, w))
+    else:
+        # 首次：PASS 记 1 星；不合格从 0 星起步（不会变负数）
+        stars = max(0, min(5, delta))
+        conn.execute(
+            "INSERT INTO word_output (word, stars, total_attempts, last_result,"
+            " last_score, first_at, last_at, updated_at) VALUES (?,?,?,?,?,?,?,?)",
+            (w, stars, 1, status, int(score or 0), now, now, now))
+    conn.commit()
+    conn.close()
+    return stars
+
+
+def word_stars(word):
+    """读取一个词的五星熟练度（未记录返回 None，不编造 0 星）。"""
+    conn = get_conn()
+    row = conn.execute(
+        "SELECT * FROM word_output WHERE word=?",
+        ((word or "").strip().lower(),)).fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+
+def stars_map(words):
+    """批量读取多个词的五星熟练度，返回 {word: stars}（仅含已记录的词）。
+
+    供造句计划页实时给每个词打 ★ 用，不编造 0 星。
+    """
+    out = {}
+    if not words:
+        return out
+    conn = get_conn()
+    for w in set((x or "").strip().lower() for x in words if x and x.strip()):
+        row = conn.execute(
+            "SELECT word, stars FROM word_output WHERE word=?", (w,)).fetchone()
+        if row:
+            out[row["word"]] = row["stars"]
+    conn.close()
+    return out
+
+
 def flashcard_items(limit=50):
     """② 今日复习闪卡数据：到期 vocab 卡 + 词典释义（翻牌后才显示中文）。
 

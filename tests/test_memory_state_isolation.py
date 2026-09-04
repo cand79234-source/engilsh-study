@@ -62,10 +62,10 @@ def _insert_review(kind, ref_key, next_due=None, last_score=-1, ease=2.5, interv
 
 def test_word_output_table_exists():
     conn = db.get_conn()
-    row = conn.execute(
-        "SELECT 1 FROM word_output LIMIT 1").fetchall()
+    tbl = conn.execute(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='word_output'").fetchone()
     conn.close()
-    assert row == []          # 能查到（不抛异常）即表已建立
+    assert tbl is not None    # 表已建立（能查到 schema 即存在，与是否有数据无关）
 
 
 # ---------- ② kind 过滤：听力卡/错误卡不得混进单词闪卡 ----------
