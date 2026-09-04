@@ -151,7 +151,67 @@ textarea{font-family:monospace;font-size:13px;min-height:110px;line-height:1.6}
   <div class="sheet" id="progSheet"></div>
 </div>
 <script>
-const api=(p,opt)=>fetch('/api'+p,opt).then(r=>r.json());
+/* ---------- API 封装：自动带 X-Auth-Token + 401 弹输入框 ----------
+   部署在公网时，Render 控制台设了 EOS_TOKEN 之后所有 /api/* 都要口令。
+   这个 wrapper 帮我们：
+   1) 默认从 localStorage 取 eos_token，自动加到 X-Auth-Token 请求头
+   2) 收到 401 时弹一个输入框，让用户填口令，存回 localStorage 后自动重试
+   3) 本地模式（服务端未设 EOS_TOKEN）下永远不弹框，所有响应是 200
+   口令本身永远不会出现在代码或 git 里——用户首次访问时自己输入并存在浏览器。
+   ----------------------------------------------------------------- */
+const EOS_TOKEN_KEY = 'eos_token';
+
+function getEosToken() {
+  try { return localStorage.getItem(EOS_TOKEN_KEY) || ''; } catch (_) { return ''; }
+}
+function setEosToken(t) {
+  try {
+    if (t) localStorage.setItem(EOS_TOKEN_KEY, t);
+    else localStorage.removeItem(EOS_TOKEN_KEY);
+  } catch (_) {}
+}
+
+function promptEosToken() {
+  // 单输入框；空 = 取消
+  const v = window.prompt('请输入访问口令（EOS_TOKEN）：', '');
+  return (v == null) ? null : v.trim();
+}
+
+async function apiRaw(p, opt) {
+  // 真正的 fetch：带 token、透传 opt
+  const headers = Object.assign({}, (opt && opt.headers) || {});
+  const tok = getEosToken();
+  if (tok && !headers['X-Auth-Token'] && !headers['x-auth-token']
+            && !headers['Authorization'] && !headers['authorization']) {
+    headers['X-Auth-Token'] = tok;
+  }
+  const finalOpt = Object.assign({}, opt || {}, { headers });
+  const r = await fetch('/api' + p, finalOpt);
+  return r;
+}
+
+async function api(p, opt) {
+  let r = await apiRaw(p, opt);
+  if (r.status !== 401) return r.json();
+  // 401：先清掉旧 token（可能输错了），再问一次
+  setEosToken('');
+  const v = promptEosToken();
+  if (!v) {
+    // 用户取消：把 401 原文透出
+    let body = null;
+    try { body = await r.json(); } catch (_) {}
+    return body || { ok: false, error: '未授权：缺少访问口令（EOS_TOKEN）。' };
+  }
+  setEosToken(v);
+  r = await apiRaw(p, opt);
+  if (r.status === 401) {
+    setEosToken('');  // 还是错的，清掉
+    let body = null;
+    try { body = await r.json(); } catch (_) {}
+    return body || { ok: false, error: '访问口令错误。' };
+  }
+  return r.json();
+}
 function esc(s){return (s==null?'':String(s)).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');}
 
 /* 统一事件委托：凡是参数来自用户导入内容（单词/搭配/例句）的点击，

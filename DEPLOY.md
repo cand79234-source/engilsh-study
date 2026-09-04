@@ -136,14 +136,21 @@ postgresql://neondb_owner:xxxx@ep-xxx-pooler.ap-southeast-1.aws.neon.tech/neondb
 3. 点 **Save Changes** → 服务会自动重新部署
 
 ### 怎么用
-打开你的网站 → 页面会自动弹一次输入框 → 输入刚设的口令 → **浏览器会记住**，
-以后不用再输（存在 localStorage；换设备/清缓存后重新输一次即可）。
+打开你的网站 → 首次访问任意接口都会自动弹一次输入框 → 输入刚设的口令
+→ 浏览器会记在 `localStorage` 里（key = `eos_token`），**以后不用再输**。
+
+### 改口令后怎么生效
+浏览器记的是旧口令，**新口令输错 1 次后旧口令会被清掉**（前端会清 `localStorage` 再弹新框）。
+如果只输错没清缓存就刷不出来了：在浏览器 DevTools → Application → Local Storage
+删掉 `eos_token`，刷新页面，会重新弹输入框。
 
 ### 其它注意事项
 - **UptimeRobot 的监控地址保持 `/api/health`**，它不带口令也能 ping 通
 - Render 的 Health Check Path 已设为 `/api/health`（见 `render.yaml`），**不要改回 `/api/today`**
 - 想临时关掉口令：把 `EOS_TOKEN` 这个环境变量删掉即可（不设 = 完全开放）
 - 口令可以用 `X-Auth-Token: 你的口令` 请求头传，也可以用 `Authorization: Bearer 你的口令`
+- 跨域/JSON 预检（OPTIONS）已放行，前端不会被 401 顶回去
+- **GitHub PAT 永远不要进前端代码 / 也不要在对话/工单里贴**——它只能放后端环境变量（如果你将来真用 GitHub API 的话）
 
 ---
 

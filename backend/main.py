@@ -18,8 +18,6 @@ from ai_service import (correct_sentence, ERROR_TYPES, attempts_of,
 import fileimport
 
 app = FastAPI(title="English OS")
-app.add_middleware(
-    CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
 # ---------- 访问口令（公网部署保护） ----------
 # 不设 EOS_TOKEN → 完全开放（本地个人使用，run.sh 默认如此）。
@@ -36,6 +34,10 @@ class TokenAuthMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request, call_next):
         if not ACCESS_TOKEN:
             return await call_next(request)          # 本地模式：不鉴权
+        # 跨域/JSON 预检直接放行：交给 CORS 中间件去回 ACAO 头，
+        # 鉴权不要拦预检请求（前端不带口令的 OPTIONS 不该被 401 顶回去）
+        if request.method == "OPTIONS":
+            return await call_next(request)
         path = request.url.path
         if not path.startswith("/api/") or path in PUBLIC_API_PATHS:
             return await call_next(request)
@@ -51,8 +53,12 @@ class TokenAuthMiddleware(BaseHTTPMiddleware):
         return await call_next(request)
 
 
-# 注意顺序：CORS 先注册（外层，负责 OPTIONS 预检），鉴权后注册（内层）
+# 中间件注册顺序：Starlette 是「后注册的先执行 / 离请求越近」。
+# 我们要 CORS 处理 OPTIONS 预检（含 ACAO 头），所以 CORS 后注册。
+# TokenAuth 早于 CORS 执行，但已对 OPTIONS 放行（见上面 dispatch），CORS 再补头。
 app.add_middleware(TokenAuthMiddleware)
+app.add_middleware(
+    CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
 init_db()
 
