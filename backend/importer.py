@@ -61,10 +61,16 @@ _EN_SKIP = {"the", "a", "an", "and", "or", "of", "to", "in", "on", "at", "for",
             "group", "week", "day", "stage", "vocabulary", "english", "第", "第组"}
 
 
+# 单词名允许的字符：字母开头，后面可跟字母 / 撇号 / 连字符 / 数字。
+# 加数字是为了兼容 iPhone12 / word2 / COVID-19 / x-ray 这类真实词形。
+# 首字符仍要求是字母，所以 "2026"、"1)" 这类编号不会被误判成单词。
+_WORD_CHARS = r"[A-Za-z][A-Za-z0-9'\-]*"
+
+
 def _is_english_word(tok):
     if not tok:
         return False
-    if not re.fullmatch(r"[A-Za-z][A-Za-z'\-]*", tok):
+    if not re.fullmatch(_WORD_CHARS, tok):
         return False
     if tok.lower() in _EN_SKIP:
         return False
@@ -185,7 +191,7 @@ def _parse_word_header(line):
         if sep in s:
             left, right = s.split(sep, 1)
             return _build(left, right)
-    m = re.match(r"^([A-Za-z][A-Za-z'\-]*)(?:[\s　]+(.+))?$", s)
+    m = re.match(r"^(" + _WORD_CHARS + r")(?:[\s　]+(.+))?$", s)
     if m and _is_english_word(m.group(1)):
         rest = (m.group(2) or "").strip()
         focus = False
@@ -232,7 +238,7 @@ def _build(left, right):
         focus = True
         left = re.sub(r"[★*]", "", left).strip()
         right = re.sub(r"[★*]", "", right).strip()
-    m = re.match(r"^([A-Za-z][A-Za-z'\-]*)(?:[\s　]*\(([^)]*)\))?$", left)
+    m = re.match(r"^(" + _WORD_CHARS + r")(?:[\s　]*\(([^)]*)\))?$", left)
     if not m or not _is_english_word(m.group(1)):
         return None
     pos, cn = _split_pos_and_cn(right)
