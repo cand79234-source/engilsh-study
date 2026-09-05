@@ -1086,6 +1086,28 @@ def training_state_post(body: dict):
     return _training.save_state(body)
 
 
+@app.get("/api/weak/snapshots")
+def weak_snapshots_get():
+    """读取薄弱项每日快照（供趋势图 / 本周 vs 上周 / 连续周使用）。
+
+    返回 [{'d':'2026-09-05','map':{'@grammar':3, ...}}, ...]，按日期升序。
+    后端 `/api/weakness` 只给「近 30 天累计次数」这个会滚动的当前值，
+    历史某天的数值今天重算不出来，所以趋势只能靠这份每日快照。
+    """
+    return {"ok": True, "snapshots": _link.load_snapshots()}
+
+
+@app.post("/api/weak/snapshots")
+def weak_snapshots_post(body: dict):
+    """保存某一天的薄弱项快照。
+
+    body: {'d': 'YYYY-MM-DD', 'map': {key: number}}
+    同一天重复提交覆盖为最新值；最多保留 60 天。
+    """
+    n = _link.save_snapshots((body or {}).get("d"), (body or {}).get("map") or {})
+    return {"ok": True, "saved": n}
+
+
 def _grade_training(ability, user_sentence, answer):
     """纯本地规则判分：返回 (score 0-100, ok bool, feedback str)。
 

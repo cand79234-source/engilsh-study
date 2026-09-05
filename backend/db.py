@@ -569,6 +569,15 @@ def init_db():
         UNIQUE(stage, week, day)
     );
 
+    CREATE TABLE IF NOT EXISTS weak_snapshots (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        d TEXT NOT NULL,
+        item_key TEXT NOT NULL,
+        val REAL DEFAULT 0,
+        updated_at TEXT,
+        UNIQUE(d, item_key)
+    );
+
     """)
 
     # 初始化进度（仅一条记录）
@@ -694,6 +703,8 @@ def init_db():
         # 数据打通后按课程周聚合错误本 / 五星输出
         "CREATE INDEX IF NOT EXISTS idx_errors_stage_week ON errors(stage, week)",
         "CREATE INDEX IF NOT EXISTS idx_wout_stage_week ON word_output(stage, week)",
+        # 薄弱项每日快照：按日期查整份快照（(d, item_key) 建表时已是 UNIQUE）
+        "CREATE INDEX IF NOT EXISTS idx_weak_snap_d ON weak_snapshots(d)",
     ):
         try:
             c.execute(_idx)

@@ -422,3 +422,118 @@ def training_summary():
         "attempts": int(n_att or 0),
         "rate": round(int(correct or 0) / int(valid) * 100) if valid else None,
     }
+
+
+# ---------- 5. 薄弱项每日快照 → 落库 ----------
+#
+# 为什么必须有这张表：
+# `/api/weakness` 给的是「近 30 天累计次数」——一个**会随时间滚动的当前值**。
+# 「昨天这个薄弱项是 5 次还是 8 次」今天无论如何都重算不出来（30 天窗口已经滑走了）。
+# 而趋势图、本周 vs 上周、连续周这三个功能要的恰恰是**历史序列**，只能每天存一份。
+#
+# 所以清单 5「不再需要前端快照」这条指示是自相矛盾的：不建表就做不到，
+# 建表又撞清单 4.2「不需要新建的数据表」。这里选择建表 —— 数据不丢优先。
+#
+# 前端保留 localStorage 作为降级：后端不可用（离线 / 未部署）时行为与改造前完全一致，
+# 趋势图会老实显示「待观察」，绝不编造趋势。
+
+SNAP_KEEP_DAYS = 60     # 最多保留多少天的快照
+SNAP_MAX_KEYS = 500     # 单日最多多少个维度键，防止异常数据把表灌爆
+
+
+def _valid_day(d):
+    """只接受 YYYY-MM-DD，别的格式一律拒绝 —— 日期是主键的一部分，
+    放进来脏数据会让「本周 vs 上周」的 ISO 周聚合算出荒唐结果。"""
+    import re
+    s = str(d or "").strip()
+    return s if re.match(r"^\d{4}-\d{2}-\d{2}$", s) else None
+
+
+def save_snapshots(day, snap_map):
+    """写入某一天的薄弱项快照（同一天重复调用覆盖为最新值）。
+
+    day: 'YYYY-MM-DD'；snap_map: {'@grammar': 3, 'grammar|tense': 5, ...}
+    返回写入的键数量；参数不合法返回 0。
+    """
+    d = _valid_day(day)
+    if not d or not isinstance(snap_map, dict) or not snap_map:
+        return 0
+
+    # 清洗：key 统一成字符串并限长，val 只接受数字（非数字记 0，不让它污染聚合）
+    items = []
+    for k, v in snap_map.items():
+        key = str(k or "").strip()[:120]
+        if not key:
+            continue
+        try:
+            val = float(v)
+        except (TypeError, ValueError):
+            val = 0.0
+        if val != val or val in (float("inf"), float("-inf")):   # NaN / Inf 挡掉
+            val = 0.0
+        items.append((key, val))
+        if len(items) >= SNAP_MAX_KEYS:
+            break
+
+    if not items:
+        return 0
+
+    now = ts()
+    conn = get_conn()
+    try:
+        for key, val in items:
+            conn.execute(
+                "INSERT INTO weak_snapshots (d, item_key, val, updated_at) VALUES (?,?,?,?) "
+                "ON CONFLICT(d, item_key) DO UPDATE SET val=excluded.val, updated_at=excluded.updated_at",
+                (d, key, val, now),
+            )
+        # 老快照清理：只保留最近 SNAP_KEEP_DAYS 个「有数据的日期」
+        try:
+            rows = conn.execute(
+                "SELECT DISTINCT d FROM weak_snapshots ORDER BY d DESC"
+            ).fetchall()
+            keep = [r[0] for r in rows[:SNAP_KEEP_DAYS]]
+            if len(rows) > SNAP_KEEP_DAYS:
+                if keep:
+                    ph = ",".join(["?"] * len(keep))
+                    conn.execute(
+                        f"DELETE FROM weak_snapshots WHERE d NOT IN ({ph})", list(keep)
+                    )
+                else:
+                    conn.execute("DELETE FROM weak_snapshots")
+        except Exception as e:
+            print("[link.save_snapshots] 旧快照清理失败（不影响写入）:", e)
+        conn.commit()
+    finally:
+        conn.close()
+    return len(items)
+
+
+def load_snapshots():
+    """读出全部快照，按日期升序返回 [{'d':'2026-09-05','map':{k:v}}, ...]。
+
+    形状与前端 localStorage `eos_weak_snap_v1` 完全一致，前端可以直接替换数据源。
+    """
+    conn = get_conn()
+    out = []
+    try:
+        rows = conn.execute(
+            "SELECT d, item_key, val FROM weak_snapshots ORDER BY d ASC"
+        ).fetchall()
+    except Exception as e:
+        print("[link.load_snapshots] 读取失败:", e)
+        return []
+    finally:
+        conn.close()
+
+    by_day = {}
+    for r in rows:
+        d = str(r[0])
+        try:
+            v = float(r[2])
+        except (TypeError, ValueError):
+            v = 0.0
+        by_day.setdefault(d, {})[str(r[1])] = v
+    for d in sorted(by_day.keys()):
+        out.append({"d": d, "map": by_day[d]})
+    return out

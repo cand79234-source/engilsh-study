@@ -2587,7 +2587,7 @@ pages.errors=async function(el){
   state.errs=errs; state.bank=bank; state.weak=wk;
   refreshProg();
   const active=errs.filter(e=>e.count_30d>0).length;
-  const weakHtml=weakCapHtml(wk);
+  const weakHtml=await weakCapHtml(wk);
   const weakN=state._weakTotal||0;
   const lowN=((wk&&wk.low_star_words)||[]).length;
   const bankN=(bank&&bank.items)?bank.items.length:((bank&&bank.total!=null)?bank.total:0);
@@ -2663,19 +2663,50 @@ function _todayStr(){
   const d=new Date();
   return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
 }
-function _wsnapLoad(){
+/* 快照原先只写 localStorage：换设备 / 清缓存后趋势图直接回到「待观察」。
+   现在改由服务端 weak_snapshots 表存储，localStorage 降级为离线兜底。
+   读走「一次性拉进内存缓存」的路子，后续所有趋势计算仍是同步的 ——
+   否则 pgosDataDump 那些 forEach 里的 await 不会真的等待，会拿到 Promise。 */
+let _wsnapCache=null;
+function _wsnapLoadLocal(){
   try{ const v=JSON.parse(localStorage.getItem(WSNAP_KEY)||'[]'); return Array.isArray(v)?v:[]; }
   catch(e){ return []; }
 }
+/* 同步读：给趋势计算用。缓存没就绪时退回本机，行为与改造前一致。 */
+function _wsnapAll(){ return _wsnapCache || _wsnapLoadLocal(); }
+/* 进入薄弱项页时调一次：服务端优先，取不到用本机。 */
+async function wsnapEnsure(){
+  if(_wsnapCache) return _wsnapCache;
+  let got=null;
+  try{
+    const r=await api('/weak/snapshots');
+    if(r && Array.isArray(r.snapshots)) got=r.snapshots;
+  }catch(e){ /* 后端不可达 → 用本机 */ }
+  _wsnapCache = (got && got.length) ? got : _wsnapLoadLocal();
+  return _wsnapCache;
+}
 /* 每天只保留一份快照（同一天重复打开覆盖为最新值），基线永远取「今天之前」那份。
    最多留 60 天，超出丢弃最旧的。 */
-function weakSnapshot(map){
+async function weakSnapshot(map){
   if(!map) return;
   const today=_todayStr();
-  let all=_wsnapLoad().filter(s=>s&&s.d&&s.d!==today);
-  all.push({d:today, map:map});
-  while(all.length>60) all.shift();
-  try{ localStorage.setItem(WSNAP_KEY, JSON.stringify(all)); }catch(e){}
+  let local=[];
+  try{
+    local=_wsnapLoadLocal().filter(s=>s&&s.d&&s.d!==today);
+    local.push({d:today, map:map});
+    while(local.length>60) local.shift();
+    localStorage.setItem(WSNAP_KEY, JSON.stringify(local));
+  }catch(e){}
+  try{
+    await api('/weak/snapshots',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({d:today, map:map})});
+    // 写成功就顺手更新内存缓存，省掉一次回查请求
+    const base=(_wsnapCache||_wsnapLoadLocal()).filter(s=>s&&s.d&&s.d!==today);
+    base.push({d:today, map:map});
+    base.sort((a,b)=>String(a.d)<String(b.d)?-1:(String(a.d)>String(b.d)?1:0));
+    while(base.length>60) base.shift();
+    _wsnapCache=base;
+  }catch(e){ /* 同步失败：本机已有，趋势照算 */ }
+  if(!_wsnapCache) _wsnapCache=local;
 }
 /* 错误类型 → 能力大类：后端只给「拼写 / 句型」这类粗标签，只能按关键词归类。
    拼写不进薄弱项（属单词没记住，交给闪卡），这里单独挑出来跳过。 */
@@ -2719,7 +2750,7 @@ function weakSliceTrend(catKey){
 function weakTrend(catKey, itemKey, cur){
   const k = itemKey ? (catKey+'|'+String(itemKey)) : ('@'+catKey);
   const curN=Number(cur||0);
-  const all=_wsnapLoad(), today=_todayStr();
+  const all=_wsnapAll(), today=_todayStr();
   let base=null;
   for(let i=all.length-1;i>=0;i--){ if(all[i].d!==today && all[i].map){ base=all[i]; break; } }
   if(base){
@@ -2747,7 +2778,7 @@ function _isoWeek(dstr){
    首次使用（只有今天一份快照）时上周=0，显示「首次记录」，不编造历史。 */
 function weakWeekStat(catKey, itemKey, liveCount){
   const k=itemKey?(catKey+'|'+String(itemKey)):('@'+catKey);
-  const all=_wsnapLoad().filter(s=>s&&s.d&&s.map&&s.map[k]!=null);
+  const all=_wsnapAll().filter(s=>s&&s.d&&s.map&&s.map[k]!=null);
   const byWeek={};
   all.forEach(s=>{ const w=_isoWeek(s.d); const v=Number(s.map[k])||0; if(!byWeek[w]||s.d>byWeek[w].d) byWeek[w]={d:s.d,v}; });
   const weeks=Object.keys(byWeek).sort();
@@ -2802,7 +2833,8 @@ function weakTrendChart(catKey, itemKey){
   </svg>
   <div class="wkline" style="font-size:11px;margin-top:1px">📈 各周30天错误数：${pts.join(' → ')}　${up?'↑ 增多':down?'↓ 减少':'→ 持平'}</div>`;
 }
-function weakCapHtml(wk){
+async function weakCapHtml(wk){
+  await wsnapEnsure();   // 趋势基线先从服务端取，取不到自动退到本机
   const caps=(wk&&wk.capabilities)||{};
   const apiCats=caps.categories||[];
   // 后端各类里出现过、但没被清单任何一条吃掉的项，兜底挂到对应类末尾，避免漏报
@@ -2831,7 +2863,7 @@ function weakCapHtml(wk){
     all.forEach(r=>{ snapMap[cat.key+'|'+String(r.def.key||'')] = r.hit.length?Number(r.hit[0].count||0):0; });
     return {cat, all, n, extraMore};
   });
-  weakSnapshot(snapMap);   // 先把今天的快照落库，趋势图 / 本周 才算得准
+  await weakSnapshot(snapMap);   // 先把今天的快照落库，趋势图 / 本周 才算得准
   const html=prepared.map(({cat, all, n, extraMore})=>{
     const ctr=weakTrend(cat.key, null, n);
     let catMark=null;
