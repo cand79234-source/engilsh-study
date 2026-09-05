@@ -317,7 +317,13 @@ def sentence_check(body: dict):
 
     result["used_words"] = [w.lower() for w in used_words]
     result["unused_words"] = [w.lower() for w in candidates if w not in used_words]
-    result["output_star"] = srs.word_stars(head_word)["stars"] if head_word else None
+    # 注意：srs.word_stars 对「还没记录」的词返回 None（设计如此，不编造 0 星）。
+    # 用户写的句子若没用上任何建议词，head_word 会回退到 candidates[0]，
+    # 而这个词从未 update_output_star 过 —— 直接 ["stars"] 就是
+    # TypeError: 'NoneType' object is not subscriptable → 整个批改接口 500。
+    # 没记录就如实回 None（前端按「暂无星级」处理），不要崩。
+    _star_row = srs.word_stars(head_word) if head_word else None
+    result["output_star"] = _star_row["stars"] if _star_row else None
     return result
 
 

@@ -127,13 +127,42 @@ def main():
         ck("坏 JSON 已自愈（空数组或自动填充）", ok3, v3raw[:60])
         c.close()
 
+        # 【三】之前必须先等后台 ECDICT 合并跑完：合并期间会持写事务，
+        # 任何落在窗口里的读请求都可能被拖到数秒 —— 那是合并的固有开销，
+        # 跟 vocab 形状修复无关，混在一起测会得到偶发的假阴性。
         print("\n【三】真实浏览器：学习页能打开（之前显示「加载失败」）")
+        import sqlite3 as _sq
+
+        def _dict_count():
+            try:
+                c = _sq.connect(dbfile, timeout=30)
+                n = c.execute("SELECT COUNT(*) FROM dictionary").fetchone()[0]
+                c.close()
+                return n
+            except Exception:
+                return -1
+
+        t0 = time.time()
+        last, stable = -1, 0
+        while time.time() - t0 < 180:
+            n = _dict_count()
+            stable = stable + 1 if n == last and n > 0 else 0
+            last = n
+            if stable >= 3:
+                break
+            time.sleep(1.0)
+        print(f"   后台合并已结束（词典 {last} 行，等待 {time.time()-t0:.1f}s）")
+
         from playwright.sync_api import sync_playwright
         with sync_playwright() as pw:
             b = pw.chromium.launch(args=["--no-sandbox"])
             pg = b.new_page()
             errs = []
-            pg.on("pageerror", lambda e: errs.append(str(e)))
+            # render() 内部用 try/catch + console.error 兜底，抛的异常不是
+            # pageerror —— 只听 pageerror 会漏掉真正的失败原因。
+            pg.on("pageerror", lambda e: errs.append("[pageerror] " + str(e)))
+            pg.on("console", lambda m: errs.append("[console.error] " + m.text)
+                  if m.type == "error" else None)
             pg.goto(BASE + "/", wait_until="domcontentloaded")
             pg.evaluate(f"localStorage.setItem('eos_token','{TOKEN}')")
             pg.reload(wait_until="networkidle")
@@ -141,10 +170,16 @@ def main():
             time.sleep(1.0)
             # 进度指向 week1（旧格式那周）—— 修复前这里必现「加载失败」
             pg.evaluate("render('learn');")
-            time.sleep(2.5)
+            # 等标题出现而不是死等固定秒数
+            try:
+                pg.wait_for_selector("#content h2", timeout=15000)
+            except Exception:
+                pass
+            time.sleep(0.8)
             txt = pg.inner_html("#content")
             ck("学习页渲染出内容（>500 字符）", len(txt.strip()) > 500, f"{len(txt.strip())} 字符")
-            ck("没有「加载失败」", "加载失败" not in txt)
+            ck("没有「加载失败」", "加载失败" not in txt,
+               txt.strip()[:400].replace("\n", " ") if "加载失败" in txt else "")
             # ON CONFLICT 只更新 vocab_json，title 仍是 init_db 预置的「日常与习惯」；
             # 旧格式周（week1）能正常渲染出标题就说明归一化生效
             ck("显示本周标题（预置的「日常与习惯」）", "日常与习惯" in txt,
