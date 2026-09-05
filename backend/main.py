@@ -709,11 +709,20 @@ def words_import(body: dict):
     if not text.strip():
         return {"ok": False, "error": "内容为空，请先粘贴要导入的词汇。"}
     fn = weekimport.import_rich_week_merge if merge else weekimport.import_rich_week
-    return fn(
-        text,
-        forced_stage=int(forced_stage) if forced_stage is not None else None,
-        forced_week=int(forced_week) if forced_week is not None else None,
-    )
+    # 兜底：导入链路里任何未捕获异常都转成 JSON 错误返回。
+    # 否则 FastAPI 直接抛 500，前端 api() 里的 r.json() 会抛
+    # "Unexpected token"，用户只看到一句没头没尾的「导入请求失败」，
+    # 真实原因（比如 OOM、字段约束冲突）全被吞掉。
+    try:
+        return fn(
+            text,
+            forced_stage=int(forced_stage) if forced_stage is not None else None,
+            forced_week=int(forced_week) if forced_week is not None else None,
+        )
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return {"ok": False, "error": f"导入失败：{type(e).__name__}: {e}"}
 
 
 # ---------- 文件上传导入（docx/pdf/txt/xlsx/html 等多格式） ----------

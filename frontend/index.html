@@ -342,6 +342,20 @@ async function api(p, opt) {
   }
   return r.json();
 }
+/* 与 api() 相同，但返回原始 Response 而不是解析后的 JSON。
+   用于导入这类「出错时必须把服务器原文显示给用户」的场景：
+   api() 里 `if (r.status !== 401) return r.json()` 会在 500 且 body 非 JSON 时
+   抛出 "Unexpected token ..."，真实原因（OOM、字段约束冲突等）全被吞掉，
+   用户只看到一句没头没尾的「导入请求失败」。401 重输口令的行为保持一致。 */
+async function apiResp(p, opt){
+  let r = await apiRaw(p, opt);
+  if (r.status !== 401) return r;
+  setEosToken('');
+  const v = promptEosToken();
+  if (!v) return r;
+  setEosToken(v);
+  return await apiRaw(p, opt);
+}
 function esc(s){return (s==null?'':String(s)).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');}
 
 /* 统一事件委托：凡是参数来自用户导入内容（单词/搭配/例句）的点击，
@@ -859,7 +873,16 @@ async function runImport(){
   const box=document.getElementById('imp_rich_result');
   let r;
   try{
-    r=await api('/words/import',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:raw, merge:true, week:p.week})});
+    const resp=await apiResp('/words/import',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:raw, merge:true, week:p.week})});
+    if(!resp.ok){
+      // 服务器返回非 2xx：body 多半不是 JSON，别让 r.json() 抛出无意义的
+      // "Unexpected token"，把状态码和服务器原文一起摆出来，方便定位。
+      let msg=`导入失败（HTTP ${resp.status}）`;
+      try{ const t=await resp.text(); if(t) msg+='：'+String(t).slice(0,200); }catch(_){}
+      box.innerHTML=`<div class="res" style="background:#fee2e2;border-color:#fecaca;color:var(--red)">${esc(msg)}</div>`;
+      btn.textContent='🚀 解析并导入';btn.disabled=false;return;
+    }
+    r=await resp.json();
   }catch(e){box.innerHTML=`<div class="res" style="background:#fee2e2;border-color:#fecaca;color:var(--red)">导入请求失败：${esc(e.message)}</div>`;btn.textContent='🚀 解析并导入';btn.disabled=false;return;}
   if(!r.ok){
     box.innerHTML=`<div class="res" style="background:#fee2e2;border-color:#fecaca;color:var(--red)">${esc(r.error||'未识别到内容')}</div>`;

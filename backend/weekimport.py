@@ -118,6 +118,43 @@ def _bank_colloc(conn, word, phrase, meaning):
     return True
 
 
+def _load_known(conn, words, batch=400):
+    """只把本次导入用到的词从 dictionary 取出来，返回 {小写词: 词条dict}。
+
+    历史 bug（线上导入 500 的真凶）：
+    这里原本是 `for row in conn.execute("SELECT * FROM dictionary")` 读全表。
+    ECDICT 全量词典合入后 dictionary 有 76.8 万行，实测这一句耗时 2.5s、
+    峰值内存 492MB；Render 免费实例只有 512MB，加上 Python+FastAPI 基础占用
+    直接 OOM，worker 被杀 → 返回非 JSON → 前端显示「导入请求失败」。
+    在 SQLite 下（惰性游标、本地小库）根本复现不出来，只能靠读代码定位。
+
+    改成按词点查：一次导入通常几十个词，内存从 492MB 降到可忽略。
+    psycopg2 与 sqlite3 都支持 IN 的元组展开，分批是为了避免极端情况
+    把单次 SQL 撑得过长。
+    """
+    known = {}
+    wanted = []
+    seen = set()
+    for w in words:
+        wl = str(w or "").strip().lower()
+        if wl and wl not in seen:
+            seen.add(wl)
+            wanted.append(wl)
+    if not wanted:
+        return known
+    for i in range(0, len(wanted), batch):
+        chunk = wanted[i:i + batch]
+        ph = ",".join(["?"] * len(chunk))
+        try:
+            for row in conn.execute(
+                    "SELECT * FROM dictionary WHERE word IN (%s)" % ph, list(chunk)):
+                known[str(row["word"]).lower()] = dict(row)
+        except Exception as e:
+            # 词典查不到不该让整个导入失败：缺了只是少补些词性/释义
+            print("[weekimport._load_known] 词典查询失败（跳过补全）:", e)
+    return known
+
+
 def _resolve_stage(text_stage, forced_stage):
     """确定这次导入落到哪个阶段。
 
@@ -166,10 +203,8 @@ def import_rich_week(text, forced_stage=None, forced_week=None):
     added_ex = 0
     added_col = 0
     autogen = 0
-    # 词库已有词（用于补缺）
-    known = {}
-    for row in conn.execute("SELECT * FROM dictionary"):
-        known[row["word"].lower()] = dict(row)
+    # 词库已有词（用于补缺）—— 只查本次涉及的词，不读全表（见 _load_known 注释）
+    known = _load_known(conn, [w["word"] for g in groups for w in g["words"]])
 
     new_vocab = []
     for g in groups:
@@ -333,9 +368,7 @@ def import_rich_week_merge(text, forced_stage=None, forced_week=None):
             and v.get("source") != "builtin"]
 
     conn = get_conn()
-    known = {}
-    for row in conn.execute("SELECT * FROM dictionary"):
-        known[row["word"].lower()] = dict(row)
+    known = _load_known(conn, [w["word"] for g in groups for w in g["words"]])
     counters = {"added_new": 0, "added_examples": 0,
                 "added_collocations": 0, "autogen": 0}
     new_vocab = list(kept)
