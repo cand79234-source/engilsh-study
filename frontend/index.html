@@ -35,6 +35,8 @@ h2{font-size:15px;font-weight:700;display:flex;align-items:center;gap:8px}
 .content{padding:66px 14px calc(var(--nav-h) + 24px);max-width:620px;margin:0 auto}
 .card{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:15px;margin-bottom:13px;box-shadow:var(--shadow)}
 .badge{background:var(--primary-bg);color:var(--primary);border-radius:20px;padding:2px 9px;font-size:11px;font-weight:700;white-space:nowrap}
+.fold-ic{margin-left:auto;cursor:pointer;color:var(--muted);font-size:14px;user-select:none;padding:2px 6px;flex-shrink:0}
+.fold-ic:active{opacity:.6}
 .starcs{color:#f59e0b;font-size:12px;letter-spacing:1px;white-space:nowrap}
 
 /* 按钮 */
@@ -270,6 +272,7 @@ document.addEventListener('click', function(e){
   else if (act === 'tOpt') { trainPick(el); }
   else if (act === 'tSubmit') { trainSubmitQ(el); }
   else if (act === 'listenSubmit') { listenSubmit(el); }
+  else if (act === 'learnFold') { const box=document.getElementById(v); if(box){ box.style.display = box.style.display==='none'?'':'none'; if(el) el.textContent = box.style.display==='none'?'▸':'▾'; } }
 });
 function startFlashcard(){
   state.revMode='flash'; state.revIdx=0; state.revFlipped=false; state.revLog=[];
@@ -283,7 +286,7 @@ function toast(m){const t=document.createElement('div');t.textContent=m;
   t.style.cssText='position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:#1e293b;color:#fff;padding:11px 18px;border-radius:10px;font-size:13.5px;z-index:99;opacity:0;transition:.25s';
   document.body.appendChild(t);requestAnimationFrame(()=>t.style.opacity=1);
   setTimeout(()=>{t.style.opacity=0;setTimeout(()=>t.remove(),250);},2000);}
-const state={}; const pages={};
+const state={ folds:{sentences:false, upgrades:false, combos:false} }; const pages={};
 document.querySelectorAll('.bottomnav a').forEach(a=>a.onclick=()=>{
   document.querySelectorAll('.bottomnav a').forEach(x=>x.classList.remove('active'));
   a.classList.add('active'); render(a.dataset.page); window.scrollTo(0,0);});
@@ -337,7 +340,7 @@ pages.learn=async function(el){
 
   <div class="card" id="planBasic">
     <div style="display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:8px 12px">
-      <h2 style="margin:0;flex:1 1 200px;min-width:0">① 基础 · 每词一句 <span class="badge" id="basicProg" style="background:var(--primary-bg);color:var(--primary)"></span></h2>
+      <h2 style="margin:0;flex:1 1 200px;min-width:0">① 基础 · 每词一句 <span class="badge" id="basicProg" style="background:var(--primary-bg);color:var(--primary)"></span><span class="fold-ic" data-act="learnFold" data-val="sentences">▾</span></h2>
       <button class="btn ghost sm" style="flex-shrink:0" id="copyAllBtn" data-act="copyAll">📋 复制全部</button>
     </div>
     <div class="sub" style="margin-top:2px">目标：<b>会用</b>。今天 ${(t.sentence_plan&&t.sentence_plan.basic||[]).length} 个词，每个造一句 · 「复制全部」＝把今天 ①②③ 的每次作答和批改结果一次带走</div>
@@ -345,13 +348,13 @@ pages.learn=async function(el){
   </div>
 
   <div class="card" id="planUpgrade" style="background:#fffbeb;border-color:#fde68a">
-    <h2>② 升级 · 5 句 <span class="badge" id="upProg" style="background:#fef3c7;color:#92400e"></span></h2>
+    <h2>② 升级 · 5 句 <span class="badge" id="upProg" style="background:#fef3c7;color:#92400e"></span><span class="fold-ic" data-act="learnFold" data-val="upgrades">▾</span></h2>
     <div class="sub" style="margin-top:2px">目标：<b>用得更自然</b>。系统给升级方向 + 可照搬的示范句，你把第①段的句子改好</div>
     <div id="upgrades"></div>
   </div>
 
   <div class="card" id="planCombo" style="background:#f8fafc;border-color:#e2e8f0">
-    <h2>③ 组合表达 · 10 组 <span class="badge" id="comboProg" style="background:#e0e7ff;color:var(--primary)"></span></h2>
+    <h2>③ 组合表达 · 10 组 <span class="badge" id="comboProg" style="background:#e0e7ff;color:var(--primary)"></span><span class="fold-ic" data-act="learnFold" data-val="combos">▾</span></h2>
     <div class="sub" style="margin-top:2px">目标：<b>把词放进连续表达</b>。到期复习词混在这里一起过${(t.review_pool||[]).length?`（今天 ${(t.review_pool||[]).length} 个）`:''} · 写多写少随意，不强制</div>
     <div id="combos"></div>
   </div>`}
@@ -2108,6 +2111,9 @@ pages.sum=async function(el){
   let byDay={};
   errTypes.forEach(e=>{(e.recent||[]).forEach(r=>{const d=String(r.created_at||'').slice(0,10); if(d) byDay[d]=(byDay[d]||0)+1;});});
   let totalErr=errTypes.reduce((s,e)=>s+(Number(e.count_30d)||0),0);
+  // 近四周错误趋势：真实后端 /errors/trend（bucket=week）；其余趋势后端暂无接口
+  const trendRes = await api('/errors/trend?bucket=week').catch(()=>null);
+  const trendWeeks = (trendRes&&trendRes.weeks)||[];
   const period=_sumPeriod();
   const tab=state.sumTab||'week';
   const tabBtn=(k,label)=>`<button class="btn ${tab===k?'':'ghost'} sm" style="flex:1" data-act="sumTab" data-val="${k}">${label}</button>`;
@@ -2164,7 +2170,10 @@ pages.sum=async function(el){
       ${_anaMetric('单词复习', dash)} ${_anaMetric('造句', dash)} ${_anaMetric('听力', dash)} ${_anaMetric('周测', dash)} ${noDataNote}
     </div>
     <div class="card"><h2>📈 近四周趋势</h2>
-      <div class="sub" style="margin-top:4px">近四周趋势（学习天数 / 词汇完成率 / 听力正确率 / 错误率）需后端统计接口提供；当前未返回，按“不编造”原则不显示。</div>
+      ${trendWeeks.length
+        ? _anaMiniLine(trendWeeks.slice(-4).map((w,i)=>({label:'第'+(i+1)+'周', v:w.count})),'错误趋势',true)
+          + '<div class="sub" style="margin-top:4px">「错误趋势」接真实后端（错误数越低越好，绿=向好）；学习天数 / 词汇完成率 / 听力正确率后端暂无统计接口，按“不编造”原则不显示。</div>'
+        : '<div class="sub" style="margin-top:4px">暂无按周错误记录。</div>'}
     </div>
     <div class="card"><h2>📚 本月完成情况</h2>
       ${_anaProgress('词汇', 0, 0)} ${_anaProgress('造句', 0, 0)} ${_anaProgress('听力', 0, 0)} ${noDataNote}

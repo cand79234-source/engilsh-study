@@ -2,7 +2,7 @@
 import hmac
 import json
 import re
-from datetime import date
+from datetime import date, datetime, timedelta
 from fastapi import FastAPI, File, Form, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -10,7 +10,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 import os
 
-from db import init_db, get_conn, ts, today_str, STAGES, insert_get_id
+from db import init_db, get_conn, ts, today_str, STAGES, insert_get_id, _using_pg
 import services as svc
 import srs
 from ai_service import (correct_sentence, ERROR_TYPES, attempts_of,
@@ -472,6 +472,52 @@ def memory_state(word: str):
 @app.get("/api/errors")
 def errors_breakdown():
     return svc.error_breakdown()
+
+
+@app.get("/api/errors/trend")
+def errors_trend(days: int = 90, bucket: str = "week", only_unfixed: int = 0):
+    """月报「近四周错误趋势」：按时间桶聚合 errors 表，统计窗口内的错误数量。
+
+    - days  : 向前窗口天数（默认 90）
+    - bucket: 'week'（默认，'2026-W35' 形状）或 'day'（'2026-08-30' 形状）
+    - only_unfixed: 1 只统计未改正(fixed=0)错误，默认 0 统计全部
+    双引擎：SQLite 用 strftime，PostgreSQL 用 to_char/date_trunc，
+    通过 _using_pg() 分支，绝不写死某一引擎的 SQL。
+    空数据返回空数组（weeks=[] 或 days=[]），不报错。
+    """
+    conn = get_conn()
+    try:
+        # 时间桶表达式：两种引擎各一套，输出形状统一为 'YYYY-Www' / 'YYYY-MM-DD'
+        if _using_pg():
+            if bucket == "day":
+                bucket_expr = "to_char(created_at, 'YYYY-MM-DD')"
+            else:
+                # IYYY/IW 取 ISO 周（周一为一周起点），并用 "W" 字面量保持与 SQLite 同形状
+                bucket_expr = "to_char(date_trunc('week', created_at), 'IYYY-\"W\"IW')"
+        else:
+            if bucket == "day":
+                bucket_expr = "strftime('%Y-%m-%d', created_at)"
+            else:
+                bucket_expr = "strftime('%Y-W%W', created_at)"
+
+        # 窗口下界用 Python 计算后作为参数传入，避开两引擎日期函数差异（TEXT vs timestamp）
+        cutoff = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d %H:%M:%S")
+
+        sql = ("SELECT " + bucket_expr + " AS bucket_label, COUNT(*) AS cnt "
+               "FROM errors WHERE created_at >= ?")
+        args = [cutoff]
+        if only_unfixed:
+            sql += " AND fixed=0"
+        sql += " GROUP BY bucket_label ORDER BY bucket_label ASC"
+        rows = conn.execute(sql, tuple(args)).fetchall()
+    finally:
+        conn.close()
+
+    if bucket == "day":
+        return {"bucket": "day",
+                "days": [{"date": r["bucket_label"], "count": r["cnt"]} for r in rows]}
+    return {"bucket": "week",
+            "weeks": [{"week": r["bucket_label"], "count": r["cnt"]} for r in rows]}
 
 
 @app.get("/api/errors/{error_type}")
