@@ -124,11 +124,20 @@ def today():
     # 若词汇带有 day 归属(如一次性导入多组)，只展示"当前 Day"对应的一组；
     # 否则(旧内容无 day 字段)整体展示。
     vocab_all = week["vocab"] or []
+    # day 字段可能缺失 / 为 null / 为字符串数字，统一安全取值。
+    # （v.get("day", 默认) 只在 key 不存在时给默认；key 存在但值是 null 时
+    #   返回 None，int(None) 会炸 —— 这里用 or 兜住。）
+    def _day_of(v, default):
+        try:
+            return int(v.get("day") or default)
+        except (TypeError, ValueError):
+            return int(default)
+
     has_day = any(v.get("day") for v in vocab_all)
     if has_day:
-        vocab = [v for v in vocab_all if int(v.get("day", p["day"])) == p["day"]]
+        vocab = [v for v in vocab_all if _day_of(v, p["day"]) == p["day"]]
         if not vocab:  # 某天无内容则回退到第一天或全量，保证有可学
-            vocab = [v for v in vocab_all if int(v.get("day", 1)) == 1] or vocab_all
+            vocab = [v for v in vocab_all if _day_of(v, 1) == 1] or vocab_all
     else:
         vocab = vocab_all
     # 记录今日词掌握状态

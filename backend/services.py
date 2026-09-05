@@ -436,6 +436,33 @@ THEME_BY_WEEK = {
 }
 
 
+def _normalize_vocab(vocab):
+    """把 vocab 归一化成 dict 数组，返回 (归一化列表, 是否有改动)。
+
+    weeks.vocab_json 在历史上有两种形状：
+      旧：["word1", "word2"]                    —— 纯字符串数组
+      新：[{"word": ..., "day": ..., ...}]      —— 对象数组
+    /api/today 里 `v.get("day")` 只兼容新形状，遇到旧形状直接
+    AttributeError → 500 → 学习页显示「加载失败」。
+    在唯一读取入口统一归一化：字符串升级为 {"word": 字符串}，
+    不丢任何信息（字符串本来就没有 day/meaning 可言）。
+    """
+    if not isinstance(vocab, list):
+        return [], bool(vocab)
+    out, changed = [], False
+    for v in vocab:
+        if isinstance(v, str):
+            s = v.strip()
+            if s:
+                out.append({"word": s})
+            changed = True          # 空字符串丢弃也算形状变化
+        elif isinstance(v, dict):
+            out.append(v)
+        else:
+            changed = True          # 其它怪形状直接丢弃
+    return out, changed
+
+
 def ensure_week_content(stage, week, force=False):
     """确保某周有 >= 目标 词数内容。若该周 vocab 为空则从词库自动填充（不覆盖用户已填）。
     返回该周最终内容（含 vocab 词条列表，每条带 word/meaning/pos/collocation/example/translation）。"""
@@ -449,7 +476,11 @@ def ensure_week_content(stage, week, force=False):
             "title": f"阶段{stage}·第{week}周",
             "grammar": "", "theme": THEME_BY_WEEK.get((stage, week)), "vocab": [],
         }
-    vocab = json.loads(row["vocab_json"] or "[]")
+    try:
+        vocab = json.loads(row["vocab_json"] or "[]")
+    except Exception:
+        vocab = []                  # 库里 JSON 坏了也不能炸掉整个学习页
+    vocab, migrated = _normalize_vocab(vocab)
     theme = THEME_BY_WEEK.get((stage, week))
     if not vocab and _dictionary_count() > 0:
         filled = pick_words_for_theme(theme, 20)
@@ -457,6 +488,10 @@ def ensure_week_content(stage, week, force=False):
         for it in filled:
             it.setdefault("source", "builtin")
         vocab = filled
+        migrated = True
+    if migrated:
+        # 旧格式（或坏 JSON / 自动填充结果）写回库，自愈成新格式，
+        # 下次读取不再走迁移分支
         conn.execute(
             "UPDATE weeks SET vocab_json=? WHERE stage=? AND week_no=?",
             (json.dumps(vocab, ensure_ascii=False), stage, week))
