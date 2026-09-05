@@ -846,6 +846,22 @@ def _iso_week(s):
         return None
 
 
+# 活动聚合单次最多扫多少行历史。
+#
+# 与导入 OOM 同源的隐患：这些聚合查询原本是「全表读进内存再截断」——
+# /api/activity 明明只要最近 4 周，却把 quizzes / listening_progress /
+# sentences / history 整张表都拉出来。表现在数据量小没事，但 sentences
+# 是高频写入（每次造句一行），攒上几万行后 psycopg2 会一次性把结果集拉到
+# 客户端内存，在 Render 512MB 限制下是实打实的定时炸弹。
+#
+# psycopg2 默认客户端游标，无论 fetchall 还是逐行迭代都会全量拉回，
+# 所以「改成流式」没用，只能靠 LIMIT 限制扫描行数。
+#
+# 取值理由：接口默认只要 4 周，20000 行覆盖 4 周绰绰有余
+# （相当于每天 700 条记录）。超出部分是最老的历史，截断不影响近期统计。
+ACT_SCAN_LIMIT = 20000
+
+
 @app.get("/api/activity")
 def activity(weeks: int = 4):
     conn = get_conn()
@@ -854,13 +870,14 @@ def activity(weeks: int = 4):
         # 测评
         for r in conn.execute(
                 "SELECT kind, stage, week, score, created_at FROM quizzes "
-                "ORDER BY created_at DESC").fetchall():
+                f"ORDER BY created_at DESC LIMIT {ACT_SCAN_LIMIT}").fetchall():
             acts.append((_act_date(r["created_at"]), "测评", "测评",
                          f"{r['kind']} · S{r['stage']}W{r['week']}", r["score"], None))
         # 听力
         for r in conn.execute(
                 "SELECT stage, week, day, listening_done, listening_total, created_at "
-                "FROM listening_progress ORDER BY created_at DESC").fetchall():
+                f"FROM listening_progress ORDER BY created_at DESC LIMIT {ACT_SCAN_LIMIT}"
+            ).fetchall():
             acc = None
             tot = r["listening_total"] or 0
             done = r["listening_done"] or 0
@@ -871,13 +888,13 @@ def activity(weeks: int = 4):
         # 造句
         for r in conn.execute(
                 "SELECT word, score, good, created_at FROM sentences "
-                "ORDER BY created_at DESC").fetchall():
+                f"ORDER BY created_at DESC LIMIT {ACT_SCAN_LIMIT}").fetchall():
             acts.append((_act_date(r["created_at"]), "造句", "造句",
                          f"目标词 {r['word']}", r["score"], 1 if r["good"] else 0))
         # 背词
         for r in conn.execute(
                 "SELECT detail, created_at FROM history WHERE action='learn_vocab' "
-                "ORDER BY created_at DESC").fetchall():
+                f"ORDER BY created_at DESC LIMIT {ACT_SCAN_LIMIT}").fetchall():
             acts.append((_act_date(r["created_at"]), "背词", "学习单词",
                          r["detail"], None, None))
         acts.sort(key=lambda x: x[0], reverse=True)
@@ -905,7 +922,8 @@ def activity(weeks: int = 4):
         # 听力正确率需要原始 done/total（acts 里已折算成百分比，这里从表再聚）
         for r in conn.execute(
                 "SELECT created_at, listening_done, listening_total "
-                "FROM listening_progress").fetchall():
+                f"FROM listening_progress ORDER BY created_at DESC LIMIT {ACT_SCAN_LIMIT}"
+            ).fetchall():
             dt = _act_date(r["created_at"])
             _touch(dt)
             iw = _iso_week(dt)
@@ -1068,7 +1086,7 @@ def test_list_projects():
     conn = get_conn()
     rows = conn.execute(
         "SELECT id, ability, problem, prompt_md, created_at FROM training_projects "
-        "ORDER BY id DESC").fetchall()
+        f"ORDER BY id DESC LIMIT {ACT_SCAN_LIMIT}").fetchall()
     conn.close()
     return {"items": [dict(r) for r in rows]}
 

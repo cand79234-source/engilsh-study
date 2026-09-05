@@ -217,10 +217,14 @@ def _load_sessions(conn):
 
 def _load_rounds(conn):
     try:
+        # 与 main.ACT_SCAN_LIMIT 同理：训练轮次随使用持续增长，
+        # 不给上限的话 psycopg2 会把整表拉回内存。
+        # 先倒序取最新的 20000 条，再反转回原来的升序（保持既有行为不变）。
         rows = conn.execute(
             "SELECT round_id, session_id, project_key, idx, started_at, ended_at "
-            "FROM training_rounds ORDER BY id"
+            "FROM training_rounds ORDER BY id DESC LIMIT 20000"
         ).fetchall()
+        rows = list(reversed(rows))
     except Exception:
         return []
     out = []
