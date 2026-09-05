@@ -891,8 +891,9 @@ def _parse_one_question(qtype, body):
 
 @app.post("/api/test/parse")
 def test_parse(body: dict):
-    """解析用户粘贴回的外部 AI 训练卷，返回结构化 sections/questions。"""
-    return parse_test_text(body.get("text") or "")
+    """解析用户粘贴回的外部 AI 训练/测评卷（<<<TEST>>>…<<<END>>>），
+    返回前端 renderTestPaper 需要的 {ok, sections, questions, question_count, ...} 形状。"""
+    return parse_test_paper(body.get("text") or "")
 
 
 @app.post("/api/test/projects")
@@ -960,31 +961,11 @@ def _grade_training(ability, user_sentence, answer):
 
 @app.post("/api/test/grade")
 def test_grade(body: dict):
-    """回合制训练判分：把一次作答写入 training_attempts 并返回分数与反馈。"""
-    project_id = body.get("project_id")
-    rnd = int(body.get("round", 1) or 1)
-    user_sentence = body.get("user_sentence") or ""
-    answer = body.get("answer")
-
-    conn = get_conn()
-    ability = ""
-    if project_id is not None:
-        pr = conn.execute(
-            "SELECT ability FROM training_projects WHERE id=?",
-            (project_id,)).fetchone()
-        if pr:
-            ability = pr["ability"] or ""
-
-    score, ok, feedback = _grade_training(ability, user_sentence, answer)
-    insert_get_id(
-        conn,
-        "INSERT INTO training_attempts "
-        "(project_id, round, user_sentence, score, ok, errors_json, created_at) "
-        "VALUES (?,?,?,?,?,?,?)",
-        (project_id, rnd, user_sentence, score, 1 if ok else 0, "[]", ts()))
-    conn.commit()
-    conn.close()
-    return {"ok": ok, "score": score, "feedback": feedback or ""}
+    """整卷判分（测评 / 补习试卷共用）：比对用户作答与标准答案，写历史，返回成绩。"""
+    return grade_test_paper(
+        body.get("text") or "",
+        body.get("answers") or {},
+        body.get("kind") or "week")
 
 
 # ---------- 听力骨架 ----------
@@ -1057,6 +1038,405 @@ def listening_submit(body: dict):
          stage, week, day, 1 if correct else 0, ts()))
     conn.commit()
     conn.close()
+    return {"ok": True}
+
+
+# ---------- 课程地图（学习页主题/语法来源）----------
+@app.get("/api/curriculum")
+def curriculum():
+    """返回阶段×周的课程地图，供前端学习页显示主题与语法重点。
+    权威源是 weeks 表（init_db 已用 SEED 预填），前端不复制数据。"""
+    conn = get_conn()
+    try:
+        rows = conn.execute(
+            "SELECT stage, week_no, title, grammar FROM weeks "
+            "ORDER BY stage, week_no").fetchall()
+    finally:
+        conn.close()
+    return [{"stage": r["stage"], "week": r["week_no"],
+             "theme": r["title"] or "", "grammar": r["grammar"] or ""}
+            for r in rows]
+
+
+# ---------- 测评 / 补习：试卷解析与判分（前端共用）----------
+_Q_BLOCK_RE = re.compile(
+    r"Q\s*(\d+)\s*\.\s*\((choice|fill|judge|subjective)\)(.*?)"
+    r"(?=Q\s*\d+\s*\.\s*\(|<<<\s*END\s*>>>|\Z)",
+    re.DOTALL | re.IGNORECASE)
+_SECTION_RE = re.compile(r"<<<\s*SECTION\s+(.*?)\s*>>>", re.DOTALL | re.IGNORECASE)
+_TEST_RE = re.compile(r"<<<\s*TEST\s*>>>(.*)<<<\s*END\s*>>>", re.DOTALL | re.IGNORECASE)
+_PASSAGE_RE = re.compile(r"<<<\s*PASSAGE\s*>>>(.*?)<<<\s*END\s*>>>", re.DOTALL | re.IGNORECASE)
+_ANSWER_RE = re.compile(r"ANSWER:\s*(.+?)(?:\n|$)", re.IGNORECASE)
+
+
+def _parse_test_questions(content):
+    """从单个 SECTION 的题块里抽出题目列表（前端 renderTestPaper 所需形状）。"""
+    questions = []
+    for m in _Q_BLOCK_RE.finditer(content):
+        no = int(m.group(1))
+        kind = m.group(2).lower()
+        body = m.group(3).strip()
+        am = _ANSWER_RE.search(body)
+        answer = am.group(1).strip() if am else ""
+        pre = body[:am.start()].strip() if am else body
+        options = []
+        stem = pre
+        if kind == "choice":
+            for om in re.finditer(r"([A-D])\.\s*(.*?)(?=\s+[A-D]\.\s|\Z)", pre, re.DOTALL):
+                options.append(om.group(2).strip())
+            first = re.search(r"[A-D]\.\s", pre)
+            if first:
+                stem = pre[:first.start()].strip()
+        questions.append({
+            "no": no, "kind": kind, "stem": stem,
+            "options": options, "answer": answer, "raw": body,
+        })
+    return questions
+
+
+def parse_test_paper(text):
+    """解析 <<<TEST>>>…<<<END>>> 试卷，返回前端 renderTestPaper 需要的形状。"""
+    if not text or not isinstance(text, str):
+        return {"ok": False, "error": "试卷内容为空"}
+    m = _TEST_RE.search(text)
+    if not m:
+        # 兜底：有些试卷省略结尾 <<<END>>>，直接取到文末
+        m = re.search(r"<<<\s*TEST\s*>>>(.*)$", text, re.DOTALL | re.IGNORECASE)
+    if not m:
+        return {"ok": False, "error": "未找到 <<<TEST>>>…<<<END>>> 标记"}
+    body = m.group(1)
+    sec_splits = list(_SECTION_RE.finditer(body))
+    if not sec_splits:
+        blocks = [(None, body)]
+    else:
+        blocks = []
+        for i, sm in enumerate(sec_splits):
+            name = sm.group(1).strip()
+            start = sm.end()
+            end = sec_splits[i + 1].start() if i + 1 < len(sec_splits) else len(body)
+            blocks.append((name, body[start:end]))
+    sections = []
+    all_q = []
+    for name, content in blocks:
+        passage = ""
+        pm = _PASSAGE_RE.search(content)
+        if pm:
+            passage = pm.group(1).strip()
+        qcontent = content
+        if pm:
+            qcontent = content[:pm.start()] + content[pm.end():]
+        qs = _parse_test_questions(qcontent)
+        if qs:
+            sections.append({"name": name or "未命名模块",
+                             "passage": passage, "questions": qs})
+            all_q.extend(qs)
+    if not all_q:
+        return {"ok": False, "error": "未解析到任何题目（请确认含 Q1. (choice) … 格式）"}
+    return {
+        "ok": True, "title": "能力测评", "question_count": len(all_q),
+        "questions": all_q, "sections": sections, "warnings": [],
+    }
+
+
+def _norm_ans(s):
+    return re.sub(r"[^a-z0-9]", "", (s or "").lower()).strip()
+
+
+def grade_test_paper(text, answers, kind):
+    """整卷判分：比对用户作答与标准答案，返回正确/总分/模块分布/错题库。
+    写入 quizzes 表作为历史（/api/test/history 读取）。"""
+    parsed = parse_test_paper(text)
+    if not parsed.get("ok"):
+        return {"ok": False, "error": parsed.get("error", "解析失败")}
+    questions = parsed["questions"]
+    sec_of = {}
+    for sec in parsed["sections"]:
+        for q in sec["questions"]:
+            sec_of[q["no"]] = sec["name"]
+    correct = total = wrong = 0
+    by_section = {}
+    detail = []
+    for q in questions:
+        if q["kind"] == "subjective":
+            continue  # 自评题不计分
+        total += 1
+        no = q["no"]
+        expected = (q.get("answer") or "").strip()
+        got = str(answers.get(str(no), answers.get(no, "")) or "").strip()
+        if q["kind"] == "fill":
+            exps = [e.strip() for e in expected.split("/") if e.strip()]
+            ok = any(_norm_ans(got) == _norm_ans(e) for e in exps) if exps else False
+        else:  # choice / judge
+            ok = _norm_ans(got) == _norm_ans(expected)
+        if ok:
+            correct += 1
+        else:
+            wrong += 1
+        sec = sec_of.get(no, "")
+        bs = by_section.setdefault(sec, {"correct": 0, "total": 0})
+        bs["total"] += 1
+        if ok:
+            bs["correct"] += 1
+        detail.append({"no": no, "ok": ok, "section": sec,
+                       "got": got, "expected": expected})
+    score = round(correct / total * 100) if total else 0
+    passed = score >= 60
+    try:
+        p = svc.get_progress()
+        conn = get_conn()
+        conn.execute(
+            "INSERT INTO quizzes (kind, stage, week, score, passed, detail_json, created_at) "
+            "VALUES (?,?,?,?,?,?,?)",
+            (kind or "week", p.get("stage", 0), p.get("week", 1), score,
+             1 if passed else 0,
+             json.dumps({"correct": correct, "total": total}, ensure_ascii=False), ts()))
+        conn.commit()
+        conn.close()
+    except Exception:
+        pass
+    return {"ok": True, "correct": correct, "total": total, "score": score,
+            "passed": passed, "by_section": by_section, "detail": detail, "wrong": wrong}
+
+
+@app.get("/api/test/history")
+def test_history(limit: int = 50):
+    """历史测评成绩（测评页「📈 历史成绩」与补习共用）。"""
+    conn = get_conn()
+    try:
+        rows = conn.execute(
+            "SELECT kind, stage, week, score, passed, created_at FROM quizzes "
+            "ORDER BY id DESC LIMIT ?", (limit,)).fetchall()
+    finally:
+        conn.close()
+    return [dict(r) for r in rows]
+
+
+@app.get("/api/test/prompt")
+def test_prompt(kind: str = "week"):
+    """返回生成测评卷的提示词模板（前端「复制提示词」用）。
+    模板内含本机薄弱项上下文 + <<<TEST>>> 输出格式。"""
+    return {"prompt": build_test_prompt(kind or "week")}
+
+
+def build_test_prompt(kind):
+    ctx = ""
+    try:
+        errs = svc.error_breakdown()[:5]
+        if errs:
+            ctx += "【你最近常犯的错误类型】\n" + "\n".join(
+                f"- {e['type']}（近30天 {e['count_30d']} 次，累计 {e['total']} 次）"
+                for e in errs) + "\n"
+    except Exception:
+        pass
+    try:
+        low = srs.weak_output_words(threshold=3)[:5]
+        if low:
+            ctx += "【主动输出偏弱词】" + "、".join(w["word"] for w in low) + "\n"
+    except Exception:
+        pass
+    kind_label = {"week": "周测", "month": "月测", "stage": "阶段测"}.get(kind, "周测")
+    fmt = """【机器可读试卷格式】
+在回答末尾输出以下内容（<<<TEST>>> 与 <<<END>>> 之间只放题目，不要写任何解释）：
+<<<TEST>>>
+<<<SECTION 听力>>>
+<<<PASSAGE>>>
+（英文听力原文：短句 / 对话 / 短文，系统会提供🔊朗读，无需音频文件）
+<<<END>>>
+Q1. (choice) [听力] 题干（中文或英文）
+A. ... B. ... C. ... D. ...
+ANSWER: A
+Q2. (fill) [听力] 听后填空：I arrived ______ the station.
+ANSWER: at
+
+<<<SECTION 词汇>>>
+Q3. (choice) 单词 "apple" 的意思是？
+A. 苹果 B. 香蕉 C. 橙子 D. 葡萄
+ANSWER: A
+Q4. (fill) 填空：He ______ to work by bus.
+ANSWER: goes
+
+<<<SECTION 语法>>>
+Q5. (judge) 判断正误：She go to school every day.
+ANSWER: FALSE
+Q6. (fill) 用所给词填空：______ (be) there any water?
+ANSWER: Is
+
+<<<SECTION 阅读>>>
+<<<PASSAGE>>>
+（英文短文，可多行）
+<<<END>>>
+Q7. (choice) 根据短文选择正确项。
+A. ... B. ... C. ... D. ...
+ANSWER: C
+
+<<<SECTION 主动输出>>>
+Q8. (subjective) 用所学语法说一句关于你自己的话。
+（学习者对照要点自评，系统不自动判分）
+<<<END>>>
+
+硬性规则：
+1. 题号 Q1、Q2… 从 1 连续编号，不跳号、不重复。
+2. 题型：(choice) 四选一，ANSWER 填单个大写字母；(fill) 填空，ANSWER 填正确答案（多解用 / 分隔）；(judge) 判断正误，ANSWER 填 TRUE/FALSE；(subjective) 主动输出，不计分。
+3. 每个 SECTION 用 <<<SECTION 名称>>> 开头，名称用中文：听力 / 词汇 / 语法 / 阅读 / 主动输出。
+4. 各 SECTION 输出顺序必须为：听力 → 词汇 → 语法 → 阅读 → 主动输出。
+5. 不要使用 Markdown、不要加代码块围栏，不要在 <<<TEST>>> 与 <<<END>>> 之间输出解释性文字。"""
+    header = (f"请基于下面的学习数据，出一份「{kind_label}」英语能力测评卷。"
+              "题目要针对学习者的真实薄弱点，难度匹配其当前阶段。\n\n")
+    footer = "\n\n请严格按下方格式输出试卷：\n" + fmt
+    return header + (ctx or "（暂无可用学习数据，请按常规 A2 难度出题）\n") + footer
+
+
+# ---------- 听力模块（前端：粘贴 AI 材料 → 解析入库 → 练习 → 提交）----------
+_LISTEN_RE = re.compile(r"<<<\s*LISTENING[^>]*>>>(.*?)(?:<<<\s*END\s*>>>|$)", re.DOTALL | re.IGNORECASE)
+
+
+def parse_listening_text(text):
+    """解析 <<<LISTENING v1>>>…<<<END>>> 听力材料，返回结构化 dict。"""
+    if not text:
+        return None
+    m = _LISTEN_RE.search(text)
+    body = m.group(1) if m else text
+    title = ""
+    tm = re.search(r"^\s*TITLE:\s*(.+)$", body, re.MULTILINE)
+    if tm:
+        title = tm.group(1).strip()
+    dialogue = []
+    dm = re.search(r"<<<\s*DIALOGUE\s*>>>(.*?)(?:<<<)", body, re.DOTALL | re.IGNORECASE)
+    if dm:
+        dialogue = [l.strip() for l in dm.group(1).splitlines() if l.strip()]
+    blanks = []
+    bm = re.search(r"<<<\s*BLANKS\s*>>>(.*?)(?:<<<)", body, re.DOTALL | re.IGNORECASE)
+    if bm:
+        for l in bm.group(1).splitlines():
+            l = l.strip()
+            if not l:
+                continue
+            sep = "—" if "—" in l else (" - " if " - " in l else None)
+            if sep:
+                w, s = l.split(sep, 1)
+                blanks.append({"word": w.strip(), "sentence": s.strip()})
+    passage = ""
+    pm = re.search(r"<<<\s*PASSAGE\s*>>>(.*?)(?:<<<Q1|<<|$)", body, re.DOTALL | re.IGNORECASE)
+    if pm:
+        passage = pm.group(1).strip()
+    questions = []
+    qm = re.search(r"<<<\s*Q1\s*>>>(.*)$", body, re.DOTALL | re.IGNORECASE)
+    if qm:
+        qtext = qm.group(1)
+        segs = re.split(r"<<<\s*Q\d+\s*>>>", qtext)
+        for seg in segs:
+            seg = seg.strip()
+            if not seg:
+                continue
+            qm2 = re.search(r"Question:\s*(.+?)(?:\n|$)", seg, re.IGNORECASE)
+            question = qm2.group(1).strip() if qm2 else seg.split("\n")[0].strip()
+            opts = re.findall(r"^([A-D])\.\s*(.+)$", seg, re.MULTILINE)
+            options = [o[1].strip() for o in opts]
+            am = re.search(r"ANSWER:\s*(.+?)(?:\n|$)", seg, re.IGNORECASE)
+            answer = am.group(1).strip() if am else ""
+            questions.append({"question": question, "options": options, "answer": answer})
+    return {"title": title, "dialogue": dialogue, "blanks": blanks,
+            "passage": passage, "questions": questions}
+
+
+@app.post("/api/listening/import")
+def listening_import(body: dict):
+    stage = int(body.get("stage", 0) or 0)
+    week = int(body.get("week", 1) or 1)
+    day = int(body.get("day", 1) or 1)
+    text = body.get("text") or ""
+    parsed = parse_listening_text(text)
+    if not parsed:
+        return {"ok": False, "error": "无法解析：未找到 <<<LISTENING v1>>> 标记"}
+    conn = get_conn()
+    try:
+        exists = conn.execute(
+            "SELECT 1 FROM listening_materials WHERE stage=? AND week=? AND day=?",
+            (stage, week, day)).fetchone()
+        replaced = bool(exists)
+        conn.execute(
+            "INSERT OR REPLACE INTO listening_materials "
+            "(stage, week, day, title, dialogue_json, passage, questions_json, created_at) "
+            "VALUES (?,?,?,?,?,?,?,?)",
+            (stage, week, day, parsed["title"],
+             json.dumps(parsed["dialogue"], ensure_ascii=False),
+             parsed["passage"],
+             json.dumps(parsed["questions"], ensure_ascii=False), ts()))
+        conn.commit()
+    finally:
+        conn.close()
+    warnings = []
+    if not parsed["dialogue"]:
+        warnings.append("未解析到对话（DIALOGUE），Part B 将用系统兜底")
+    if not parsed["passage"] or not parsed["questions"]:
+        warnings.append("未解析到短文或选择题（PASSAGE/Q），Part C 不显示")
+    return {
+        "ok": True,
+        "title": parsed["title"] or f"阶段{stage}·W{week}·D{day}",
+        "dialogue_lines": len(parsed["dialogue"]),
+        "blank_count": len(parsed["blanks"]),
+        "question_count": len(parsed["questions"]),
+        "replaced": replaced,
+        "warnings": warnings,
+    }
+
+
+@app.get("/api/listening/{stage}/{week}/{day}")
+def listening_get(stage: int, week: int, day: int):
+    conn = get_conn()
+    try:
+        row = conn.execute(
+            "SELECT title, dialogue_json, passage, questions_json FROM listening_materials "
+            "WHERE stage=? AND week=? AND day=?", (stage, week, day)).fetchone()
+        prog = conn.execute(
+            "SELECT listening_done, listening_total, parts_json FROM listening_progress "
+            "WHERE stage=? AND week=? AND day=?", (stage, week, day)).fetchone()
+    finally:
+        conn.close()
+    material = None
+    if row:
+        material = {
+            "title": row["title"],
+            "dialogue": json.loads(row["dialogue_json"] or "[]"),
+            "passage": row["passage"] or "",
+            "questions": json.loads(row["questions_json"] or "[]"),
+        }
+    progress = None
+    if prog:
+        progress = {
+            "listening_done": prog["listening_done"] or 0,
+            "listening_total": prog["listening_total"] or 0,
+            "parts": json.loads(prog["parts_json"] or "{}"),
+        }
+    return {"material": material, "progress": progress}
+
+
+@app.post("/api/listening/answer")
+def listening_answer(body: dict):
+    stage = int(body.get("stage", 0) or 0)
+    week = int(body.get("week", 1) or 1)
+    day = int(body.get("day", 1) or 1)
+    part = str(body.get("part") or "A")
+    correct = int(body.get("correct", 0) or 0)
+    total = int(body.get("total", 0) or 0)
+    conn = get_conn()
+    try:
+        prog = conn.execute(
+            "SELECT parts_json FROM listening_progress "
+            "WHERE stage=? AND week=? AND day=?", (stage, week, day)).fetchone()
+        parts = json.loads(prog["parts_json"] or "{}") if prog else {}
+        parts[part] = {"correct": correct, "total": total}
+        new_done = sum(p.get("correct", 0) for p in parts.values())
+        new_tot = sum(p.get("total", 0) for p in parts.values())
+        conn.execute(
+            "INSERT OR REPLACE INTO listening_progress "
+            "(stage, week, day, listening_done, listening_total, parts_json, created_at) "
+            "VALUES (?,?,?,?,?,?,?)",
+            (stage, week, day, new_done, new_tot,
+             json.dumps(parts, ensure_ascii=False), ts()))
+        conn.commit()
+    finally:
+        conn.close()
     return {"ok": True}
 
 

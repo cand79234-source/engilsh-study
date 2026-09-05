@@ -510,6 +510,33 @@ def init_db():
         FOREIGN KEY(project_id) REFERENCES training_projects(id)
     );
 
+    -- 听力材料（用户粘贴 AI 生成的 <<<LISTENING v1>>> 文本，后端解析后入库）
+    CREATE TABLE IF NOT EXISTS listening_materials (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        stage INTEGER NOT NULL,
+        week INTEGER NOT NULL,
+        day INTEGER NOT NULL,
+        title TEXT DEFAULT '',
+        dialogue_json TEXT DEFAULT '[]',
+        passage TEXT DEFAULT '',
+        questions_json TEXT DEFAULT '[]',
+        created_at TEXT,
+        UNIQUE(stage, week, day)
+    );
+
+    -- 听力练习进度（按 stage/week/day 累计各 Part 正确数）
+    CREATE TABLE IF NOT EXISTS listening_progress (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        stage INTEGER NOT NULL,
+        week INTEGER NOT NULL,
+        day INTEGER NOT NULL,
+        listening_done INTEGER DEFAULT 0,
+        listening_total INTEGER DEFAULT 0,
+        parts_json TEXT DEFAULT '{}',
+        created_at TEXT,
+        UNIQUE(stage, week, day)
+    );
+
     """)
 
     # 初始化进度（仅一条记录）
