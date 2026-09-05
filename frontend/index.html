@@ -167,7 +167,6 @@ textarea{font-family:monospace;font-size:13px;min-height:110px;line-height:1.6}
 <div class="bottomnav">
   <a data-page="learn" class="active"><span class="ico">📖</span><span>学习</span></a>
   <a data-page="listen"><span class="ico">🎧</span><span>听力</span></a>
-  <a data-page="train"><span class="ico">🧠</span><span>补习</span></a>
   <a data-page="review"><span class="ico">🔁</span><span>复习</span></a>
   <a data-page="errors"><span class="ico">🎯</span><span>薄弱项</span></a>
   <a data-page="sum"><span class="ico">📊</span><span>总结</span></a>
@@ -282,10 +281,10 @@ document.addEventListener('click', function(e){
   }
   else if (act === 'revWeak') { state.revMode='weak'; render('review'); }
   else if (act === 'revAll') { state.revMode='all'; render('review'); }
+  else if (act === 'revTrain') { state.revMode='train'; render('review'); }
   else if (act === 'sumTab') { state.sumTab=v; render('sum'); }
   else if (act === 'copySummaryReport') copySummaryReport();
   else if (act === 'copyWeakReport') { copyErrorReport(); }
-  else if (act === 'goTrain') { go('train'); }
   else if (act === 'trainCopyDiag') { copyText(_tpl('tplPromptDiag'),'提示词未加载'); }
   else if (act === 'trainCopyTrain') { copyText(_tpl('tplPromptTrain'),'提示词未加载'); }
   else if (act === 'trainParse') { trainImport(); }
@@ -1104,6 +1103,7 @@ pages.review=async function(el){
   if(mode==='flash') renderFlashcard(el);
   else if(mode==='weak') pages.errors(el);
   else if(mode==='all') await renderAllWords(el);
+  else if(mode==='train') await pages.train(el);
   else renderReviewHome(el);
 };
 
@@ -1335,7 +1335,11 @@ pages.train=async function(el){
   }).join('') : '<div class="sub" style="margin:6px 0">暂无训练项目</div>';
 
   el.innerHTML=`
-    <h1>🧠 专项补习 / 训练</h1>
+    <h1>🧠 专项补习 / 训练
+      <span style="float:right">
+        <button class="btn ghost sm" data-act="revExit" style="flex-shrink:0">← 返回</button>
+      </span>
+    </h1>
     <div class="sub" style="margin-top:2px">你贴 AI 出的卷，系统解析后陪你练。先用下方提示词让 AI 按格式出卷，再把返回的卷文本粘贴导入。</div>
 
     <div class="card" style="margin-top:10px">
@@ -1388,6 +1392,12 @@ function renderReviewHome(el){
       <div style="font-weight:700;font-size:15.5px">🎯 薄弱项</div>
       <div class="sub" style="margin-top:2px">高频错误 · 反复出错 · 需要针对性训练</div>
       <button class="btn" style="margin-top:11px" data-act="revWeak">查看薄弱项</button>
+    </div>
+
+    <div class="card" style="margin-top:10px">
+      <div style="font-weight:700;font-size:15.5px">🧠 补习 / 专项训练</div>
+      <div class="sub" style="margin-top:2px">复制提示词给 AI 出卷 → 粘贴回来 → 逐题训练</div>
+      <button class="btn" style="margin-top:11px" data-act="revTrain">进入补习</button>
     </div>
 
     <div class="card" style="margin-top:10px">
@@ -1957,7 +1967,6 @@ pages.errors=async function(el){
     <h1>🎯 薄弱项
       <span style="float:right;display:flex;align-items:center;gap:8px">
         <span style="font-size:12px;color:var(--muted)">近30天有错 ${active} 类</span>
-        <button class="btn ghost sm" data-act="goTrain" style="flex-shrink:0">🧠 补习</button>
         <button class="btn ghost sm" data-act="copyWeakReport" style="flex-shrink:0">📋 复制报告</button>
       </span>
     </h1>
