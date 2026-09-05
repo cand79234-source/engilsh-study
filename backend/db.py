@@ -510,6 +510,38 @@ def init_db():
         FOREIGN KEY(project_id) REFERENCES training_projects(id)
     );
 
+    -- 训练会话：一次「开始训练 → 结束」的完整过程，Round 制训练的上层容器。
+    -- 前端此前把 projects/sessions/rounds/attempts 全存在 localStorage（eos_train_v1），
+    -- 服务端一张表都没有，换设备/清缓存即全部蒸发。这里补齐四层结构的第 2 层。
+    CREATE TABLE IF NOT EXISTS training_sessions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        session_id TEXT UNIQUE,             -- 前端业务 ID（sess_xxx）
+        project_key TEXT NOT NULL,          -- 前端 project_id（字符串，如 P1）
+        started_at TEXT,
+        ended_at TEXT,
+        round_count INTEGER DEFAULT 0,
+        valid_attempts INTEGER DEFAULT 0,
+        correct_count INTEGER DEFAULT 0,
+        incorrect_count INTEGER DEFAULT 0,
+        hint_count INTEGER DEFAULT 0,
+        independent_correct_count INTEGER DEFAULT 0,
+        consecutive_independent_correct INTEGER DEFAULT 0,
+        final_status TEXT,                  -- PASS / NEEDS_REVIEW / NOT_YET
+        next_step TEXT,                     -- STOP / REVIEW / CONTINUE
+        created_at TEXT DEFAULT (datetime('now'))
+    );
+
+    -- 训练回合：一次会话里的一轮（每轮只抽少量题，够判断就停）
+    CREATE TABLE IF NOT EXISTS training_rounds (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        round_id TEXT UNIQUE,               -- 前端业务 ID（r_xxx）
+        session_id TEXT,
+        project_key TEXT,
+        idx INTEGER DEFAULT 0,              -- 第几轮（index 是 SQL 保留字，故用 idx）
+        started_at TEXT,
+        ended_at TEXT
+    );
+
     -- 听力材料（用户粘贴 AI 生成的 <<<LISTENING v1>>> 文本，后端解析后入库）
     CREATE TABLE IF NOT EXISTS listening_materials (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -587,6 +619,53 @@ def init_db():
         "fixed_at": "TEXT DEFAULT ''",
     })
 
+    # ---- 专项训练四层落库：给既有表补列（老库无这些列时自动补齐，不动已有数据）----
+    _ensure_columns(conn, "training_projects", {
+        "project_key": "TEXT",              # 前端 project_id（字符串业务 ID，如 P1）
+        "priority": "TEXT DEFAULT 'P2'",
+        "intervention_level": "TEXT DEFAULT 'SUGGESTED'",
+        "training_goal": "TEXT DEFAULT ''",
+        "training_boundary": "TEXT DEFAULT ''",
+        "forbidden_json": "TEXT DEFAULT '[]'",
+        "exit_standard": "TEXT DEFAULT ''",
+        "exit_rule_json": "TEXT DEFAULT '{}'",
+        "status": "TEXT DEFAULT 'NOT_STARTED'",
+        "items_json": "TEXT DEFAULT '[]'",  # 题目列表（随项目一起导入）
+        "updated_at": "TEXT",
+        "stage": "INTEGER",                 # 关联键：这个项目归属哪个课程周
+        "week": "INTEGER",
+    })
+    _ensure_columns(conn, "training_attempts", {
+        "attempt_id": "TEXT",
+        "session_id": "TEXT",
+        "round_id": "TEXT",
+        "question_id": "TEXT",
+        "project_key": "TEXT",
+        "user_answer": "TEXT DEFAULT ''",
+        "is_correct": "INTEGER DEFAULT 0",
+        "manual": "INTEGER DEFAULT 0",
+        "used_hint": "INTEGER DEFAULT 0",
+        "hint_level": "INTEGER DEFAULT 0",
+        "is_independent": "INTEGER DEFAULT 0",
+        "word": "TEXT DEFAULT ''",          # 关联键：这道题考的是哪个词
+    })
+
+    # ---- 数据打通：给「错误本」「五星输出」补上课程周身份证 ----
+    # 这两张表原本只有 created_at 时间和 word，没有 stage/week，
+    # 导致回答不了「第 3 周我错了什么」，也进不了按周聚合的总结页。
+    _ensure_columns(conn, "errors", {
+        "stage": "INTEGER",
+        "week": "INTEGER",
+        "day": "INTEGER",
+    })
+    _ensure_columns(conn, "word_output", {
+        "stage": "INTEGER",
+        "week": "INTEGER",
+    })
+
+    # 老数据回填：用 word 反查它属于哪一周（只补 stage IS NULL 的行，可重复运行）
+    _backfill_week_columns(conn)
+
     # 建索引（必须在 _ensure_columns 补列之后：旧库缺 word/task_key 时，先建索引会报
     # column "word" does not exist，导致启动崩溃、Render 部署失败 update_failed）
     for _idx in (
@@ -600,6 +679,21 @@ def init_db():
         "CREATE INDEX IF NOT EXISTS idx_dict_word ON dictionary(word)",
         "CREATE INDEX IF NOT EXISTS idx_ex_word ON example_sentences(word)",
         "CREATE INDEX IF NOT EXISTS idx_colloc_word ON collocations(word)",
+        # 专项训练四层落库后的查询路径
+        # project_key / attempt_id 需要 UNIQUE 才能用 ON CONFLICT 做 upsert。
+        # ALTER TABLE ADD COLUMN 不允许带 UNIQUE，故单独建唯一索引：
+        # SQLite 与 PostgreSQL 都把 NULL 视为互不相等，老数据 project_key 全为 NULL
+        # 可以共存，不会因重复而被拒。
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_tr_proj_key_uniq ON training_projects(project_key)",
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_tr_att_id_uniq ON training_attempts(attempt_id)",
+        "CREATE INDEX IF NOT EXISTS idx_tr_sess_proj ON training_sessions(project_key)",
+        "CREATE INDEX IF NOT EXISTS idx_tr_round_sess ON training_rounds(session_id)",
+        "CREATE INDEX IF NOT EXISTS idx_tr_att_sess ON training_attempts(session_id)",
+        "CREATE INDEX IF NOT EXISTS idx_tr_att_round ON training_attempts(round_id)",
+        "CREATE INDEX IF NOT EXISTS idx_tr_att_word ON training_attempts(word)",
+        # 数据打通后按课程周聚合错误本 / 五星输出
+        "CREATE INDEX IF NOT EXISTS idx_errors_stage_week ON errors(stage, week)",
+        "CREATE INDEX IF NOT EXISTS idx_wout_stage_week ON word_output(stage, week)",
     ):
         try:
             c.execute(_idx)
@@ -646,6 +740,47 @@ def _ensure_columns(conn, table, columns):
     for col, coltype in columns.items():
         if col not in existing:
             conn.execute(f"ALTER TABLE {table} ADD COLUMN {col} {coltype}")
+
+
+def _backfill_week_columns(conn):
+    """给老数据回填「课程周」身份证（stage/week）。
+
+    背景：errors 和 word_output 历史上只有 created_at 和 word，没有 stage/week，
+    补列之后老行全是 NULL —— 回答不了「第 3 周我错了什么」，也进不了按周聚合的总结页。
+
+    做法：用 word 去 sentences 反查该词最近一次出现在哪一周。
+      * 只处理 stage IS NULL 的行 → 可重复运行，不覆盖已填好的值
+      * 用标量子查询而非 UPDATE...FROM → SQLite 与 PostgreSQL 都支持这一写法
+      * 反查不到就留 NULL（前端按「未知周」显示），绝不猜一个数字填上去
+      * sentences 表为空（新用户）时直接返回，不做无谓的全表扫描
+    """
+    try:
+        has_src = conn.execute("SELECT COUNT(*) FROM sentences").fetchone()[0]
+        if not has_src:
+            return
+    except Exception as e:
+        print("[db._backfill_week_columns] 跳过（无法读取 sentences）:", e)
+        return
+
+    stmts = (
+        # 错误本：按出错的词反查它属于哪一周
+        "UPDATE errors SET stage = (SELECT s.stage FROM sentences s "
+        "  WHERE s.word <> '' AND s.word = errors.word ORDER BY s.id DESC LIMIT 1), "
+        "week = (SELECT s.week FROM sentences s "
+        "  WHERE s.word <> '' AND s.word = errors.word ORDER BY s.id DESC LIMIT 1) "
+        "WHERE stage IS NULL AND word IS NOT NULL AND word <> ''",
+        # 五星输出：按词反查
+        "UPDATE word_output SET stage = (SELECT s.stage FROM sentences s "
+        "  WHERE s.word <> '' AND s.word = word_output.word ORDER BY s.id DESC LIMIT 1), "
+        "week = (SELECT s.week FROM sentences s "
+        "  WHERE s.word <> '' AND s.word = word_output.word ORDER BY s.id DESC LIMIT 1) "
+        "WHERE stage IS NULL AND word IS NOT NULL AND word <> ''",
+    )
+    for sql in stmts:
+        try:
+            conn.execute(sql)
+        except Exception as e:
+            print("[db._backfill_week_columns] 跳过:", e)
 
 
 def today_str():

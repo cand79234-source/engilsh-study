@@ -17,6 +17,8 @@ from ai_service import (correct_sentence, ERROR_TYPES, attempts_of,
                         today_attempts, analyze)
 import fileimport
 import report as _report
+import training as _training
+import link as _link
 
 app = FastAPI(title="English OS")
 
@@ -528,29 +530,36 @@ def error_detail(error_type: str):
 
 @app.get("/api/weakness")
 def weakness():
-    """④ 薄弱项聚合：错误类型 + 主动输出偏弱词 + 针对性训练建议。
+    """④ 薄弱项聚合。
 
-    纯本地统计 + 规则生成，不引入 AI、不编造数据。
+    原先只看错误本 + 五星输出，是"半瞎"的：造句得分低不算、复习反复答错不算、
+    周测考砸不算、听力听不懂不算、专项训练没达标也不算。
+
+    现在改由 link.build_weakness() 做综合判定，把六个来源都纳入。
+    返回结构保持向后兼容（error_types / low_star_words / recommendations），
+    另附 sources 分板块明细。
     """
-    errs = svc.error_breakdown()
-    low = srs.weak_output_words(threshold=3)
-    recs = []
-    # 高频/反复错误 → 按内置补课建议
-    for e in errs[:3]:
-        if e["count_30d"] > 0:
-            recs.append({
-                "kind": "error", "label": "错误类型 · " + e["type"],
-                "detail": f"近30天 {e['count_30d']} 次，累计 {e['total']} 次",
-                "advice": e.get("remedy") or "",
-            })
-    # 主动输出偏弱词 → 再练一句
-    for w in low[:3]:
-        recs.append({
-            "kind": "output", "label": "主动输出 · " + w["word"],
-            "detail": f"五星 {w['stars']}/5，最近表现 {w['last_result'] or '—'}",
-            "advice": "建议用该词再造一句关于你自己的话，把熟练度拉到 3 星以上。",
-        })
-    return {"error_types": errs, "low_star_words": low, "recommendations": recs}
+    return _link.build_weakness()
+
+
+@app.get("/api/word/{word}/profile")
+def word_profile(word: str):
+    """一个词的全息档案：学习 / 造句 / 错误 / 复习 / 主动输出 / 专项训练的完整轨迹。
+
+    打通各板块的「词」这条主线 —— 此前这些数据分散在七张表里，
+    没有任何一个地方能把某个词的全部经历摊开来看。
+    """
+    r = _link.word_profile(word)
+    if r is None:
+        return {"ok": False, "word": word, "reason": "no_data"}
+    return r
+
+
+@app.get("/api/training/summary")
+def training_summary():
+    """专项训练整体成绩汇总（此前这块数据对总结页完全隐形）。"""
+    r = _link.training_summary()
+    return {"ok": True, "summary": r}
 
 
 @app.get("/api/error-types")
@@ -566,8 +575,18 @@ def quiz_get(stage: int, week: int):
 
 @app.post("/api/quiz/grade")
 def quiz_grade(body: dict):
-    return svc.grade_quiz(
-        int(body.get("stage", 0)), int(body.get("week", 1)), body.get("answers", {}))
+    stage = int(body.get("stage", 0))
+    week = int(body.get("week", 1))
+    r = svc.grade_quiz(stage, week, body.get("answers", {}))
+    # 周测答错的题同步进错误本：detail_json 里本来就有题干和知识点标签，
+    # 但此前除了算总分之外从没被用过 —— 考砸了没人知道。
+    # 这一步失败也不影响周测成绩本身，所以异常被吞掉。
+    try:
+        r["synced_errors"] = _link.sync_quiz_errors(stage, week, r.get("detail") or [])
+    except Exception as e:
+        print("[api.quiz_grade] 错题同步失败（不影响成绩）:", e)
+        r["synced_errors"] = 0
+    return r
 
 
 # ---------- 本地词库（无 AI）----------
@@ -1043,6 +1062,28 @@ def test_list_projects():
         "ORDER BY id DESC").fetchall()
     conn.close()
     return {"items": [dict(r) for r in rows]}
+
+
+# ---------- 专项训练四层落库 ----------
+@app.get("/api/training/state")
+def training_state_get():
+    """读取专项训练四层全量状态（projects / sessions / rounds / attempts）。
+
+    此前这些数据只存在浏览器 localStorage，换设备即丢失，且对错误本、
+    薄弱项、总结页完全不可见。现在统一由服务端存储。
+    """
+    return _training.load_state()
+
+
+@app.post("/api/training/state")
+def training_state_post(body: dict):
+    """全量保存专项训练四层状态（按业务 ID 做 upsert）。
+
+    前端的读写模式是「读整个 → 改 → 存整个」，所以这里按全量同步实现：
+    列表里有的就 upsert，列表里没有的（且带业务 ID）就删除。
+    老数据（project_key 为 NULL 的历史行）一律保留不动。
+    """
+    return _training.save_state(body)
 
 
 def _grade_training(ability, user_sentence, answer):

@@ -348,7 +348,7 @@ function esc(s){return (s==null?'':String(s)).replace(/&/g,'&amp;').replace(/</g
    一律用 data-act + data-val 而非内联 onclick。
    原因：HTML 转义救不了内联 JS——onclick="speak('I'm ...')" 里的撇号会直接破坏 JS 语法，
    而英语里 I'm / don't / it's 遍地都是。data-* 属性不会被执行，取值后才调用。 */
-document.addEventListener('click', function(e){
+document.addEventListener('click', async function(e){
   const el = e.target.closest('[data-act]');
   if (!el) return;
   const act = el.getAttribute('data-act');
@@ -358,6 +358,7 @@ document.addEventListener('click', function(e){
   else if (act === 'master') master(v);
   else if (act === 'openErr') openErr(v);
   else if (act === 'wlookup') wordLookup(v);
+  else if (act === 'wordProfile') wordProfileSheet(v);
   if (act === 'showColloc') showColloc(v, el.getAttribute('data-val2') || '');
   else if (act === 'check') submitSentence(v);
   else if (act === 'redo') redoSentence(v);
@@ -372,7 +373,7 @@ document.addEventListener('click', function(e){
   else if (act === 'copyRevWords') copyRevWords();
   else if (act === 'copyPrompt') copyPrompt();
   else if (act === 'copyWeekPrompt') copyWeekPrompt();
-  else if (act === 'copyErrorReport') copyErrorReport();
+  else if (act === 'copyErrorReport') await copyErrorReport();
   else if (act === 'copySummaryReport') copySummaryReport();
   else if (act === 'revFlash') startFlashcard();
   else if (act === 'revFlip') { state.revFlipped=!state.revFlipped;
@@ -405,22 +406,22 @@ document.addEventListener('click', function(e){
   else if (act === 'historyTab'){ state.historyMode=v; render('history'); }
   /* ---- 补习 / 专项训练 ---- */
   else if (act === 'copyDiagPrompt') copyDiagPrompt();
-  else if (act === 'copyTrainPrompt') copyTrainPrompt();
+  else if (act === 'copyTrainPrompt') await copyTrainPrompt();
   else if (act === 'trainCopyFormat') trainCopyFormat();
-  else if (act === 'trainImport') trainImport();
+  else if (act === 'trainImport') await trainImport();
   else if (act === 'trainBackList'){ state.trainMode='list'; render('train'); }
-  else if (act === 'trainStart') trainStart(v);
+  else if (act === 'trainStart') await trainStart(v);
   else if (act === 'trainHistory') trainShowHistory(v);
-  else if (act === 'trainDel') trainDel(v);
+  else if (act === 'trainDel') await trainDel(v);
   else if (act === 'trainBackList') trainBackList();
   else if (act === 'trainPick') trainPick(v);
-  else if (act === 'trainHint') trainHint();
-  else if (act === 'trainSubmit') trainSubmit();
-  else if (act === 'trainSelf') trainSelf(v);
-  else if (act === 'trainNext') trainNext();
-  else if (act === 'trainAgain') trainAgain();
-  else if (act === 'trainQuit') trainQuit();
-  else if (act === 'trainCopyRecord') trainCopyRecord();
+  else if (act === 'trainHint') await trainHint();
+  else if (act === 'trainSubmit') await trainSubmit();
+  else if (act === 'trainSelf') await trainSelf(v);
+  else if (act === 'trainNext') await trainNext();
+  else if (act === 'trainAgain') await trainAgain();
+  else if (act === 'trainQuit') await trainQuit();
+  else if (act === 'trainCopyRecord') await trainCopyRecord();
 });
 /* 填空实时计数：用户每填/改一个空，刷新「已答 X / N」 */
 document.addEventListener('input', function(e){
@@ -726,10 +727,58 @@ async function wordLookup(word){
     if(!r||!r.found){ body.textContent='本地词典未收录该词'; return; }
     const ph=r.phonetic?`/${esc(r.phonetic)}/ `:'';
     const pos=r.pos?`<span class="badge" style="background:var(--primary-bg);color:var(--primary)">${esc(r.pos)}</span> `:'';
-    body.innerHTML=`<div style="font-size:15px;line-height:1.7;margin-top:4px">${pos}${ph}${esc(r.meaning)||'（无释义）'}</div>`;
+    body.innerHTML=`<div style="font-size:15px;line-height:1.7;margin-top:4px">${pos}${ph}${esc(r.meaning)||'（无释义）'}</div>
+      <button class="btn ghost sm" style="margin-top:10px" data-act="wordProfile" data-val="${esc(word)}">📖 查看这个词的学习档案</button>`;
   }catch(e){
     const body=ov.querySelector('#wlookup_body'); if(body)body.textContent='查询失败，请重试';
   }
+}
+/* 词全息档案：把一个词在学习 / 造句 / 错误 / 复习 / 主动输出 / 专项训练里的
+   全部痕迹摊开。此前这些数据分散在七张表里，没有任何地方能看到全貌。 */
+async function wordProfileSheet(word){
+  const ov=document.createElement('div');ov.className='overlay';
+  ov.onclick=(e)=>{if(e.target===ov)ov.remove();};
+  ov.style.cssText='align-items:flex-end;z-index:98;display:flex';
+  ov.innerHTML=`<div class="sheet" style="max-width:480px">
+    <button class="close" onclick="this.closest('.overlay').remove()">✕</button>
+    <div style="font-size:18px;font-weight:800;color:var(--primary)">${esc(word)}
+      <span style="font-size:12px;font-weight:600;color:var(--muted);margin-left:6px">学习档案</span></div>
+    <div id="wprof_body" style="margin-top:10px;font-size:13.5px;color:var(--muted)">加载中…</div>
+  </div>`;
+  document.body.appendChild(ov);
+  requestAnimationFrame(()=>ov.classList.add('show'));
+  try{
+    const r=await api('/word/'+encodeURIComponent(word)+'/profile');
+    const body=ov.querySelector('#wprof_body');
+    if(!body) return;
+    if(!r||!r.ok){ body.textContent='这个词还没有任何学习记录。'; return; }
+    body.innerHTML=wordProfileHtml(r);
+  }catch(e){
+    const b=ov.querySelector('#wprof_body'); if(b) b.textContent='加载失败，请重试';
+  }
+}
+function wordProfileHtml(p){
+  const row=(k,v)=>`<div class="trow"><span class="tk">${esc(k)}</span><span>${v}</span></div>`;
+  const d=p.dict||{}, s=p.sentences||{}, e=p.errors||{}, rv=p.reviews, o=p.output, t=p.training;
+  let h='';
+  if(d.meaning) h+=`<div style="font-size:15px;line-height:1.7">${d.phonetic?('/'+esc(d.phonetic)+'/ '):''}${esc(d.meaning)}</div>`;
+  h+='<div class="tbody" style="margin-top:9px">';
+  if(p.learned) h+=row('学过',`阶段${p.learned.stage} · W${p.learned.week} · D${p.learned.day}`);
+  h+=row('造句',`${s.count||0} 句 · 均分 ${(s.avg==null?'—':s.avg)}`);
+  h+=row('错误',`${e.times||0} 次 · 已改正 ${e.fixed||0} 条`);
+  if(rv) h+=row('复习',`对 ${rv.total_correct||0} 次 · 错 ${rv.total_wrong||0} 次`);
+  if(o) h+=row('主动输出',`${'★'.repeat(o.stars||0)}${'☆'.repeat(Math.max(0,5-(o.stars||0)))} ${o.stars||0}/5`);
+  if(t) h+=row('专项训练',`${t.count||0} 次 · 正确率 ${(t.rate==null?'—':t.rate+'%')}`);
+  h+='</div>';
+  if((e.latest||[]).length){
+    h+='<div style="margin-top:11px;font-weight:700;font-size:13px">最近的错误</div>';
+    h+=e.latest.map(x=>`<div class="thist">${esc(x.type||'')}：${esc(x.original||'')}${x.corrected?(' → '+esc(x.corrected)):''}</div>`).join('');
+  }
+  if((s.latest||[]).length){
+    h+='<div style="margin-top:11px;font-weight:700;font-size:13px">最近的造句</div>';
+    h+=s.latest.map(x=>`<div class="thist">${esc(x.text||'')} <span style="color:var(--muted)">${esc(x.verdict||'')}${(x.score!=null?(' · '+x.score+'分'):'')}</span></div>`).join('');
+  }
+  return h;
 }
 async function toggleW(word){state.openWord=(state.openWord===word)?null:word;renderWordsInto();}
 function renderWordsInto(){const t=state.today;document.getElementById('wordlist').innerHTML=renderWords(t.words);}
@@ -3659,7 +3708,7 @@ function _buildReportText(RD, kind, period){
 }
 
 /* 复制薄弱项页完整报告（给 AI 分析用） */
-function copyErrorReport(){
+async function copyErrorReport(){
   const tplDiag=_tpl('tplPromptDiag'), tplTrain=_tpl('tplPromptTrain');
   if(!tplDiag && !tplTrain){ toast('提示词未加载，刷新页面重试'); return; }
   const data=pgosDataDump();
@@ -3679,7 +3728,7 @@ function copyErrorReport(){
     tplTrain,
     '','────────────────────────────',
     '【训练项目输入】',
-    trainProjectsText() || '（当前未导入结构化训练项目。请先运行「一、分析诊断提示词」得到 Next-stage Training Input，再导入「复习 → 🧠 补习」。）',
+    await trainProjectsText() || '（当前未导入结构化训练项目。请先运行「一、分析诊断提示词」得到 Next-stage Training Input，再导入「复习 → 🧠 补习」。）',
     '','══════════════════════════════════════',
     '【三、试卷输出格式（让 AI 吐出可导入 PGOS 的 JSON）】',
     trainFormatBlock()
@@ -3786,10 +3835,10 @@ function copyDiagPrompt(){
   copyText(out,'提示词未加载');
   toast('已复制分析提示词 ✅ 粘给 AI 即可');
 }
-function copyTrainPrompt(){
+async function copyTrainPrompt(){
   const tpl=_tpl('tplPromptTrain');
   if(!tpl){ toast('提示词未加载，刷新页面重试'); return; }
-  const pj=trainProjectsText();
+  const pj=await trainProjectsText();
   const out=[
     tpl,'','────────────────────────────',
     pgosDataDump(),'','────────────────────────────',
@@ -3817,13 +3866,51 @@ const TRAIN_KEY='eos_train_v1';
 const ABILITY_CN={GRAMMAR:'语法',VOCABULARY:'词汇',EXPRESSION:'表达',LISTENING:'听力',READING:'阅读',OTHER:'其他'};
 const STATUS_CN={NOT_STARTED:'待开始',CONTINUE:'训练中',REVIEW:'待复核',DONE:'已结束'};
 const ITEM_CN={CHOICE:'选择',FILL:'填空',STRUCTURE:'结构',SENTENCE:'造句',JUDGE:'判断'};
-function trainLoad(){
+/* 专项训练数据落库：主存储改到服务端，localStorage 降级为备份。
+   此前四层数据只存在浏览器里，换设备 / 清缓存即全部蒸发，且对错误本、
+   薄弱项、总结页完全不可见。现在统一由服务端存，读不到本机那份。
+   _trainCache 是内存缓存，避免每次 render 都打一次接口。 */
+let _trainCache=null;
+async function trainLoad(){
+  if(_trainCache) return _trainCache;
+  const empty={projects:[],sessions:[],rounds:[],attempts:[]};
+  try{
+    const r=await api('/training/state');
+    if(r && r.projects){
+      _trainCache={projects:r.projects||[], sessions:r.sessions||[], rounds:r.rounds||[], attempts:r.attempts||[]};
+      await _trainMergeLegacy(_trainCache);   // 老本地数据一次性并进来，避免原有记录凭空消失
+      return _trainCache;
+    }
+  }catch(e){ /* 后端不可用 → 降级读本机，行为与改造前一致 */ }
   try{
     const d=JSON.parse(localStorage.getItem(TRAIN_KEY)||'{}')||{};
-    return {projects:d.projects||[], sessions:d.sessions||[], rounds:d.rounds||[], attempts:d.attempts||[]};
-  }catch(e){ return {projects:[],sessions:[],rounds:[],attempts:[]}; }
+    _trainCache={projects:d.projects||[], sessions:d.sessions||[], rounds:d.rounds||[], attempts:d.attempts||[]};
+  }catch(e){ _trainCache=empty; }
+  return _trainCache;
 }
-function trainSave(d){ try{ localStorage.setItem(TRAIN_KEY, JSON.stringify(d)); }catch(e){ toast('保存失败：本地存储写入不了'); } }
+/* 把此前存在 localStorage 的训练数据一次性并入服务端。
+   只在落库成功后才清掉旧存储；失败就留着，下次进来再试，绝不静默丢弃。 */
+async function _trainMergeLegacy(d){
+  let old=null;
+  try{ old=JSON.parse(localStorage.getItem(TRAIN_KEY)||'{}')||{}; }catch(e){ return; }
+  const lp=old.projects||[], ls=old.sessions||[], lr=old.rounds||[], la=old.attempts||[];
+  if(!lp.length&&!ls.length&&!lr.length&&!la.length) return;
+  const has=(arr,key,val)=>arr.some(x=>String(x[key])===String(val));
+  let added=0;
+  lp.forEach(x=>{ if(x&&x.project_id&&!has(d.projects,'project_id',x.project_id)){ d.projects.push(x); added++; } });
+  ls.forEach(x=>{ if(x&&x.session_id&&!has(d.sessions,'session_id',x.session_id)){ d.sessions.push(x); added++; } });
+  lr.forEach(x=>{ if(x&&x.round_id&&!has(d.rounds,'round_id',x.round_id)){ d.rounds.push(x); added++; } });
+  la.forEach(x=>{ if(x&&x.attempt_id&&!has(d.attempts,'attempt_id',x.attempt_id)){ d.attempts.push(x); added++; } });
+  if(added && await trainSave(d)){ localStorage.removeItem(TRAIN_KEY); }
+}
+async function trainSave(d){
+  _trainCache=d;   // 先更新内存，界面立刻生效，不等网络往返
+  try{ localStorage.setItem(TRAIN_KEY, JSON.stringify(d)); }catch(e){}
+  try{
+    await api('/training/state',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(d)});
+    return true;
+  }catch(e){ toast('训练记录没能同步到服务器，已先存在本机'); return false; }
+}
 function _uid(p){ return (p||'id')+'_'+Date.now().toString(36)+Math.random().toString(36).slice(2,6); }
 function _nowISO(){ return new Date().toISOString(); }
 function _fmtWhen(s){ return s?String(s).slice(0,16).replace('T',' '):'—'; }
@@ -3864,8 +3951,8 @@ function trainJudge(item, ans){
   return {correct:ok, manual:false, why:ok?'✅ 答对了':('❌ 参考答案：'+shown)};
 }
 /* 把已导入的训练项目还原成训练 AI 要的输入格式 */
-function trainProjectsText(){
-  const ps=trainLoad().projects;
+async function trainProjectsText(){
+  const ps=await trainLoad().projects;
   if(!ps.length) return '';
   return ps.map(p=>{
     const L=['【训练项目】',
@@ -3927,7 +4014,7 @@ function trainParse(txt){
   if(!out.length) return {error:'没有解析出任何带 project_id 的训练项目'};
   return {projects:out};
 }
-function trainImport(){
+async function trainImport(){
   const ta=document.getElementById('trainJson');
   if(!ta) return;
   const raw=(ta.value||'').trim();
@@ -3935,7 +4022,7 @@ function trainImport(){
   if(raw.indexOf('<<<TEST>>>')>=0){ trainImportTest(raw); return; }
   const r=trainParse(raw);
   if(r.error){ toast('导入失败：'+r.error); return; }
-  const d=trainLoad();
+  const d=await trainLoad();
   let added=0, updated=0;
   r.projects.forEach(np=>{
     const idx=d.projects.findIndex(x=>x.project_id===np.project_id);
@@ -3945,7 +4032,7 @@ function trainImport(){
       updated++;
     } else { d.projects.push(np); added++; }
   });
-  trainSave(d);
+  await trainSave(d);
   ta.value='';
   state.trainMode='list';
   toast(`导入完成：新增 ${added} 个${updated?('，更新 '+updated+' 个'):''}`);
@@ -3965,10 +4052,10 @@ async function trainImportTest(raw){
 pages.train=async function(el){
   refreshProg();
   const mode=state.trainMode||'list';
-  if(mode==='run') return trainRenderRun(el);
-  if(mode==='history') return trainRenderHistory(el);
+  if(mode==='run') return await trainRenderRun(el);
+  if(mode==='history') return await trainRenderHistory(el);
   if(mode==='paper') return trainRenderPaper(el);
-  return trainRenderList(el);
+  return await trainRenderList(el);
 };
 function trainRenderPaper(el){
   const ok=state.testParsed&&state.testParsed.ok;
@@ -3981,8 +4068,8 @@ function trainRenderPaper(el){
   html += ok ? renderTestPaper(state.testParsed) : '<div class="sub">试卷为空，请重新导入。</div>';
   el.innerHTML=html;
 }
-function trainRenderList(el){
-  const d=trainLoad(), ps=d.projects;
+async function trainRenderList(el){
+  const d=await trainLoad(), ps=d.projects;
   const listHtml = ps.length ? ps.map(p=>{
     const its=p.items||[];
     const sess=d.sessions.filter(s=>s.project_id===p.project_id);
@@ -4084,23 +4171,23 @@ function trainCopyFormat(){
   toast('已复制输出格式 ✅ 连同补习提示词一起发 AI');
 }
 /* ---------- 训练执行 ---------- */
-function trainStart(pid){
-  const d=trainLoad();
+async function trainStart(pid){
+  const d=await trainLoad();
   const p=d.projects.find(x=>x.project_id===pid);
   if(!p || !(p.items||[]).length){ toast('这个项目没有题目'); return; }
   const sess={session_id:_uid('sess'), project_id:pid, started_at:_nowISO(), ended_at:null,
     round_count:0, valid_attempts:0, correct_count:0, incorrect_count:0, hint_count:0,
     independent_correct_count:0, consecutive_independent_correct:0, final_status:null, next_step:null};
-  d.sessions.push(sess); trainSave(d);
+  d.sessions.push(sess); await trainSave(d);
   state.tr={pid:pid, session_id:sess.session_id, roundIdx:0, qIdx:0, queue:[], hintLevel:0, usedHint:false,
     judged:null, manual:false, roundStats:null, done:false, consec:0, indep:0, correct:0, valid:0, hints:0};
-  trainNewRound();
+  await trainNewRound();
   state.trainMode='run';
   render('train');
 }
 /* 每回合只取少量题（够判断就停），优先出本 session 还没做过的 */
-function trainNewRound(){
-  const tr=state.tr, d=trainLoad();
+async function trainNewRound(){
+  const tr=state.tr, d=await trainLoad();
   const p=d.projects.find(x=>x.project_id===tr.pid);
   const per=Math.max(1, Math.min(6, Number(((p.exit_rule||{}).per_round)||4)));
   const usedIds=new Set((d.attempts||[]).filter(a=>a.session_id===tr.session_id).map(a=>a.question_id));
@@ -4109,22 +4196,22 @@ function trainNewRound(){
   tr.queue=pool.slice(0, per);
   tr.qIdx=0; tr.roundIdx=(tr.roundIdx||0)+1; tr.roundStats=null; tr.done=false;
   const r={round_id:_uid('r'), session_id:tr.session_id, project_id:tr.pid, index:tr.roundIdx, started_at:_nowISO()};
-  d.rounds.push(r); trainSave(d);
+  d.rounds.push(r); await trainSave(d);
   tr.roundId=r.round_id;
 }
-function trainCurItem(){
+async function trainCurItem(){
   const tr=state.tr; if(!tr) return null;
-  const d=trainLoad(), p=d.projects.find(x=>x.project_id===tr.pid);
+  const d=await trainLoad(), p=d.projects.find(x=>x.project_id===tr.pid);
   if(!p) return null;
   return (tr.queue||[])[tr.qIdx]||null;
 }
-function trainRenderRun(el){
+async function trainRenderRun(el){
   const tr=state.tr;
-  if(!tr){ state.trainMode='list'; return trainRenderList(el); }
-  const d=trainLoad(), p=d.projects.find(x=>x.project_id===tr.pid);
-  if(!p){ state.trainMode='list'; return trainRenderList(el); }
+  if(!tr){ state.trainMode='list'; return await trainRenderList(el); }
+  const d=await trainLoad(), p=d.projects.find(x=>x.project_id===tr.pid);
+  if(!p){ state.trainMode='list'; return await trainRenderList(el); }
   if(tr.done) return trainRenderRoundEnd(el, p);
-  const item=trainCurItem();
+  const item=await trainCurItem();
   if(!item){ tr.done=true; return trainRenderRoundEnd(el, p); }
 
   const t=String(item.type||'FILL').toUpperCase();
@@ -4189,18 +4276,18 @@ function trainRenderRun(el){
   }
 }
 function trainPick(key){ const tr=state.tr; if(!tr||tr.judged) return; tr.picked=key; render('train'); }
-function trainHint(){
+async function trainHint(){
   const tr=state.tr; if(!tr) return;
-  const item=trainCurItem(); if(!item) return;
+  const item=await trainCurItem(); if(!item) return;
   const n=(item.hints||[]).length;
   if(!n){ toast('这道题没有预设提示'); return; }
   if(tr.hintLevel>=n){ toast('提示已全部给出'); return; }
   tr.hintLevel=(tr.hintLevel||0)+1; tr.usedHint=true;
   render('train');
 }
-function trainSubmit(){
+async function trainSubmit(){
   const tr=state.tr; if(!tr||tr.judged) return;
-  const item=trainCurItem(); if(!item) return;
+  const item=await trainCurItem(); if(!item) return;
   let ans='';
   if(String(item.type||'').toUpperCase()==='CHOICE'||String(item.type||'').toUpperCase()==='JUDGE'){
     ans=tr.picked||'';
@@ -4214,7 +4301,7 @@ function trainSubmit(){
   const j=trainJudge(item, ans);
   tr.judged=j;
   // 记录 attempt：有效作答 = 真正回答了（答错也算）
-  const d=trainLoad();
+  const d=await trainLoad();
   const independent = !!j.correct && !tr.usedHint;
   d.attempts.push({attempt_id:_uid('a'), project_id:tr.pid, session_id:tr.session_id, round_id:tr.roundId,
     question_id:item.id, user_answer:ans, is_correct:!!j.correct, manual:!!j.manual,
@@ -4224,33 +4311,33 @@ function trainSubmit(){
   if(tr.usedHint) tr.hints=(tr.hints||0)+1;
   if(independent){ tr.indep=(tr.indep||0)+1; tr.consec=(tr.consec||0)+1; }
   else tr.consec=0;
-  trainSave(d);
+  await trainSave(d);
   render('train');
 }
-function trainSelf(ok){
+async function trainSelf(ok){
   const tr=state.tr; if(!tr||!tr.judged) return;
   tr.judged.manual=false;
   tr.judged.correct=(String(ok)==='1');
   tr.judged.why=tr.judged.correct?'✅ 你自己确认达标':'❌ 你自己确认还没到位';
-  const d=trainLoad();
+  const d=await trainLoad();
   const last=d.attempts[d.attempts.length-1];
   if(last){ last.is_correct=tr.judged.correct; last.is_independent=tr.judged.correct&&!tr.usedHint; }
   if(tr.judged.correct){ tr.correct=(tr.correct||0)+1; if(!tr.usedHint){ tr.indep=(tr.indep||0)+1; tr.consec=(tr.consec||0)+1; } else tr.consec=0; }
   else tr.consec=0;
-  trainSave(d);
+  await trainSave(d);
   render('train');
 }
-function trainNext(){
+async function trainNext(){
   const tr=state.tr; if(!tr) return;
   tr.qIdx=(tr.qIdx||0)+1;
   tr.judged=null; tr.picked=''; tr.typed=''; tr.hintLevel=0; tr.usedHint=false;
-  const item=trainCurItem();
-  if(!item){ tr.done=true; trainFinishRound(); }
+  const item=await trainCurItem();
+  if(!item){ tr.done=true; await trainFinishRound(); }
   render('train');
 }
 /* 回合结束：先判断是否已经达到项目结束标准，再决定继续还是收工 */
-function trainFinishRound(){
-  const tr=state.tr, d=trainLoad();
+async function trainFinishRound(){
+  const tr=state.tr, d=await trainLoad();
   const p=d.projects.find(x=>x.project_id===tr.pid);
   const rule=Object.assign({independent_correct:2, consecutive_independent:2, max_rounds:6, per_round:4}, (p&&p.exit_rule)||{});
   const needIndep=Number(rule.independent_correct||2), needConsec=Number(rule.consecutive_independent||2);
@@ -4283,7 +4370,7 @@ function trainFinishRound(){
   }
   const r=d.rounds.find(x=>x.round_id===tr.roundId);
   if(r) r.ended_at=_nowISO();
-  trainSave(d);
+  await trainSave(d);
 }
 function trainRenderRoundEnd(el, p){
   const tr=state.tr;
@@ -4312,20 +4399,20 @@ function trainRenderRoundEnd(el, p){
       <button class="btn" style="margin-top:9px" data-act="trainCopyRecord">📋 复制 PGOS 训练记录</button>
     </div>`;
 }
-function trainAgain(){
+async function trainAgain(){
   const tr=state.tr; if(!tr) return;
-  trainNewRound();
+  await trainNewRound();
   tr.judged=null; tr.picked=''; tr.typed='';
   render('train');
 }
-function trainQuit(){
+async function trainQuit(){
   const tr=state.tr;
-  if(tr && !tr.done) trainFinishRound();
+  if(tr && !tr.done) await trainFinishRound();
   state.tr=null; state.trainMode='list'; render('train');
 }
-function trainCopyRecord(){
+async function trainCopyRecord(){
   const tr=state.tr; if(!tr) return;
-  const d=trainLoad(), p=d.projects.find(x=>x.project_id===tr.pid);
+  const d=await trainLoad(), p=d.projects.find(x=>x.project_id===tr.pid);
   const s=d.sessions.find(x=>x.session_id===tr.session_id);
   const L=['【PGOS训练记录】',
     '项目ID：'+(tr.pid||'—'),
@@ -4344,20 +4431,20 @@ function trainCopyRecord(){
   copyText(L.join('\n'),'训练记录为空');
   toast('已复制训练记录 ✅');
 }
-function trainDel(pid){
+async function trainDel(pid){
   if(!confirm('删除训练项目「'+pid+'」？它的训练历史也会一起删掉。')) return;
-  const d=trainLoad();
+  const d=await trainLoad();
   d.projects=d.projects.filter(x=>x.project_id!==pid);
   d.sessions=d.sessions.filter(x=>x.project_id!==pid);
   const rids=new Set(d.rounds.filter(r=>r.project_id===pid).map(r=>r.round_id));
   d.rounds=d.rounds.filter(r=>r.project_id!==pid);
   d.attempts=d.attempts.filter(a=>a.project_id!==pid);
-  trainSave(d);
+  await trainSave(d);
   toast('已删除');
   render('train');
 }
-function trainRenderHistory(el){
-  const d=trainLoad();
+async function trainRenderHistory(el){
+  const d=await trainLoad();
   const pid=state.trainHistPid;
   const sess=d.sessions.filter(s=>!pid||s.project_id===pid).slice().reverse();
   const html=sess.length?sess.map(s=>{
