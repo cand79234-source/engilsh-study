@@ -133,6 +133,18 @@ textarea{font-family:monospace;font-size:13px;min-height:110px;line-height:1.6}
 .pickgrid button.on{background:var(--primary-bg);color:var(--primary);border-color:var(--primary);font-weight:700}
 .errcount{font-size:12px;font-weight:700;background:#fee2e2;color:var(--red);border-radius:20px;padding:2px 8px}
 .pill-mini{display:inline-flex;align-items:center;gap:5px;background:#f1f5f9;border-radius:20px;padding:4px 10px;font-size:12px;font-weight:700}
+
+/* 总结页 */
+.sumrow{display:flex;justify-content:space-between;align-items:center;gap:10px;font-size:12.5px;line-height:1.6;padding:2px 0}
+.sumrow b{font-weight:800;color:var(--text)}
+.sumrow .srl{min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sumrow .srr{flex-shrink:0;margin-left:8px;color:var(--muted)}
+.trendnote{font-size:11px;color:var(--muted);margin-top:3px;line-height:1.5}
+.legend{display:flex;gap:14px;font-size:11px;color:var(--muted);margin:2px 0 7px}
+.codebox{width:100%;min-height:130px;border:1.5px solid var(--border);border-radius:10px;padding:10px 11px;
+  font-size:12.5px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;line-height:1.55;
+  background:#f8fafc;color:var(--text);resize:vertical}
+.codebox:focus{outline:none;border-color:var(--primary)}
 </style>
 </head>
 <body>
@@ -143,8 +155,10 @@ textarea{font-family:monospace;font-size:13px;min-height:110px;line-height:1.6}
 <main class="content" id="content"></main>
 <div class="bottomnav">
   <a data-page="learn" class="active"><span class="ico">📖</span><span>学习</span></a>
+  <a data-page="listen"><span class="ico">🎧</span><span>听力</span></a>
   <a data-page="review"><span class="ico">🔁</span><span>复习</span></a>
   <a data-page="errors"><span class="ico">🎯</span><span>薄弱项</span></a>
+  <a data-page="sum"><span class="ico">📊</span><span>总结</span></a>
 </div>
 <!-- 进度调整弹窗 -->
 <div class="overlay" id="progOverlay" onclick="if(event.target===this)closeProg()">
@@ -241,6 +255,8 @@ document.addEventListener('click', function(e){
   else if (act === 'revExit') { state.revMode='home'; render('review'); }
   else if (act === 'revWeak') { state.revMode='weak'; render('review'); }
   else if (act === 'revAll') { state.revMode='all'; render('review'); }
+  else if (act === 'sumTab') { state.sumTab=v; render('sum'); }
+  else if (act === 'copySummaryReport') copySummaryReport();
 });
 function startFlashcard(){
   state.revMode='flash'; state.revIdx=0; state.revFlipped=false; state.revLog=[];
@@ -1054,10 +1070,14 @@ pages.review=async function(el){
   else renderReviewHome(el);
 };
 
+/* 听力页：占位，功能开发中（导航已开放，避免点开空白） */
+pages.listen=async function(el){
+  el.innerHTML='<h1>🎧 听力</h1><div class="sub">听力模块正在建设中，即将上线。</div>';
+};
+
 function renderReviewHome(el){
   const n=(state.revDue||[]).length;
   el.innerHTML=`
-    <h1>🔁 复习</h1>
     <div class="sub">到期单词走闪卡，错误走薄弱项。造句与听力不在这里复习。</div>
 
     <div class="card" style="margin-top:10px">
@@ -1424,6 +1444,249 @@ async function openErr(type){
     ${d.items.length===0?'<div class="sub" style="margin:4px 0">该类型暂无明细。</div>':''}`;
 }
 function collapseErr(){const d=document.getElementById('errdetail');d.style.display='none';d.innerHTML='';d.dataset.type='';}
+
+/* ============ 总结页辅助函数 ============ */
+function _anaMetric(label, val, sub){
+  return `<div class="metric"><span>${label}</span><b>${val!=null?val:'—'}${sub?` <small style="font-weight:400;color:var(--muted)">${sub}</small>`:''}</b></div>`;
+}
+/* 带涨跌箭头的指标：cur=本周, prev=上周, unit=单位, lowerIsBetter=错误率类（越低越好） */
+function _anaTrend(label, cur, prev, unit, lowerIsBetter){
+  if(cur==null||prev==null) return _anaMetric(label, cur!=null?cur+unit:'—', prev!=null?('上周 '+prev+unit):'');
+  const diff=Number(cur)-Number(prev);
+  const pct=prev!=0?Math.round(diff/Math.abs(Number(prev))*100):0;
+  const isGood=lowerIsBetter?(diff<0):(diff>0);
+  const color=isGood?'var(--green)':'var(--red)';
+  const arrow=diff>0?'↑':diff<0?'↓':'→';
+  const sign=diff>0?'+':'';
+  return `<div class="metric"><span>${label}</span><b>${cur}${unit} <span style="color:${color};font-weight:800">${arrow} ${sign}${pct}%</span> <small style="font-weight:400;color:var(--muted)">上周 ${prev}${unit}</small></b></div>`;
+}
+/* 迷你折线图：arr=[{label,v}]，lowerIsBetter=错误率类 */
+function _anaMiniLine(arr,title,lowerIsBetter){
+  if(!arr||!arr.length) return '';
+  const W=280,H=70,P=10;
+  const vals=arr.map(x=>x.v);
+  const maxv=Math.max(...vals,1), minv=Math.min(...vals,0);
+  const range=maxv-minv||1;
+  const xc=i=>P+(W-2*P)*(arr.length===1?0.5:i/(arr.length-1));
+  const yc=v=>H-P-(H-2*P)*((v-minv)/range);
+  let d=''; let pen=false;
+  arr.forEach((x,i)=>{ const px=xc(i), py=yc(x.v); d+=(pen?'L':'M')+px.toFixed(1)+' '+py.toFixed(1)+' '; pen=true; });
+  const dots=arr.map((x,i)=>`<circle cx="${xc(i).toFixed(1)}" cy="${yc(x.v).toFixed(1)}" r="3" fill="${lowerIsBetter?'var(--red)':'var(--primary)'}"/>`).join('');
+  const labels=arr.map((x,i)=>`<text x="${xc(i).toFixed(1)}" y="${H-2}" font-size="9" fill="#94a3b8" text-anchor="middle">${i+1}</text>`).join('');
+  const nums=arr.map(x=>x.v).join(' → ');
+  return `<div style="margin:8px 0"><div style="font-size:13px;font-weight:700;margin-bottom:4px">${esc(title)}</div><svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto"><line x1="${P}" y1="${H-P}" x2="${W-P}" y2="${H-P}" stroke="#e2e8f0"/><path d="${d.trim()}" fill="none" stroke="var(--primary)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>${dots}${labels}</svg>
+    <div class="trendnote">最近四周：${nums}</div>
+  </div>`;
+}
+/* 错误趋势折线图：输入 byDay={YYYY-MM-DD:次数}，按自然日画，无记录日不补点 */
+function _errTrendLine(byDay){
+  const days=Object.keys(byDay||{}).sort();
+  if(!days.length) return '<div class="sub" style="margin:6px 0">暂无按日错误记录。</div>';
+  const arr=days.map(d=>({label:d.slice(5), v:byDay[d]}));
+  const W=320,H=92,P=14,maxv=Math.max.apply(null,arr.map(x=>x.v).concat(1));
+  const xc=i=>P+(W-2*P)*(arr.length===1?0.5:i/(arr.length-1));
+  const yc=v=>H-P-(H-2*P)*(v/maxv);
+  let d='';let pen=false;
+  arr.forEach((x,i)=>{const px=xc(i),py=yc(x.v);d+=(pen?'L':'M')+px.toFixed(1)+' '+py.toFixed(1)+' ';pen=true;});
+  const dots=arr.map((x,i)=>`<circle cx="${xc(i).toFixed(1)}" cy="${yc(x.v).toFixed(1)}" r="2.5" fill="var(--red)"/>`).join('');
+  const labels=arr.map((x,i)=>`<text x="${xc(i).toFixed(1)}" y="${H-2}" font-size="8" fill="#94a3b8" text-anchor="middle">${i%2===0?esc(x.label):''}</text>`).join('');
+  const total=arr.reduce((s,x)=>s+x.v,0), avg=Math.round(total/arr.length);
+  return `<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto;margin-top:4px">
+    <line x1="${P}" y1="${H-P}" x2="${W-P}" y2="${H-P}" stroke="#e2e8f0"/>
+    <path d="${d.trim()}" fill="none" stroke="var(--red)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+    ${dots}${labels}
+  </svg><div class="trendnote">共 ${arr.length} 天 · 日均 ${avg} 次 · 峰值 ${maxv} 次</div>`;
+}
+/* 进度条：current/max */
+function _anaProgress(label, cur, max){
+  if(cur==null||max==null||max===0) return _anaMetric(label, '—');
+  const pct=Math.round(cur/max*100);
+  const color=pct>=80?'var(--green)':pct>=60?'var(--amber)':'var(--red)';
+  return `<div style="margin:8px 0"><div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:3px"><span>${esc(label)}</span><b>${cur} / ${max}（${pct}%）</b></div><div class="progressbar"><div style="width:${pct}%;background:${color}"></div></div></div>`;
+}
+function _sumPeriod(){
+  const dt=new Date(), day=(dt.getDay()+6)%7;
+  const mon=new Date(dt); mon.setDate(dt.getDate()-day);
+  const sun=new Date(mon); sun.setDate(mon.getDate()+6);
+  const f=x=>x.getFullYear()+'-'+('0'+(x.getMonth()+1)).slice(-2)+'-'+('0'+x.getDate()).slice(-2);
+  const y=dt.getFullYear(), m=dt.getMonth()+1, md=('0'+m).slice(-2), last=new Date(y,m,0).getDate();
+  return {week:f(mon)+' ～ '+f(sun), month:y+'-'+md+'-01 ～ '+y+'-'+md+'-'+('0'+last).slice(-2)};
+}
+
+/* ============ 总结页：周报 / 月报 / 复制报告 ============
+   数据来源：真实后端 /weakness、/errors（含错误时间戳，可算每日分布）。
+   其余统计指标（学习天数 / 新学词汇 / 计划完成率等）后端未返回，按“不编造”原则显示 —。
+   所有数据均来自真实后端，无演示数据、无 localStorage 业务数据。 */
+pages.sum=async function(el){
+  refreshProg();
+  let weakData=null, errData=null;
+  try{
+    const r=await Promise.all([api('/weakness'), api('/errors')]);
+    weakData=r[0]; errData=r[1];
+  }catch(e){ /* 不崩：用空数据渲染结构，缺失指标一律 — */ }
+  let errTypes=(errData&&errData.error_types)||(weakData&&weakData.error_types)||[];
+  const lowWords=(weakData&&weakData.low_star_words)||[];
+  // 已确认薄弱项：仅取 🔴 / 🟡（拼写/句型等 🔵 属记忆项，不在此列，交闪卡处理）
+  let confirmed=errTypes.filter(e=>{const lv=String(e.level||''); return lv.indexOf('🔴')>=0||lv.indexOf('🟡')>=0;});
+  // 错误按自然日分布（只统计真实记录，未来日期不计入、不补 0）
+  let byDay={};
+  errTypes.forEach(e=>{(e.recent||[]).forEach(r=>{const d=String(r.created_at||'').slice(0,10); if(d) byDay[d]=(byDay[d]||0)+1;});});
+  let totalErr=errTypes.reduce((s,e)=>s+(Number(e.count_30d)||0),0);
+  const period=_sumPeriod();
+  const tab=state.sumTab||'week';
+  const tabBtn=(k,label)=>`<button class="btn ${tab===k?'':'ghost'} sm" style="flex:1" data-act="sumTab" data-val="${k}">${label}</button>`;
+  const dash=`<span style="color:var(--muted)">—</span>`;
+  const noDataNote=`<div class="sub" style="margin-top:6px;color:var(--muted)">注：学习天数 / 新学词汇 / 计划完成率等指标需后端统计接口提供，当前后端未返回，按“不编造”原则显示 —。</div>`;
+
+  const errOverview = errTypes.length ? errTypes.map(e=>{
+    const lv=(e.level||'').match(/^(\S+)/);
+    return `<div class="sumrow"><span class="srl"><b>${esc(e.type)}</b><span class="sdot" style="margin-left:6px">${esc(lv?lv[1]:'')}</span></span><span class="srr">近30天 ${e.count_30d||0} · 累计 ${e.total||0}</span></div>`;
+  }).join('')
+    : '<div class="sub" style="margin:6px 0">本周暂无错误记录。</div>';
+  const errTrend = _errTrendLine(byDay);
+  const notice = confirmed.length ? confirmed.map(e=>`<div class="sumrow"><span><b>${esc(e.type)}</b></span><span style="color:var(--muted)">${esc(e.level||'')} · 已确认</span></div>`).join('')
+    : '<div class="sub" style="margin:6px 0">本周暂无已确认的重点薄弱项。</div>';
+  const monthSummary = `本月共记录 ${totalErr} 条错误，涉及 ${errTypes.length} 类：\n` + (errTypes.length?errTypes.map(e=>e.type+' '+e.count_30d+'次').join('\n'):'（无）') + '\n错误统计用于记录学习表现，不直接代表能力薄弱。';
+
+  const weekHtml=`
+    <div class="card" style="border:1.5px solid var(--primary)">
+      <h2>📚 本周学习</h2>
+      ${_anaMetric('本周主题', dash)} ${_anaMetric('学习天数', dash)} ${_anaMetric('计划完成率', dash)}
+      ${_anaMetric('新学词汇', dash)} ${_anaMetric('单词复习', dash)} ${_anaMetric('造句', dash)}
+      ${_anaMetric('听力', dash)} ${_anaMetric('周测', dash)} ${noDataNote}
+    </div>
+    <div class="card"><h2>📈 学习效果</h2>
+      ${_anaMetric('听力正确率', dash)} ${_anaMetric('周测平均分', dash)} ${_anaMetric('造句正确率', dash)} ${_anaMetric('错误率', dash)}
+    </div>
+    <div class="card"><h2>🆚 本周 vs 上周</h2>
+      <div class="sub" style="margin-top:4px">绿色=向好，红色=向差。</div>
+      ${_anaTrend('学习天数', null, null, ' 天')}
+      ${_anaTrend('新学词汇', null, null, ' 个')}
+      ${_anaTrend('单词复习', null, null, ' 次')}
+      ${_anaTrend('错误率', null, null, '%', true)}
+    </div>
+    <div class="card"><h2>❌ 错误概览</h2>
+      <div class="sub" style="margin-top:4px">仅展示错误事实，不代表能力薄弱；错误 ≠ 薄弱项。</div>
+      <div class="legend"><span>🔴 阻塞</span><span>🟡 薄弱</span><span>🔵 记忆</span></div>
+      ${errOverview}
+    </div>
+    <div class="card"><h2>⚠️ 本周需要注意</h2>
+      <div class="sub" style="margin-top:4px">只读已确认的薄弱项及其现有状态，不重新诊断。</div>
+      ${notice}
+    </div>
+    <div class="card"><h2>🎯 计划完成情况</h2>
+      ${_anaMetric('词汇计划完成', dash)} ${_anaMetric('造句计划完成', dash)} ${_anaMetric('听力计划完成', dash)} ${noDataNote}
+    </div>
+    <div class="card"><h2>📈 错误率趋势</h2>
+      <div class="sub" style="margin-top:4px">按真实错误记录的自然日统计；无记录日不显示、不补 0。</div>
+      ${errTrend}
+    </div>`;
+
+  const monthHtml=`
+    <div class="card" style="border:1.5px solid var(--primary)"><h2>📚 本月概况</h2>
+      ${_anaMetric('学习天数', dash)} ${_anaMetric('已到期计划完成率', dash)} ${_anaMetric('新学词汇', dash)}
+      ${_anaMetric('单词复习', dash)} ${_anaMetric('造句', dash)} ${_anaMetric('听力', dash)} ${_anaMetric('周测', dash)} ${noDataNote}
+    </div>
+    <div class="card"><h2>📈 近四周趋势</h2>
+      <div class="sub" style="margin-top:4px">近四周趋势（学习天数 / 词汇完成率 / 听力正确率 / 错误率）需后端统计接口提供；当前未返回，按“不编造”原则不显示。</div>
+    </div>
+    <div class="card"><h2>📚 本月完成情况</h2>
+      ${_anaProgress('词汇', 0, 0)} ${_anaProgress('造句', 0, 0)} ${_anaProgress('听力', 0, 0)} ${noDataNote}
+    </div>
+    <div class="card"><h2>❌ 本月错误趋势</h2>
+      <div class="sub" style="margin-top:4px">仅展示错误事实与趋势，不进行能力诊断。</div>
+      ${errTrend}
+    </div>
+    <div class="card"><h2>⚠️ 本月需要注意</h2>
+      <div class="sub" style="margin-top:4px">数据来源与周报一致：已确认薄弱项只读。</div>
+      ${notice}
+    </div>
+    <div class="card"><h2>📊 本月总结</h2>
+      <div class="sub" style="margin-top:4px;white-space:pre-line;font-size:12.5px;line-height:1.8">${monthSummary}</div>
+    </div>`;
+
+  let bodyHtml, reportText;
+  if(tab==='copy'){
+    reportText=_buildSumText(tab==='week'?'周报':'月报', period, errTypes, confirmed, byDay, totalErr, monthSummary);
+    bodyHtml=`<div class="card" style="border:1.5px solid var(--primary)"><h2>📋 复制报告</h2>
+      <div class="sub" style="margin-top:4px">下方为当前「${tab==='week'?'周报':'月报'}」可复制文本，直接整段发给 AI 或保存。</div>
+      <textarea class="codebox" id="sumCopyBox" readonly style="margin-top:9px;height:280px">${esc(reportText)}</textarea>
+      <button class="btn" style="margin-top:9px" data-act="copySummaryReport">📋 复制这段文本</button>
+    </div>`;
+  } else if(tab==='month'){
+    reportText=_buildSumText('月报', period, errTypes, confirmed, byDay, totalErr, monthSummary);
+    bodyHtml=monthHtml;
+  } else {
+    reportText=_buildSumText('周报', period, errTypes, confirmed, byDay, totalErr, monthSummary);
+    bodyHtml=weekHtml;
+  }
+  state.sumText=reportText;
+
+  /* 最近活动（方案 B 内嵌） */
+  const recentActs=await _recentActivityHtml();
+
+  el.innerHTML=`
+  <h1>📊 学习总结</h1>
+  <div style="display:flex;gap:7px;margin:6px 0">
+    ${tabBtn('week','📅 周报')}
+    ${tabBtn('month','🗓 月报')}
+    ${tabBtn('copy','📋 复制报告')}
+  </div>
+  <div class="sub" style="margin-bottom:8px">${tab==='month'?('周期：'+period.month):('周期：'+period.week)}</div>
+  ${bodyHtml}
+  ${recentActs}
+  `;
+};
+
+/* 最近活动数据：来自真实后端 /history（学习历史流水，追加式，永不删除） */
+async function historyData(){
+  try{
+    const rows=await api('/history');
+    if(!rows||!rows.length) return [];
+    const LABEL={learn_vocab:'学习', write_sentence:'造句', review:'闪卡', quiz:'测评', listening:'听力', import_words:'导入', import:'导入'};
+    return rows.map(r=>({
+      type: LABEL[r.action]||r.action||'其他',
+      date: (r.date||r.created_at||'').slice(0,10),
+      score: null, ok: null
+    }));
+  }catch(e){ return []; }
+}
+async function _recentActivityHtml(){
+  const d=await historyData();
+  if(!d.length) return '';
+  const byType={}; d.forEach(x=>{ byType[x.type]=(byType[x.type]||[]); byType[x.type].push(x); });
+  const rows=Object.entries(byType).map(([t,list])=>{
+    const last=list[list.length-1];
+    let extra='';
+    if((t==='测评'||t==='听力') && list.some(x=>x.score!=null)){ const avg=Math.round(list.reduce((s,x)=>s+(x.score||0),0)/list.length); extra=`均分 ${avg}`; }
+    else if((t==='造句'||t==='闪卡') && list.some(x=>x.ok!=null)){ const rate=Math.round(list.filter(x=>x.ok).length/list.length*100); extra=`正确率 ${rate}%`; }
+    return `<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--border);font-size:13px"><span><b>${t}</b> ${list.length} 条</span><span style="color:var(--muted)">最近 ${last.date} · ${extra}</span></div>`;
+  }).join('');
+  return `<div class="card" style="margin-top:10px"><h2>🕐 最近活动</h2><div class="sub">按模块分组，显示最近记录数和表现。</div>${rows}</div>`;
+}
+/* 生成可复制的纯文本总结（周报/月报共用） */
+function _buildSumText(kind, period, errTypes, confirmed, byDay, totalErr, monthSummary){
+  const L=['【English OS 学习总结 · '+kind+'】','周期：'+(kind==='月报'?period.month:period.week),'生成时间：'+new Date().toLocaleString(),''];
+  L.push('—— 错误概览（仅事实，不代表能力薄弱）——');
+  if(errTypes.length){
+    errTypes.forEach(e=>L.push(`· ${e.type}（${e.level||''}）：近30天 ${e.count_30d||0} 次，累计 ${e.total||0}`));
+  } else L.push('· 本周暂无错误记录');
+  L.push('','—— 错误按日分布 ——');
+  const keys=Object.keys(byDay).sort();
+  L.push(keys.length?keys.map(d=>`· ${d.slice(5)}：${byDay[d]} 次`).join('\n'):'· 暂无按日错误记录');
+  L.push('','—— 需要注意（只读已确认薄弱项）——');
+  L.push(confirmed.length?confirmed.map(e=>`· ${e.type}（${e.level||''} · 已确认）`).join('\n'):'· 本周暂无已确认的重点薄弱项');
+  if(kind==='月报'){ L.push('','—— 本月总结 ——', monthSummary); }
+  L.push('','（学习天数 / 新学词汇 / 计划完成率等需后端统计接口；当前未提供，按“不编造”原则未显示。）');
+  return L.join('\n');
+}
+/* 复制总结报告（给 AI 分析用） */
+function copySummaryReport(){
+  const txt=state.sumText;
+  if(!txt){ toast('报告尚未加载'); return; }
+  copyText(txt,'暂无总结数据可复制');
+  toast('已复制总结报告 ✅');
+}
 
 async function render(page){const el=document.getElementById('content');if(pages[page])await pages[page](el);}
 render('learn');

@@ -66,6 +66,8 @@ def _tr(sql):
         repl, sql, flags=re.IGNORECASE)
     sql = sql.replace("?", "%s")
     sql = re.sub(r"INTEGER PRIMARY KEY AUTOINCREMENT", "SERIAL PRIMARY KEY", sql, flags=re.IGNORECASE)
+    # SQLite 的 datetime('now') 默认值在 Postgres 下无效 → 统一翻成 CURRENT_TIMESTAMP
+    sql = sql.replace("datetime('now')", "CURRENT_TIMESTAMP")
     return sql
 
 
@@ -483,6 +485,29 @@ def init_db():
         example TEXT DEFAULT '',
         source TEXT DEFAULT 'builtin',
         UNIQUE(word, phrase)
+    );
+
+    -- ===== 专项训练（补习）=====
+    -- 训练项目：用户针对某项能力短板发起的一期补习（ability=能力维度, problem=问题描述, prompt_md=发给外部 AI 的提示词）
+    CREATE TABLE IF NOT EXISTS training_projects (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        ability TEXT,
+        problem TEXT,
+        prompt_md TEXT,
+        created_at TEXT DEFAULT (datetime('now'))
+    );
+
+    -- 训练回合作答：用户把外部 AI 出的卷贴回系统、回合制训练的每次作答与判分记录
+    CREATE TABLE IF NOT EXISTS training_attempts (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        project_id INTEGER,
+        round INTEGER,
+        user_sentence TEXT,
+        score INTEGER,
+        ok INTEGER,
+        errors_json TEXT,
+        created_at TEXT DEFAULT (datetime('now')),
+        FOREIGN KEY(project_id) REFERENCES training_projects(id)
     );
 
     """)

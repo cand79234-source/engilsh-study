@@ -10,7 +10,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 import os
 
-from db import init_db, get_conn, ts, today_str, STAGES
+from db import init_db, get_conn, ts, today_str, STAGES, insert_get_id
 import services as svc
 import srs
 from ai_service import (correct_sentence, ERROR_TYPES, attempts_of,
@@ -752,6 +752,228 @@ def history(limit: int = 100):
         "SELECT * FROM history ORDER BY id DESC LIMIT ?", (limit,)).fetchall()
     conn.close()
     return [dict(r) for r in rows]
+
+
+# ---------- 专项训练（补习）----------
+# 完整流程：
+#   用户把 prompt_md 发给外部 AI → AI 返回含 <<<TEST>>> ... <<<END>>> 标记的一张卷
+#   → 用户粘贴回系统(/api/test/parse 解析) → 回合制训练(/api/test/grade 判分) → 记录历史
+# AI 调用完全由用户完成，后端只做「解析 / 判分 / 存储」。
+def parse_test_text(text):
+    """解析含 <<<TEST>>> ... <<<END>>> 标记的训练卷文本，返回结构化 JSON。
+
+    返回：{"sections":[{"section": str, "questions":[
+        {"qid","type","prompt","answer"?,"options"?}]}]}
+    解析不到（无 TEST 标记 / 格式不符）时返回 {"sections":[]} 而不是崩溃。
+    """
+    if not text or not isinstance(text, str):
+        return {"sections": []}
+
+    # 1) 定位 TEST 块：<<<TEST>>> 起、<<<END>>> 止（END 缺失则取到文末）
+    m = re.search(r"<<<\s*TEST\s*>>>(.*?)(?:<<<\s*END\s*>>>|$)",
+                  text, re.DOTALL | re.IGNORECASE)
+    if not m:
+        return {"sections": []}
+    body = m.group(1)
+
+    # 2) 按 SECTION 切分（无 SECTION 标记则整体归到一个空名 section）
+    sec_re = re.compile(r"<<<\s*SECTION\s+(.*?)\s*>>>", re.DOTALL | re.IGNORECASE)
+    sec_splits = list(sec_re.finditer(body))
+    if not sec_splits:
+        blocks = [(None, body)]
+    else:
+        blocks = []
+        for i, sm in enumerate(sec_splits):
+            name = sm.group(1).strip()
+            start = sm.end()
+            end = sec_splits[i + 1].start() if i + 1 < len(sec_splits) else len(body)
+            blocks.append((name, body[start:end]))
+
+    # 3) 逐 section 解析题目
+    sections = []
+    for name, content in blocks:
+        questions = _parse_questions_in_section(content)
+        if questions:
+            sections.append({"section": name or "", "questions": questions})
+    return {"sections": sections}
+
+
+# 单题标记：Q1. (choice)/(fill)/(judge)/(subjective)
+_Q_RE = re.compile(r"Q\s*(\d+)\s*\.\s*\((choice|fill|judge|subjective)\)", re.IGNORECASE)
+_ANSWER_RE = re.compile(
+    r"ANSWER\s*:\s*(.*?)(?:\n\s*(?:Q\d|<<<)|\Z)", re.DOTALL | re.IGNORECASE)
+_OPT_LETTER_RE = re.compile(r"\b([A-Z])\.\s*")
+
+
+def _parse_questions_in_section(content):
+    parts = _Q_RE.split(content)
+    questions = []
+    # parts: [前置文本, qid, type, 题体, qid, type, 题体, ...]
+    for i in range(1, len(parts), 3):
+        qid = parts[i].strip()
+        qtype = parts[i + 1].strip().lower()
+        qbody = parts[i + 2]
+        prompt, answer, options = _parse_one_question(qtype, qbody)
+        q = {"qid": qid, "type": qtype, "prompt": prompt}
+        if answer is not None:
+            q["answer"] = answer
+        if options is not None:
+            q["options"] = options
+        questions.append(q)
+    return questions
+
+
+def _parse_one_question(qtype, body):
+    """从单题题体里抽答案、题干与选项。返回 (prompt, answer, options)。"""
+    am = _ANSWER_RE.search(body)
+    answer = am.group(1).strip() if am else None
+    head = body[: am.start()].strip() if am else body.strip()
+
+    prompt = head
+    options = None
+    if qtype == "choice":
+        letters = list(_OPT_LETTER_RE.finditer(head))
+        if letters:
+            prompt = head[: letters[0].start()].strip()
+            options = []
+            for i, mm in enumerate(letters):
+                s = mm.end()
+                e = letters[i + 1].start() if i + 1 < len(letters) else len(head)
+                options.append(head[s:e].strip())
+    return prompt, answer, options
+
+
+@app.post("/api/test/parse")
+def test_parse(body: dict):
+    """解析用户粘贴回的外部 AI 训练卷，返回结构化 sections/questions。"""
+    return parse_test_text(body.get("text") or "")
+
+
+@app.post("/api/test/projects")
+def test_create_project(body: dict):
+    """新建一个专项训练项目（补习）。"""
+    ability = (body.get("ability") or "").strip()
+    problem = (body.get("problem") or "").strip()
+    prompt_md = body.get("prompt_md") or ""
+    conn = get_conn()
+    pid = insert_get_id(
+        conn,
+        "INSERT INTO training_projects (ability, problem, prompt_md, created_at) VALUES (?,?,?,?)",
+        (ability, problem, prompt_md, ts()))
+    conn.commit()
+    conn.close()
+    return {"ok": True, "id": pid}
+
+
+@app.get("/api/test/projects")
+def test_list_projects():
+    """列出全部专项训练项目。"""
+    conn = get_conn()
+    rows = conn.execute(
+        "SELECT id, ability, problem, prompt_md, created_at FROM training_projects "
+        "ORDER BY id DESC").fetchall()
+    conn.close()
+    return {"items": [dict(r) for r in rows]}
+
+
+def _grade_training(ability, user_sentence, answer):
+    """纯本地规则判分：返回 (score 0-100, ok bool, feedback str)。
+
+    以项目 ability 关键词做启发式：能拿到参考答案就直接比对，
+    否则按能力维度 + 句子基本质量给一个过程分。
+    """
+    u = (user_sentence or "").strip()
+    if not u:
+        return 0, False, "未作答，请先输入你的回答。"
+
+    a = (answer or "").strip()
+    if a:
+        def _norm(s):
+            return re.sub(r"[^a-z0-9 ]", "", s.lower()).strip()
+        if _norm(u) == _norm(a):
+            return 100, True, "回答正确。"
+        if _norm(a) and _norm(a) in _norm(u):
+            return 80, True, "要点正确，表达略有出入。"
+        return 60, False, "与参考答案不一致，请检查。"
+
+    # 无参考答案：按 ability 关键词 + 长度给一个过程分
+    ab = (ability or "").lower()
+    if "听" in ab or "listening" in ab:
+        score, fb = 75, "听力类作答已记录，建议回听原文自行核对。"
+    elif "语法" in ab or "grammar" in ab:
+        score = 85 if (u[:1].isupper() and re.search(r"[.!?]$", u)) else 65
+        fb = "语法类作答已记录，注意首字母大写与句末标点。"
+    elif "词汇" in ab or "vocab" in ab:
+        score, fb = 75, "词汇类作答已记录。"
+    else:
+        score, fb = 70, "作答已记录，请结合参考答案自行核对。"
+    if len(u.split()) >= 3:
+        score = min(95, score + 10)
+    return score, score >= 60, fb
+
+
+@app.post("/api/test/grade")
+def test_grade(body: dict):
+    """回合制训练判分：把一次作答写入 training_attempts 并返回分数与反馈。"""
+    project_id = body.get("project_id")
+    rnd = int(body.get("round", 1) or 1)
+    user_sentence = body.get("user_sentence") or ""
+    answer = body.get("answer")
+
+    conn = get_conn()
+    ability = ""
+    if project_id is not None:
+        pr = conn.execute(
+            "SELECT ability FROM training_projects WHERE id=?",
+            (project_id,)).fetchone()
+        if pr:
+            ability = pr["ability"] or ""
+
+    score, ok, feedback = _grade_training(ability, user_sentence, answer)
+    insert_get_id(
+        conn,
+        "INSERT INTO training_attempts "
+        "(project_id, round, user_sentence, score, ok, errors_json, created_at) "
+        "VALUES (?,?,?,?,?,?,?)",
+        (project_id, rnd, user_sentence, score, 1 if ok else 0, "[]", ts()))
+    conn.commit()
+    conn.close()
+    return {"ok": ok, "score": score, "feedback": feedback or ""}
+
+
+# ---------- 听力骨架 ----------
+@app.get("/api/listening/next")
+def listening_next():
+    """返回下一批听力素材（占位：素材库后续补，目前恒为空，不报错）。"""
+    return {"ok": True, "items": []}
+
+
+@app.post("/api/listening/submit")
+def listening_submit(body: dict):
+    """提交一次听力作答：仅记录到 reviews 表（kind='listening'）。
+
+    用 INSERT OR IGNORE 避免重复提交触发 UNIQUE 约束报错。
+    没有素材数据时本接口也不会报错，只记录一条听力的对错统计。
+    """
+    item_id = body.get("item_id")
+    correct = bool(body.get("correct"))
+    conn = get_conn()
+    try:
+        p = svc.get_progress()
+        stage = p.get("stage", 0)
+        week = p.get("week", 1)
+        day = p.get("day", 1)
+    except Exception:
+        stage = week = day = 0
+    conn.execute(
+        "INSERT OR IGNORE INTO reviews "
+        "(kind, ref_key, prompt, answer, stage, week, day, last_score, created_at) "
+        "VALUES (?,?,?,?,?,?,?,?,?)",
+        ("listening", str(item_id), "", "1" if correct else "0",
+         stage, week, day, 1 if correct else 0, ts()))
+    conn.commit()
+    conn.close()
+    return {"ok": True}
 
 
 # ---------- 静态前端 ----------
