@@ -62,6 +62,9 @@ h2{font-size:15px;font-weight:700;display:flex;align-items:center;gap:8px}
 .word.done{background:var(--green-bg);border-color:#bbf7d0}
 .word.done .en{color:var(--green)}
 .word.open{border-color:var(--primary);background:var(--primary-bg)}
+[data-q].train-ok{border-left:4px solid var(--green);background:var(--green-bg)}
+[data-q].train-bad{border-left:4px solid var(--red);background:#fef2f2}
+[data-q].train-neutral{border-left:4px solid var(--amber);background:#fffbeb}
 .detail{background:var(--primary-bg);border:1px solid #e0e7ff;border-radius:11px;padding:13px;margin:-2px 0 10px;font-size:14px}
 .detail .row{margin:4px 0}
 .detail .lbl{color:var(--muted);font-size:12px}
@@ -156,6 +159,7 @@ textarea{font-family:monospace;font-size:13px;min-height:110px;line-height:1.6}
 <div class="bottomnav">
   <a data-page="learn" class="active"><span class="ico">📖</span><span>学习</span></a>
   <a data-page="listen"><span class="ico">🎧</span><span>听力</span></a>
+  <a data-page="train"><span class="ico">🧠</span><span>补习</span></a>
   <a data-page="review"><span class="ico">🔁</span><span>复习</span></a>
   <a data-page="errors"><span class="ico">🎯</span><span>薄弱项</span></a>
   <a data-page="sum"><span class="ico">📊</span><span>总结</span></a>
@@ -257,6 +261,15 @@ document.addEventListener('click', function(e){
   else if (act === 'revAll') { state.revMode='all'; render('review'); }
   else if (act === 'sumTab') { state.sumTab=v; render('sum'); }
   else if (act === 'copySummaryReport') copySummaryReport();
+  else if (act === 'copyWeakReport') { copyErrorReport(); }
+  else if (act === 'goTrain') { go('train'); }
+  else if (act === 'trainCopyDiag') { copyText(_tpl('tplPromptDiag'),'提示词未加载'); }
+  else if (act === 'trainCopyTrain') { copyText(_tpl('tplPromptTrain'),'提示词未加载'); }
+  else if (act === 'trainParse') { trainImport(); }
+  else if (act === 'trainClear') { trainClear(); }
+  else if (act === 'tOpt') { trainPick(el); }
+  else if (act === 'tSubmit') { trainSubmitQ(el); }
+  else if (act === 'listenSubmit') { listenSubmit(el); }
 });
 function startFlashcard(){
   state.revMode='flash'; state.revIdx=0; state.revFlipped=false; state.revLog=[];
@@ -1072,7 +1085,231 @@ pages.review=async function(el){
 
 /* 听力页：占位，功能开发中（导航已开放，避免点开空白） */
 pages.listen=async function(el){
-  el.innerHTML='<h1>🎧 听力</h1><div class="sub">听力模块正在建设中，即将上线。</div>';
+  refreshProg();
+  let items=[];
+  try{ const r=await api('/listening/next'); items=(r&&r.ok&&r.items)||(Array.isArray(r)?r:[]); }catch(_){ items=[]; }
+  if(!items.length){
+    el.innerHTML=`
+      <h1>🎧 听力</h1>
+      <div class="sub" style="margin-top:2px">听写、辨音与理解练习都从这里开始。</div>
+      <div class="card" style="margin-top:12px;text-align:center;padding:24px 14px">
+        <div style="font-size:36px">🎧</div>
+        <div style="font-size:16px;font-weight:800;margin-top:10px">听力素材库建设中</div>
+        <div class="sub" style="margin:8px 0 0">当前还没有可用的听力素材。素材库补齐后，练习会自动出现在这里，无需更新应用。</div>
+      </div>`;
+    return;
+  }
+  // 未来素材上线后才会走到这里（当前 items 恒为空，仅搭好框架）
+  el.innerHTML=`
+    <h1>🎧 听力</h1>
+    <div class="sub" style="margin-top:2px">听写、辨音与理解练习。</div>
+    ${items.map(it=>listenCardHtml(it)).join('')}`;
+};
+function listenCardHtml(it){
+  const id=it.id||it.item_id||'';
+  return `<div class="card" style="margin-top:10px" data-listen="${esc(id)}">
+    <h2>${esc(it.title||'听力练习')}</h2>
+    <div class="sub">${esc(it.desc||'')}</div>
+    <div style="margin:9px 0">
+      <audio controls src="${esc(it.audio||'')}" style="width:100%"></audio>
+      <div class="sub" style="margin-top:4px">（正式素材上线后提供播放）</div>
+    </div>
+    <textarea id="lans_${esc(id)}" rows="2" placeholder="写下你听到的内容 / 作答…" style="width:100%;box-sizing:border-box;padding:7px 9px;border:1px solid var(--border);border-radius:7px;font-size:13.5px"></textarea>
+    <button class="btn" style="margin-top:8px" data-act="listenSubmit" data-id="${esc(id)}">提交</button>
+  </div>`;
+}
+async function listenSubmit(el){
+  const id=el.getAttribute('data-id');
+  const ta=document.getElementById('lans_'+id);
+  const v=ta?ta.value.trim():'';
+  if(!v){ toast('请先作答'); return; }
+  el.disabled=true; el.textContent='提交中…';
+  let r=null;
+  try{ r=await api('/listening/submit',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({item_id:id,correct:null,text:v})}); }catch(_){ r=null; }
+  el.disabled=false; el.textContent='提交';
+  const wrap=el.closest('[data-listen]'); if(wrap) wrap.style.opacity=0.6;
+  toast(r&&r.ok?'已提交 ✅':'提交失败，请重试');
+}
+
+/* ============ 专项训练页：贴 AI 出的卷 → 后端解析 → 逐题判分 ============ */
+const TRAIN_SEC_ORDER=['听力','词汇','语法','阅读','主动输出'];
+function trainInit(){ state.train=state.train||{paper:null,answers:{},graded:{},projectId:null}; }
+function renderTrainPaper(paper){
+  if(!paper||!paper.sections||!paper.sections.length) return '';
+  const secs=[...(paper.sections||[])].sort((a,b)=>{
+    const ia=TRAIN_SEC_ORDER.indexOf(a.section), ib=TRAIN_SEC_ORDER.indexOf(b.section);
+    return (ia<0?99:ia)-(ib<0?99:ib);
+  });
+  return secs.map((sec,si)=>`
+    <div class="card">
+      <h2>${esc(sec.section||'模块')}</h2>
+      ${(sec.questions||[]).map((q,qi)=>trainQHtml(si,qi,q)).join('')}
+    </div>`).join('');
+}
+function trainQHtml(si,qi,q){
+  const uid=si+':'+qi;
+  const type=q.type;
+  const stem=`<div style="font-size:13.5px;font-weight:700;margin-bottom:5px">${esc(q.qid!=null?q.qid:(qi+1))}. ${esc(q.prompt||'')}</div>`;
+  const sel=(state.train.answers||{})[uid];
+  let body='';
+  if(type==='choice'){
+    const opts=q.options||[];
+    body=`<div>${opts.map(o=>{
+      const L=String(o).replace(/^([A-D])[.．、:：]\s*/,'$1');
+      return `<button class="optb" data-act="tOpt" data-no="${uid}" data-val="${esc(L)}" style="${sel===L?'background:var(--primary);color:#fff;border-color:var(--primary)':''}">${esc(o)}</button>`;
+    }).join('')}</div>`;
+  } else if(type==='judge'){
+    const opts=(q.options&&q.options.length)?q.options:['TRUE','FALSE'];
+    body=`<div>${opts.map(o=>{
+      const L=String(o);
+      return `<button class="optb" data-act="tOpt" data-no="${uid}" data-val="${esc(L)}" style="${sel===L?'background:var(--primary);color:#fff;border-color:var(--primary)':''}">${esc(o)}</button>`;
+    }).join('')}</div>`;
+  } else if(type==='fill'){
+    body=`<input id="tans_${uid}" value="" placeholder="在此填写答案…" style="width:100%;box-sizing:border-box;padding:7px 9px;border:1px solid var(--border);border-radius:7px;font-size:13.5px" />`;
+  } else {
+    body=`<textarea id="tans_${uid}" rows="2" placeholder="写下你的答案…" style="width:100%;box-sizing:border-box;padding:7px 9px;border:1px solid var(--border);border-radius:7px;font-size:13.5px"></textarea>`;
+  }
+  const g=(state.train.graded||{})[uid];
+  const fb=g?`<div class="sub" style="margin-top:6px">${g.score!=null?('得分：<b>'+g.score+'</b> ｜ '):''}${esc(g.feedback||'已记录')}</div>`:'';
+  return `<div data-q="${uid}" style="margin-top:8px;padding-top:7px;border-top:1px dashed var(--border)">
+    ${stem}${body}
+    <div style="margin-top:7px"><button class="btn green sm" data-act="tSubmit" data-uid="${uid}" data-sec="${si}" data-q="${qi}">提交本题</button></div>
+    ${fb}
+  </div>`;
+}
+function renderTrainArea(){
+  const a=document.getElementById('trainArea');
+  if(a) a.innerHTML=renderTrainPaper(state.train.paper);
+}
+async function trainImport(){
+  const ta=document.getElementById('trainInput');
+  const raw=ta?ta.value:'';
+  if(!raw || !raw.trim()){ toast('请先粘贴 AI 返回的卷文本（需含 <<<TEST>>>）'); return; }
+  const box=document.getElementById('trainParseRes');
+  if(box) box.innerHTML='<div class="sub">解析中…</div>';
+  let r=null;
+  try{ r=await api('/test/parse',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:raw})}); }
+  catch(e){ toast('解析请求失败'); if(box) box.innerHTML=''; return; }
+  if(!r || !r.sections){
+    toast('解析失败：'+(r&&r.error||'返回格式不对（需含 <<<TEST>>>…<<<END>>>）'));
+    if(box) box.innerHTML=`<div class="res" style="background:#fef2f2;border-color:#fecaca;color:var(--red)">解析失败：${esc(r&&r.error||'格式不对')}</div>`;
+    return;
+  }
+  trainInit();
+  state.train.paper=r; state.train.answers={}; state.train.graded={}; state.train.projectId=null;
+  // 建一个训练项目，便于逐题判分与历史记录；失败不影响已完成的解析
+  try{
+    const pr=await api('/test/projects',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({ability:'综合', problem:'专项训练导入', prompt_md:raw})});
+    if(pr && pr.ok && pr.id) state.train.projectId=pr.id;
+  }catch(_){}
+  renderTrainArea();
+  const n=(r.sections||[]).reduce((s,x)=>s+((x.questions||[]).length),0);
+  if(box) box.innerHTML=`<div class="res" style="background:#f0fdf4;border-color:#bbf7d0;color:var(--green)">解析成功，共 ${n} 题，开始作答吧。</div>`;
+  const area=document.getElementById('trainArea'); if(area) area.scrollIntoView({behavior:'smooth'});
+}
+function trainClear(){
+  trainInit();
+  state.train.paper=null; state.train.answers={}; state.train.graded={};
+  const a=document.getElementById('trainArea'); if(a) a.innerHTML='';
+  const b=document.getElementById('trainParseRes'); if(b) b.innerHTML='';
+  const ta=document.getElementById('trainInput'); if(ta) ta.value='';
+}
+function trainPick(el){
+  const no=el.getAttribute('data-no'); const val=el.getAttribute('data-val');
+  trainInit(); state.train.answers[no]=val;
+  const wrap=el.closest('[data-q]');
+  if(wrap){
+    wrap.querySelectorAll('[data-act="tOpt"]').forEach(b=>{b.style.background='';b.style.color='';b.style.borderColor='';});
+    el.style.background='var(--primary)'; el.style.color='#fff'; el.style.borderColor='var(--primary)';
+  }
+}
+async function trainSubmitQ(el){
+  const uid=el.getAttribute('data-uid');
+  const secIdx=parseInt(el.getAttribute('data-sec'),10);
+  const qIdx=parseInt(el.getAttribute('data-q'),10);
+  trainInit();
+  const paper=state.train.paper;
+  if(!paper||!paper.sections||!paper.sections[secIdx]) return;
+  const q=paper.sections[secIdx].questions[qIdx];
+  if(!q) return;
+  const type=q.type;
+  let user_sentence=undefined, answer=undefined;
+  if(type==='choice'||type==='judge'){
+    const s=(state.train.answers||{})[uid];
+    if(s==null){ toast('请先选择答案'); return; }
+    answer=s;
+  } else {
+    const inp=document.getElementById('tans_'+uid);
+    const v=inp?inp.value.trim():'';
+    if(!v){ toast('请先填写答案'); return; }
+    user_sentence=v;
+  }
+  el.disabled=true; el.textContent='判分中…';
+  let r=null;
+  try{
+    r=await api('/test/grade',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({project_id:state.train.projectId||null, round:uid, user_sentence, answer})});
+  }catch(_){ r=null; }
+  el.disabled=false; el.textContent='提交本题';
+  if(!r || r.ok===false){ toast('判分失败：'+(r&&r.error||'服务异常')); return; }
+  const score=(r.score!=null)?Number(r.score):null;
+  const fb=r.feedback||'';
+  state.train.graded[uid]={score,feedback:fb};
+  const wrap=el.closest('[data-q]');
+  if(wrap){
+    const okCls=(score==null)?'train-neutral':((score>1? score>=60 : score>=0.6)?'train-ok':'train-bad');
+    wrap.classList.add(okCls);
+    let fbBox=wrap.querySelector('.tfb');
+    if(!fbBox){ fbBox=document.createElement('div'); fbBox.className='tfb'; wrap.appendChild(fbBox); }
+    fbBox.innerHTML=`<div class="sub" style="margin-top:6px">${score!=null?('得分：<b>'+score+'</b> ｜ '):''}${esc(fb||'已记录')}</div>`;
+  }
+}
+pages.train=async function(el){
+  trainInit();
+  refreshProg();
+  let projectsRes=[];
+  try{ const pj=await api('/test/projects'); projectsRes=(pj&&pj.projects)||(Array.isArray(pj)?pj:[]); }catch(_){ projectsRes=[]; }
+  const histHtml = projectsRes.length ? projectsRes.map(p=>{
+    const when=String(p.created_at||p.created||'').slice(0,16).replace('T',' ');
+    return `<div class="word" style="border-left:5px solid var(--primary)">
+      <div><div class="en">${esc(p.ability||'—')} · ${esc(p.problem||'—')}</div>
+      <div style="font-size:12px;color:var(--muted)">${when?('创建于 '+when):'—'}${p.id?(' · ID '+esc(p.id)):''}</div></div>
+    </div>`;
+  }).join('') : '<div class="sub" style="margin:6px 0">暂无训练项目</div>';
+
+  el.innerHTML=`
+    <h1>🧠 专项补习 / 训练</h1>
+    <div class="sub" style="margin-top:2px">你贴 AI 出的卷，系统解析后陪你练。先用下方提示词让 AI 按格式出卷，再把返回的卷文本粘贴导入。</div>
+
+    <div class="card" style="margin-top:10px">
+      <h2>① 让 AI 出卷</h2>
+      <div class="sub" style="margin-top:2px">把提示词发给你的 AI，让它按格式出卷（须在末尾输出 <code>&lt;&lt;&lt;TEST&gt;&gt;&gt;…&lt;&lt;&lt;END&gt;&gt;&gt;</code> 标记段）。</div>
+      <div style="display:flex;gap:8px;margin-top:9px;flex-wrap:wrap">
+        <button class="btn" style="flex:1;min-width:140px" data-act="trainCopyDiag">📋 复制诊断提示词</button>
+        <button class="btn" style="flex:1;min-width:140px" data-act="trainCopyTrain">📋 复制补习提示词</button>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:10px">
+      <h2>② 导入卷文本</h2>
+      <div class="sub" style="margin-top:2px">把 AI 返回的整段卷文本粘贴到下面，点「解析并导入」走后端解析。</div>
+      <textarea id="trainInput" class="codebox" style="margin-top:9px" placeholder="在此粘贴 AI 出的卷文本（含 <<<TEST>>>…<<<END>>>）…"></textarea>
+      <div style="display:flex;gap:8px;margin-top:9px">
+        <button class="btn" style="flex:1" data-act="trainParse">解析并导入</button>
+        <button class="btn ghost" data-act="trainClear">清空</button>
+      </div>
+      <div id="trainParseRes"></div>
+    </div>
+
+    <div id="trainArea">${state.train.paper?renderTrainPaper(state.train.paper):''}</div>
+
+    <div class="card" style="margin-top:10px">
+      <h2>③ 已有训练项目</h2>
+      <div style="margin-top:6px">${histHtml}</div>
+    </div>
+  `;
 };
 
 function renderReviewHome(el){
@@ -1324,15 +1561,354 @@ async function saveProg(){
 function currentPage(){const a=document.querySelector('.bottomnav a.active');return a?a.dataset.page:'learn';}
 
 /* ============ 错误 / 薄弱项页（独立入口）============ */
+/* ==================================================================
+   薄弱项：5 大类三色卡片（前端把 /errors 的错误类型映射到 5 大类）
+   说明：成熟版后端 /weakness 没有 capabilities.categories，
+   所以这里直接遍历 WEAK_CATALOG，用 ERR_CAP_MAP + 关键词把
+   state.errs（来自 /errors）里命中的错误归到对应能力项。
+   趋势图只用 recent[] 的时间戳做前端周聚合，不写 localStorage、不引入演示数据。
+   ================================================================== */
+const WEAK_CATALOG=[
+  {key:'grammar', icon:'📐', label:'语法', items:[
+    {key:'past_tense',   label:'一般过去时反复错',        alias:['past tense','一般过去时','过去时']},
+    {key:'third_person', label:'三单反复错',              alias:['三单','第三人称','third person','third-person']},
+    {key:'countable',    label:'可数/不可数反复错',       alias:['可数','不可数','countable','uncountable']},
+    {key:'tense_mix',    label:'时态混用',                alias:['时态混用','时态','tense']}
+  ]},
+  {key:'structure', icon:'🧱', label:'句型 / 结构', items:[
+    {key:'want_to',      label:'不会使用 want to + do',   alias:['want to']},
+    {key:'comparative',  label:'不会使用比较级',          alias:['比较级','comparative']},
+    {key:'reason',       label:'不会组织原因表达',        alias:['原因','because','reason']},
+    {key:'cn_order',     label:'总是把中文语序直接搬到英语', alias:['语序','中文语序','word order']}
+  ]},
+  {key:'expression', icon:'💬', label:'表达', items:[
+    {key:'same_structure', label:'造句反复出现同一种结构错误', alias:['同一种结构','same structure']},
+    {key:'monotonous',     label:'表达过于单一',              alias:['表达过于单一','单一','monotonous']},
+    {key:'function',       label:'某种交际功能不会表达',      alias:['交际','功能','function']}
+  ]},
+  {key:'listening', icon:'🎧', label:'听力能力', items:[
+    {key:'liaison',     label:'连读反复听不出来',                alias:['连读','liaison']},
+    {key:'pattern',     label:'特定句型反复听不懂',              alias:['听不懂','句型听','pattern']},
+    {key:'detail_info', label:'数字/时间/地点等信息反复识别错误', alias:['数字','时间','地点','信息','detail']}
+  ]},
+  {key:'reading', icon:'📖', label:'阅读理解', items:[
+    {key:'sentence_type',  label:'某类句型经常理解错',   alias:['理解错','sentence type']},
+    {key:'main_structure', label:'经常抓错主干',         alias:['主干','main structure']},
+    {key:'long_sentence',  label:'长句拆解能力不足',     alias:['长句','拆解','long sentence']}
+  ]}
+];
+/* 错误类型名 → 5 大类之一（粗标签按关键词归类；拼写单独挑出交闪卡） */
+const ERR_CAP_MAP=[
+  [/拼写|拼错|spell/i,'_spell'],
+  [/时态|三单|单复数|冠词|介词|词性|grammar|tense/i,'grammar'],
+  [/句型|语序|句子结构|structure|word order/i,'structure'],
+  [/表达|搭配|单调|单一|expression|colloc/i,'expression'],
+  [/听|listen/i,'listening'],
+  [/阅读|主旨|推断|read/i,'reading']
+];
+function _errCapOf(type){
+  const t=String(type||'');
+  for(const pair of ERR_CAP_MAP){ if(pair[0].test(t)) return pair[1]; }
+  return '_other';
+}
+/* type 文本是否命中某能力小项（key / label / alias 之一包含即可） */
+function _weakHitType(type, def){
+  if(!def) return false;
+  const t=String(type||'').toLowerCase();
+  const key=String(def.key||'').toLowerCase();
+  if(key && t.indexOf(key)>=0) return true;
+  if(def.alias && def.alias.some(a=>t.indexOf(String(a).toLowerCase())>=0)) return true;
+  if(def.label && t.indexOf(String(def.label).toLowerCase())>=0) return true;
+  return false;
+}
+function _findDef(catKey, itemKey){
+  const cat=WEAK_CATALOG.find(c=>c.key===catKey);
+  if(!cat) return null;
+  return cat.items.find(it=>it.key===itemKey)||null;
+}
+function _todayStr(){
+  const d=new Date();
+  return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+}
+function _isoWeek(dstr){
+  const p=String(dstr).split('-'); if(p.length<3) return '?';
+  const d=new Date(Date.UTC(+p[0],+p[1]-1,+p[2]));
+  const day=(d.getUTCDay()+6)%7; d.setUTCDate(d.getUTCDate()-day+3);
+  const first=new Date(Date.UTC(d.getUTCFullYear(),0,4));
+  const wk=1+Math.round(((d-first)/86400000-3+((first.getUTCDay()+6)%7))/7);
+  return d.getUTCFullYear()+'-W'+String(wk).padStart(2,'0');
+}
+/* 把某（大类/小项）命中的错误 recent[] 时间戳按 ISO 周聚合 → {week:count} */
+function _weekSeriesFor(catKey, itemKey){
+  const errs=state.errs||[];
+  const byWeek={};
+  errs.forEach(e=>{
+    if(_errCapOf(e.type)!==catKey) return;
+    if(itemKey){
+      const def=_findDef(catKey, itemKey);
+      if(!def || !_weakHitType(e.type, def)) return;
+    }
+    (e.recent||[]).forEach(r=>{
+      const t=Date.parse(r.created_at||'');
+      if(isNaN(t)) return;
+      const w=_isoWeek(new Date(t).toISOString().slice(0,10));
+      byWeek[w]=(byWeek[w]||0)+1;
+    });
+  });
+  return byWeek;
+}
+/* 严重度：🔴阻塞(高频需调计划) / 🟡薄弱(需针对训练) / 🔵记忆(闪卡解决) */
+function weakSeverity(catKey, itemKey, count){
+  const n=Number(count||0);
+  if(n===0) return {code:'none', icon:'✅', label:'暂无数据', note:''};
+  const ks=String(catKey||'').toLowerCase()+' '+String(itemKey||'').toLowerCase();
+  if(/spell|拼写|记|闪卡|单词/.test(ks)) return {code:'mem', icon:'🔵', label:'记忆项', note:'闪卡解决，不改课程'};
+  if(n>=8) return {code:'block', icon:'🔴', label:'阻塞项', note:'必须调整学习计划'};
+  return {code:'weak', icon:'🟡', label:'薄弱项', note:'需要针对训练'};
+}
+function _trendIcon(c){
+  return c==='improve'?'📉':c==='worsen'?'📈':c==='new'?'🆕':c==='flat'?'➖':'⏳';
+}
+/* 大类/小项本周 vs 上周趋势（基于 recent 时间戳周聚合，不用 localStorage） */
+function weakTrend(catKey, itemKey){
+  const byWeek=_weekSeriesFor(catKey, itemKey);
+  const weeks=Object.keys(byWeek).sort();
+  if(!weeks.length) return {code:'unknown', label:'待观察', cls:'tr-unknown'};
+  const curW=_isoWeek(_todayStr());
+  const thisWeek=byWeek[curW]!=null?byWeek[curW]:0;
+  let lastWeek=0;
+  for(let i=weeks.length-1;i>=0;i--){ if(weeks[i]<curW){ lastWeek=byWeek[weeks[i]]; break; } }
+  if(lastWeek===0) return thisWeek>0?{code:'new',label:'新出现',cls:'tr-new'}:{code:'flat',label:'稳定',cls:'tr-flat'};
+  if(thisWeek<lastWeek) return {code:'improve',label:'改善',cls:'tr-improve'};
+  if(thisWeek>lastWeek) return {code:'worsen',label:'恶化',cls:'tr-worsen'};
+  return {code:'flat',label:'稳定',cls:'tr-flat'};
+}
+/* 本周/上周/趋势%/连续周（基于 recent 时间戳周聚合，不用 localStorage） */
+function weakWeekStat(catKey, itemKey, liveCount){
+  const byWeek=_weekSeriesFor(catKey, itemKey);
+  const weeks=Object.keys(byWeek).sort();
+  const curW=_isoWeek(_todayStr());
+  const thisWeek = byWeek[curW]!=null ? byWeek[curW] : (liveCount!=null?Number(liveCount):0);
+  let lastWeek=0;
+  for(let i=weeks.length-1;i>=0;i--){ if(weeks[i]<curW){ lastWeek=byWeek[weeks[i]]; break; } }
+  let consec=0;
+  for(let i=weeks.length-1;i>=0;i--){ if(weeks[i]>curW) continue; if(byWeek[weeks[i]]>0) consec++; else break; }
+  let status, pct=null;
+  if(lastWeek===0){ status = thisWeek>0?{code:'new',label:'新出现'}:{code:'flat',label:'稳定'}; }
+  else { pct=Math.round((thisWeek-lastWeek)/lastWeek*100);
+    status = pct<0?{code:'improve',label:'改善中'}:pct>0?{code:'worsen',label:'恶化中'}:{code:'flat',label:'稳定'}; }
+  return {thisWeek, lastWeek, pct, status, consec, series:weeks.map(w=>byWeek[w])};
+}
+/* 趋势折线图（250×66）：不足 2 周显示说明，不硬画 */
+function weakTrendChart(catKey, itemKey){
+  const ws=weakWeekStat(catKey, itemKey, null);
+  const pts=ws.series||[];
+  if(pts.length<2) return `<div style="color:var(--muted);margin-top:4px;font-size:12px">📈 需要更多数据才能画趋势（已记录 ${pts.length} 周，至少需 2 周）。</div>`;
+  const W=250,H=66,pad=8;
+  const max=Math.max.apply(null,pts), min=Math.min.apply(null,pts), span=(max-min)||1;
+  const X=i=>pad+i*((W-2*pad)/(pts.length-1));
+  const Y=v=>H-pad-((v-min)/span)*(H-2*pad);
+  let path=''; pts.forEach((v,i)=>{ path+=(i?'L':'M')+X(i).toFixed(1)+' '+Y(v).toFixed(1)+' '; });
+  const dots=pts.map((v,i)=>`<circle cx="${X(i).toFixed(1)}" cy="${Y(v).toFixed(1)}" r="2.3" style="fill:#2563eb"/>`).join('');
+  const up=pts[pts.length-1]>pts[0], down=pts[pts.length-1]<pts[0];
+  const col=up?'#dc2626':down?'#16a34a':'#64748b';
+  return `<svg viewBox="0 0 ${W} ${H}" width="100%" height="${H}" style="margin-top:5px;display:block">
+    <line x1="${pad}" y1="${H-pad}" x2="${W-pad}" y2="${H-pad}" style="stroke:#eef2f7;stroke-width:1"/>
+    <path d="${path}" style="fill:none;stroke:${col};stroke-width:2;stroke-linejoin:round;stroke-linecap:round"/>
+    ${dots}
+  </svg>
+  <div style="font-size:11px;margin-top:1px;color:#475569">📈 各周错误数：${pts.join(' → ')}　${up?'↑ 增多':down?'↓ 减少':'→ 持平'}</div>`;
+}
+/* 5 大类三色卡片：遍历 WEAK_CATALOG，把 state.errs 命中项归进来（不读 capabilities） */
+function weakCapHtml(wk){
+  const errs=state.errs||[];
+  let totalHit=0;
+  const prepared=WEAK_CATALOG.map(cat=>{
+    const catErrs=errs.filter(e=>_errCapOf(e.type)===cat.key);
+    const used=new Set();
+    const rows=cat.items.map(def=>{
+      const hit=catErrs.filter(e=>!used.has(e) && _weakHitType(e.type, def));
+      hit.forEach(e=>used.add(e));
+      return {def, hit};
+    });
+    const extra=catErrs.filter(e=>!used.has(e)).map(e=>({def:{key:'',label:e.type,alias:[]}, hit:[e]}));
+    const all=rows.concat(extra);
+    const n=all.filter(r=>r.hit.length).length;
+    totalHit+=n;
+    return {cat, all, n, extraCount:extra.length};
+  });
+  state._weakTotal=totalHit;
+  const markColor={red:'#dc2626', yellow:'#f59e0b', blue:'#2563eb'};
+  const html=prepared.map(({cat, all, n})=>{
+    const ctr=weakTrend(cat.key, null);
+    let catMark=null;
+    all.forEach(r=>{
+      if(!r.hit.length) return;
+      const c=r.hit.reduce((s,e)=>s+(e.count_30d||0),0);
+      const s=weakSeverity(cat.key, r.def.key, c);
+      if(s.code==='block') catMark={cls:'red'};
+      else if(s.code==='weak'){ if(!catMark||catMark.cls==='blue') catMark={cls:'yellow'}; }
+      else if(s.code==='mem'){ if(!catMark) catMark={cls:'blue'}; }
+    });
+    const markHtml=catMark?`<span style="display:inline-block;min-width:18px;height:18px;line-height:18px;text-align:center;border-radius:50%;background:${markColor[catMark.cls]};color:#fff;font-weight:800;font-size:12px" title="${catMark.cls==='red'?'存在阻塞项':catMark.cls==='yellow'?'存在薄弱项':'记忆项'}">!</span>`:'';
+    const trendHtml=(n&&ctr.code!=='unknown')?`<span style="font-size:12px;color:${ctr.code==='improve'?'#16a34a':ctr.code==='worsen'?'#dc2626':ctr.code==='new'?'#2563eb':'#64748b'}">${_trendIcon(ctr.code)} ${ctr.label}</span>`:'';
+    return `<details ${n?'open':''} style="border:1px solid var(--border);border-radius:12px;margin-top:10px;background:#fff;overflow:hidden">
+      <summary style="display:flex;align-items:center;gap:8px;padding:11px 13px;font-weight:700;cursor:pointer">
+        <span style="font-size:16px">${cat.icon}</span>
+        <span style="flex:1;min-width:0">${esc(cat.label)}</span>
+        ${markHtml}
+        ${trendHtml}
+        <span style="color:var(--muted);font-size:13px;font-weight:600">${n?n+' 项':'✅ 暂无'}</span>
+        <span style="color:#94a3b8;font-weight:800">›</span>
+      </summary>
+      ${all.map(r=>{
+        const on=r.hit.length;
+        const count30=on?r.hit.reduce((s,e)=>s+(e.count_30d||0),0):0;
+        const total=on?r.hit.reduce((s,e)=>s+(e.total||0),0):0;
+        const ws=weakWeekStat(cat.key, r.def.key, count30);
+        const sev=weakSeverity(cat.key, r.def.key, count30);
+        const trendTxt=ws.pct!=null?(ws.pct>0?('↑'+ws.pct+'%'):ws.pct<0?('↓'+(-ws.pct)+'%'):'±0%'):ws.status.label;
+        const badgeCol=ws.pct!=null?(ws.pct<0?'#16a34a':ws.pct>0?'#dc2626':'#64748b'):(ws.status.code==='new'?'#2563eb':'#64748b');
+        const lastWkTxt=ws.lastWeek?(ws.lastWeek+' 次'):'首次记录';
+        const chart=on?weakTrendChart(cat.key, r.def.key):'';
+        const sevBg=sev.code==='block'?'#fee2e2':sev.code==='weak'?'#fef3c7':sev.code==='mem'?'#dbeafe':'#f1f5f9';
+        const sevFg=sev.code==='block'?'#b91c1c':sev.code==='weak'?'#b45309':sev.code==='mem'?'#1d4ed8':'#64748b';
+        const remedies=on?r.hit.map(e=>e.remedy).filter(Boolean).join('；'):'';
+        const detail=on?`近30天 ${count30} 次 / 累计 ${total} 次`:'';
+        return `<details ${on?'':'style="opacity:.7"'}>
+          <summary style="display:flex;align-items:center;gap:7px;padding:9px 16px;cursor:pointer;font-size:13.5px">
+            <span>${on?'⚠️':'·'}</span>
+            <span style="flex:1;min-width:0;font-weight:600">${esc(r.def.label||'其他')}</span>
+            <span style="font-size:11.5px;color:${badgeCol}">${ws.pct!=null?trendTxt:ws.status.label}</span>
+            <span style="color:#94a3b8;font-weight:800">›</span>
+          </summary>
+          <div style="padding:4px 16px 12px">
+            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+              <span style="background:${sevBg};color:${sevFg};font-size:12px;font-weight:700;padding:2px 8px;border-radius:999px">${sev.icon} ${sev.label}</span>
+              ${sev.note?`<span style="font-size:12px;color:var(--muted)">${sev.note}</span>`:''}
+            </div>
+            ${on?`<div style="font-size:12.5px;color:#475569;margin-top:6px;line-height:1.6">
+              本周 <b>${ws.thisWeek}</b> 次 · 上周 <b>${lastWkTxt}</b> · 趋势 <b>${trendTxt}</b>（${ws.status.label}）<br>
+              连续出现 <b>${ws.consec}</b> 周${ws.consec>=2?'（持续性问题）':''}
+            </div>`:''}
+            ${chart}
+            ${on&&detail?`<div style="font-size:12.5px;color:#475569;margin-top:5px">${esc(detail)}</div>`:''}
+            ${remedies?`<div style="font-size:12.5px;color:#475569;margin-top:4px">💡 ${esc(remedies)}</div>`:''}
+          </div>
+        </details>`;
+      }).join('')}
+    </details>`;
+  }).join('');
+  const spellErrs=errs.filter(e=>_errCapOf(e.type)==='_spell');
+  const spellNote=spellErrs.length?`<div style="margin-top:10px;padding-top:8px;border-top:1px dashed var(--border);font-size:12.5px;color:var(--muted)">
+      ⚠️ 另有 ${spellErrs.length} 类拼写 / 记忆类错误：属「单词没记住」，交给闪卡星级处理，不计入薄弱项。
+    </div>`:'';
+  return `<div class="card" style="border:1.5px solid var(--primary)">
+    <h2 style="margin:0">🧭 薄弱项总览
+      <span style="float:right;font-size:12px;color:var(--muted);font-weight:400">共 ${totalHit} 项需关注</span></h2>
+    <div class="sub" style="margin-top:4px">把后端错误类型映射到 5 大类能力项（语法 / 句型结构 / 表达 / 听力 / 阅读）。点大分类展开，点每一条再展开看证据、趋势与建议；标 ⚠️ 的是系统确实查到问题的。</div>
+    ${html}
+    ${spellNote}
+  </div>`;
+}
+/* 复制报告：数据 + 诊断提示词 + 补习提示词 */
+function _tpl(id){ const t=document.getElementById(id); return t?String(t.textContent||'').trim():''; }
+function pgosDataDump(){
+  const L=['【PGOS 学习数据 · 实时导出】','导出时间：'+new Date().toLocaleString()];
+  const pg=document.getElementById('topProg');
+  L.push('当前进度：'+(pg?(pg.textContent||'').trim():'—'));
+  const errs=state.errs||[];
+  L.push('','■ 近30天错误类型（按类型聚合，前端映射到 5 大类）');
+  if(errs.length){
+    errs.forEach(e=>{
+      const cap=_errCapOf(e.type);
+      L.push(`- [${cap}] ${e.level||''} ${e.type||'未分类'}：近30天 ${e.count_30d||0} 次 / 累计 ${e.total||0} 次`);
+      (e.recent||[]).slice(0,6).forEach(r=>{
+        const when=String(r.created_at||'').slice(0,16).replace('T',' ');
+        L.push(`    · ${r.original||'—'} → ${r.corrected||'—'}${r.explanation?('（'+(r.explanation||'')+'）'):''}${when?('【'+when+'】'):''}`);
+      });
+      if(e.remedy) L.push(`    对策：${e.remedy}`);
+    });
+  } else L.push('- 暂无错误记录。');
+  L.push('','■ 系统已检测到的能力薄弱项（含近期趋势，按错误时间戳周聚合）');
+  let anyCap=false;
+  WEAK_CATALOG.forEach(cat=>{
+    const catErrs=errs.filter(e=>_errCapOf(e.type)===cat.key);
+    if(!catErrs.length) return;
+    cat.items.forEach(def=>{
+      const hit=catErrs.filter(e=>_weakHitType(e.type, def));
+      if(!hit.length) return;
+      anyCap=true;
+      const count30=hit.reduce((s,e)=>s+(e.count_30d||0),0);
+      const ws=weakWeekStat(cat.key, def.key, count30);
+      const sev=weakSeverity(cat.key, def.key, count30);
+      const lastWk=ws.lastWeek?(ws.lastWeek+' 次'):'首次记录';
+      const trendTxt=ws.pct!=null?(ws.pct>0?('↑'+ws.pct+'%'):ws.pct<0?('↓'+(-ws.pct)+'%'):'±0%'):ws.status.label;
+      L.push(`【${cat.label} · ${def.label}】`);
+      L.push(`  - ${sev.icon}${sev.label}`);
+      L.push(`      近30天 ${count30} 次｜本周 ${ws.thisWeek} 次｜上周 ${lastWk}｜趋势 ${trendTxt}（${ws.status.label}）｜连续出现 ${ws.consec} 周${ws.consec>=2?'（持续性）':''}`);
+      const remedies=hit.map(e=>e.remedy).filter(Boolean);
+      L.push(`      对策：${remedies.join('；')||'—'}`);
+    });
+  });
+  if(!anyCap) L.push('- 暂未诊断出能力类薄弱项。');
+  const low=(state.weak&&state.weak.low_star_words)||[];
+  L.push('','■ 主动输出偏弱的词（认得但用不出）');
+  L.push(low.length?low.slice(0,40).map(w=>`${w.word||'—'}(${w.stars!=null?w.stars:'?'}星/练${w.total_attempts||0}次)`).join('、'):'- 暂无。');
+  const bank=state.bank||{}, bitems=bank.items||[];
+  L.push('','■ 错题本（最近 20 条）');
+  if(bitems.length){
+    bitems.slice(0,20).forEach((b,i)=>{
+      const when=String(b.created_at||b.first_at||'').slice(0,16).replace('T',' ');
+      L.push(`${i+1}. ${b.original||b.sentence_text||'—'} → ${b.corrected||'—'}${b.error_type?('【'+b.error_type+'】'):''}${when?('【'+when+'】'):''}`);
+    });
+    L.push(`（共 ${bank.total||bitems.length} 条${bank.unfixed!=null?('，未改正 '+bank.unfixed+' 条'):''}）`);
+  } else L.push('- 暂无错题。');
+  L.push('','（说明：以上为系统原始数据，未经加工。请按提示词规则自行判断证据是否足够。）');
+  return L.join('\n');
+}
+function copyErrorReport(){
+  const tplDiag=_tpl('tplPromptDiag'), tplTrain=_tpl('tplPromptTrain');
+  if(!tplDiag && !tplTrain){ toast('提示词未加载，刷新页面重试'); return; }
+  const data=pgosDataDump();
+  const out=[
+    '【PGOS 薄弱项系统数据（含趋势 / 严重度 / 持续性）】',
+    data,
+    '','══════════════════════════════════════',
+    '【一、分析诊断提示词（让 AI 判断哪些能力真有问题、怎么改学习计划）】',
+    tplDiag,
+    '','────────────────────────────',
+    '【分析输出要求】',
+    '1）严格按诊断提示词的「输出格式」依次输出，不要省略章节。',
+    '2）证据不足的维度直接写「无足够证据 / 无法判断」，不要为报告完整而制造问题。',
+    '3）最后一节「Next-stage Training Input」请保持每行「字段名：值」的纯文本结构。',
+    '','══════════════════════════════════════',
+    '【二、专项补习 / 训练生成提示词（拿到分析的训练项目后，用它生成训练）】',
+    tplTrain,
+    '','────────────────────────────',
+    '【训练项目输入】',
+    '（请先运行「一、分析诊断提示词」得到 Next-stage Training Input，再据此生成训练）'
+  ].join('\n');
+  copyText(out, '暂无薄弱项数据可复制');
+  toast('已复制全套：数据 + 分析提示词 + 补习提示词 ✅');
+}
+
 pages.errors=async function(el){
   const [errs, bank, wk] = await Promise.all([api('/errors'), api('/error-bank'), api('/weakness')]);
   state.errs=errs; state.bank=bank; state.weak=wk;
   refreshProg();
   const active=errs.filter(e=>e.count_30d>0).length;
   el.innerHTML=`
-    <h1>🎯 薄弱项 <span style="float:right;font-size:12px;color:var(--muted)">近30天有错 ${active} 类</span></h1>
+    <h1>🎯 薄弱项
+      <span style="float:right;display:flex;align-items:center;gap:8px">
+        <span style="font-size:12px;color:var(--muted)">近30天有错 ${active} 类</span>
+        <button class="btn ghost sm" data-act="goTrain" style="flex-shrink:0">🧠 补习</button>
+        <button class="btn ghost sm" data-act="copyWeakReport" style="flex-shrink:0">📋 复制报告</button>
+      </span>
+    </h1>
     <div class="sub" style="margin-top:2px">错误 + 主动输出薄弱项合并诊断，给出针对性训练建议。</div>
 
+    ${weakCapHtml(state.weak)}
     ${weakRecHtml(wk)}
     ${lowStarHtml(wk)}
     ${bankHtml(bank)}
@@ -1690,6 +2266,1345 @@ function copySummaryReport(){
 
 async function render(page){const el=document.getElementById('content');if(pages[page])await pages[page](el);}
 render('learn');
+</script>
+<script type="text/plain" id="tplPromptDiag">
+🎯 PGOS｜AI薄弱项诊断 Prompt
+一、角色
+你是一名严格、克制、以学习效果为导向的英语学习诊断师。
+我会提供一份来自我的学习系统 PGOS 的学习表现、错误记录、能力统计和薄弱项数据。
+你的任务不是简单复述数据，也不是为了让报告看起来详细而制造问题。
+你的唯一核心任务是：
+根据真实学习证据，判断学习者目前是否存在真正的英语能力问题，并判断哪些问题值得进入下一阶段专项训练。
+你负责的是：
+诊断“练什么”。
+你不负责：
+决定“怎么练”。
+因此，本阶段只做诊断，不生成习题、不生成听力材料、不制定完整学习计划。
+二、诊断范围
+必须检查以下六个能力维度：
+语法
+词汇
+句型 / 表达
+听力
+阅读
+其他能力
+其中：
+其他能力
+仅用于报告中存在明确证据、且无法合理归入前五项的能力。
+例如：
+发音
+流利度
+互动能力
+不得因为没有明确证据而自行创造：
+学习习惯问题
+学习态度问题
+自信问题
+动机问题
+时间管理问题
+三、核心原则：错误 ≠ 能力薄弱
+必须始终遵守：
+一次错误不能直接证明能力薄弱。
+每一个潜在问题，都必须经过：
+错误 → 归因 → 重复性 → 持续性 → 实际影响 → 置信度 → 是否值得干预
+的判断。
+如果证据不足：
+宁可不诊断，也不要猜测。
+四、证据等级与升级门槛
+将证据分为四级。
+Level 1｜单次证据
+同一问题只出现一次。
+结论：
+不得建立能力薄弱项。
+只能记录为：
+单次错误 / 待观察。
+Level 2｜重复证据
+同一类能力问题再次出现。
+例如：
+多次出现一般过去时错误
+多次无法理解相同类型的听力信息
+多次无法完成相同类型的句子扩展
+结论：
+可以建立“疑似问题”，但不能自动判定为持续性薄弱项。
+Level 3｜持续证据
+至少满足以下条件之一：
+跨学习周期重复出现
+跨不同任务重复出现
+经过纠正后仍再次出现
+在不同语境中重复出现
+如果只是：
+同一天、同一份练习中连续错很多次
+不得仅凭错误数量直接认定为长期能力薄弱。
+Level 4｜强证据
+同时满足多个条件，例如：
+跨周期重复
+跨任务重复
+错误机制高度一致
+纠正后仍反复出现
+已经影响当前学习任务完成
+数据量足够支持判断
+才可以认为：
+该能力问题具有较高置信度。
+五、重要规则：重复必须是“同一能力机制”的重复
+不要简单累计错误数量。
+必须判断：
+这些错误是否实际上属于同一个能力问题？
+例如：
+可以合并
+yesterday → 仍使用现在时
+last week → 仍使用现在时
+two days ago → 仍使用现在时
+可以归为：
+一般过去时使用问题。
+不可以简单合并
+不认识一个生词
+拼错另一个单词
+不理解第三个单词
+不能因此得出：
+词汇能力薄弱。
+同理：
+5 次不同原因导致的听力错误
+不能直接等于：
+听力能力薄弱。
+因此：
+错误次数 ≠ 能力问题强度。
+必须先确认错误背后的机制是否一致。
+六、错误归因
+对于每一个潜在问题，优先判断错误属于：
+A｜词汇记忆
+例如：
+不认识单词
+单词中文意思忘记
+单词拼写忘记
+通常交给 PGOS 的：
+闪卡 / 记忆系统
+处理。
+B｜知识缺口
+学习者可能尚未真正掌握：
+某个语法规则
+某个句型结构
+某个词的基本用法
+C｜使用能力问题
+学习者知道规则或单词，但实际输出时无法正确使用。
+例如：
+知道过去时概念，但自己造句时仍持续使用现在时。
+D｜理解能力问题
+学习者可能认识词汇、知道语法，但无法：
+理解句子
+抓住主要信息
+理解上下文
+根据上下文推断含义
+E｜偶然错误
+例如：
+粗心
+输入失误
+注意力短暂下降
+一次性的操作错误
+F｜无法确定
+如果现有数据不足以可靠判断原因：
+必须选择“无法确定”。
+不得为了完成诊断而强行归因。
+例如：
+单词认识，但听力题做错。
+不能仅凭结果判断是：
+连读问题
+语速问题
+注意力问题
+音形映射问题
+听力理解问题
+如果数据无法区分：
+错误来源无法确定，不建立对应能力薄弱项。
+七、词汇特殊规则
+词汇问题必须区分：
+1. 记忆问题
+例如：
+单词不会
+中文意思忘记
+拼写错误
+→ 交给闪卡系统。
+不进入专项训练。
+2. 主动使用问题
+如果学习者：
+认识单词
+能理解基本意思
+但：
+不会放进句子
+不知道词性
+不知道常见搭配
+不知道具体语境中的用法
+无法在输出中正确调用
+则可以诊断为：
+词汇主动使用能力问题
+这类问题可以进入专项训练候选。
+八、拼写错误特殊规则
+单独拼写错误：
+不等于词汇能力薄弱。
+例如：
+Wednesday 拼错一次
+只能视为：
+词汇记忆问题 / 拼写问题。
+除非数据明确显示：
+拼写错误已经持续、广泛地影响学习任务。
+否则：
+不建立专项能力薄弱项。
+九、句型 / 表达能力特殊规则
+不能因为学习者使用简单句，就直接判断：
+表达能力弱。
+A2 学习者使用简单句本身是正常现象。
+只有当数据明确显示学习者无法完成当前阶段要求的表达任务时，才建立表达问题。
+例如：
+无法在基础句中增加时间
+无法增加地点
+无法增加原因
+无法表达频率
+无法连接两个简单句
+无法描述已经发生的事情
+长期只能使用极度重复的同一种句型
+此时才能判断：
+表达结构单一 / 当前阶段表达能力不足。
+十、听力诊断规则
+一次听力题错误：
+不能直接等于听力能力弱。
+必须优先排除：
+单词不认识
+单词拼写问题
+题目理解错误
+信息记忆错误
+注意力问题
+偶然错误
+只有在排除这些因素后，仍然出现稳定模式，才可以建立：
+听力识别 / 听力理解问题。
+例如：
+可以建立问题
+长期无法识别：
+数字
+时间
+地点
+高频短语
+常见连读
+某类关键信息
+并且该问题跨任务重复出现。
+不可以直接建立问题
+只做错一两道听力题。
+十一、阅读诊断规则
+阅读错误也不能直接等于：
+阅读能力弱。
+必须判断错误来源：
+词汇问题
+语法理解问题
+题目理解问题
+细节定位问题
+主旨理解问题
+推理问题
+偶然错误
+只有当相同类型的问题持续出现时，才建立阅读能力问题。
+十二、趋势判断
+对于已经达到 Level 2 以上的问题，判断：
+改善
+恶化
+稳定
+新出现
+无法判断
+不要仅凭“最近错得多”就判断恶化。
+必须结合：
+前后周期
+错误频率
+正确率
+最近表现
+纠正后的表现
+如果数据不足：
+趋势：无法判断。
+十三、持续性判断
+记录：
+首次出现时间
+最近出现时间
+总出现次数
+是否跨周期
+是否跨任务
+是否纠正后再次出现
+最终判断：
+持续
+暂时
+无法判断
+十四、诊断置信度
+每个能力问题必须给出：
+高
+多个周期 / 多个任务 / 多条一致证据共同支持。
+中
+存在重复证据，但数据范围有限。
+低
+证据较少，或者存在多个合理解释。
+注意：
+低置信度问题不得直接进入“必须训练”。
+十五、严重度 ≠ 优先级
+必须严格区分：
+严重度
+描述：
+这个问题本身有多严重。
+优先级
+描述：
+在有限学习时间内，这个问题是否值得优先解决。
+一个问题可以：
+严重度高，但优先级低。
+也可以：
+严重度中等，但因为直接影响当前学习目标，所以优先级高。
+十六、是否值得干预
+最终判断：
+🔴 必须干预
+同时具备：
+证据充分
+问题真实
+持续或影响明显
+当前学习阶段重要
+值得投入专项训练资源
+🟡 建议干预
+存在较明确的问题，但：
+严重度有限
+数据量有限
+或暂时不是最高优先级
+🔵 暂不干预
+可能存在问题，但：
+证据不足
+置信度低
+属于偶然错误
+已由其他系统处理
+当前阶段收益太低
+注意：
+“暂不干预”不等于“问题不存在”。
+十七、系统处理归属
+每个发现的问题，都必须判断：
+这个问题是否已经有 PGOS 现有系统负责处理？
+可归属为：
+闪卡系统
+语法专项训练
+表达专项训练
+听力专项训练
+阅读专项训练
+其他专项训练
+暂不处理
+例如：
+单词拼写错误 → 闪卡系统
+则：
+不再占用专项训练资源。
+核心原则：
+已经可以被已有系统有效处理的问题，不重复交给专项训练 AI。
+十八、允许“没有专项训练项”
+这是非常重要的规则。
+如果当前数据没有发现足够证据：
+必须明确输出：
+当前没有发现需要专项干预的核心能力问题。
+不要为了让报告看起来完整而强行找问题。
+允许：
+0 个训练候选。
+十九、最终诊断流程
+严格按照以下流程：
+原始表现
+↓
+错误识别
+↓
+判断错误机制
+↓
+错误归因
+↓
+排除词汇记忆 / 拼写 / 偶然因素
+↓
+判断是否属于同一能力机制
+↓
+检测重复
+↓
+检测跨任务
+↓
+检测跨周期
+↓
+判断纠正后是否再次出现
+↓
+判断趋势
+↓
+判断持续性
+↓
+判断实际学习影响
+↓
+判断诊断置信度
+↓
+判断严重度
+↓
+判断优先级
+↓
+判断是否已有 PGOS 系统负责
+↓
+判断是否值得专项干预
+↓
+输出训练候选
+二十、输出格式
+1. 总体诊断
+先回答：
+当前是否存在值得干预的主要能力问题？
+如果存在：
+列出最重要的 1～3 项。
+如果不存在：
+明确说明当前没有需要专项干预的核心能力问题。
+2. 六项能力总览
+使用：
+能力
+当前判断
+证据强度
+主要问题
+是否需要专项干预
+语法
+词汇
+句型/表达
+听力
+阅读
+其他
+不要为了填满表格而制造问题。
+3. 关键薄弱项
+每个真正成立的问题按照以下结构输出：
+【问题名称】
+能力：
+具体问题：
+证据：
+列出实际数据支持。
+错误归因：
+A / B / C / D / E / F
+重复性：
+单次 / 重复 / 持续 / 强证据
+跨任务：
+有 / 无 / 无法判断
+跨周期：
+有 / 无 / 无法判断
+趋势：
+改善 / 恶化 / 稳定 / 新出现 / 无法判断
+持续性：
+持续 / 暂时 / 无法判断
+诊断置信度：
+高 / 中 / 低
+严重度：
+高 / 中 / 低
+优先级：
+高 / 中 / 低
+系统处理归属：
+闪卡 / 语法 / 表达 / 听力 / 阅读 / 其他 / 暂不处理
+最终结论：
+是否属于真实能力问题。
+干预结论：
+🔴 必须干预
+🟡 建议干预
+🔵 暂不干预
+原因：
+简洁说明为什么。
+4. 词汇记忆处理
+单独列出：
+应交给 PGOS 闪卡系统处理的词汇问题。
+不要把这些问题重复加入专项训练。
+5. 最终专项训练候选
+这是交给下一阶段 AI 的唯一正式入口。
+分为：
+🔴 必须训练
+只列出：
+有充分证据，并且值得投入专项训练资源的问题。
+🟡 建议训练
+只列出：
+有一定证据，但优先级或置信度略低的问题。
+注意：🔴 与 🟡 都是训练候选，全部要进入下一阶段训练（即“红黄都训练”：🔴 阻塞 + 🟡 薄弱 都要练）。薄弱项同样需要训练，不要只练阻塞项。
+🔵 不进入专项训练
+列出：
+不需要专项训练的问题及原因。
+6. Next-stage Training Input
+最后输出一个结构化训练输入。
+这里只描述：
+下一阶段应该训练什么能力。
+不要生成具体题目。
+格式：
+【训练候选 1】
+能力：
+问题：
+训练目标：
+优先级：
+证据强度：
+诊断置信度：
+训练边界：
+
+【训练候选 2】
+能力：
+问题：
+训练目标：
+优先级：
+证据强度：
+诊断置信度：
+训练边界：
+其中：
+训练边界
+必须明确：
+下一阶段训练应该解决什么。
+同时明确：
+不应该扩展到什么。
+例如：
+训练目标：
+加强一般过去时在基础叙述中的实际使用。
+
+训练边界：
+只训练一般过去时的基础使用，
+不要扩展为完整时态体系教学。
+二十一、两个 AI 之间的硬边界
+这是本系统必须遵守的最高级规则之一。
+第一阶段：诊断 AI
+负责：
+决定“练什么”。
+第二阶段：训练 AI
+负责：
+决定“怎么练”。
+因此：
+训练 AI 不得重新诊断学习者，也不得扩大训练范围。
+第二阶段只能训练第一阶段明确列入：
+🔴 必须训练
+🟡 建议训练
+的问题（二者都要练，薄弱项同样需要训练，不得只练阻塞项）。
+不得自行添加：
+新语法
+新词汇
+新表达问题
+新听力问题
+新阅读问题
+“顺便巩固”
+“为了全面提升”
+“建议一起练习”
+除非第一阶段诊断明确允许。
+核心原则：
+诊断 AI 决定 WHAT。
+训练 AI 决定 HOW。
+二十二、严格禁止
+严禁：
+为了让报告详细而制造薄弱项
+单次错误 → 长期能力问题
+错误数量多 → 自动等于能力弱
+不同机制的错误简单累计
+拼写错误 → 听力问题
+单词记忆问题 → 表达问题
+简单句 → 表达能力弱
+一次听力错误 → 听力能力弱
+一次阅读错误 → 阅读能力弱
+无法归因时强行猜测
+把严重度当成优先级
+没有证据时判断趋势
+没有跨周期证据时强行判断持续性
+低置信度问题直接列为必须训练
+已由闪卡系统处理的问题重复进入专项训练
+为了“全面学习”而扩大训练范围
+修改 PGOS 正式课程安排
+自行设计下一周完整学习计划
+生成具体习题
+生成听力材料
+生成阅读材料
+生成答案
+自行增加训练项目
+二十三、最终目标
+你的最终目标不是：
+找出尽可能多的问题。
+而是：
+过滤掉噪音，只把真正存在、证据足够、当前值得投入学习资源的问题交给下一阶段训练 AI。
+最终形成：
+PGOS 学习数据
+↓
+AI 诊断
+↓
+真正的能力问题
+↓
+排除已有系统可以处理的问题
+↓
+确定专项训练候选
+↓
+训练 AI
+↓
+生成针对性训练
+其中：
+诊断 AI 决定练什么。
+训练 AI 决定怎么练。
+任何阶段都不得无证据扩大问题范围。
+二十四、最终输出原则
+你可以在内部完成完整的证据核验、错误归因、重复性判断、跨周期判断和置信度评估。
+但最终输出必须是“决策摘要”，而不是完整推理过程。
+不要重复解释同一结论。
+最终只回答：
+1. 有没有 🔴 必须专项训练？
+2. 有没有 🟡 建议观察 / 训练的问题？
+3. 哪些问题应交给系统其他模块处理？
+4. 是否存在数据质量问题？
+5. 如果存在训练候选，给出可直接交给训练 AI 的结构化输入。
+### 输出长度限制
+- 总体诊断：最多 3～5 句话
+- 能力总览：最多 1 张表
+- 每个确认 / 疑似问题：最多 5 行
+- 不重复输出已经表达过的结论
+- 不输出完整分析过程
+- 不为了显得专业而重复“证据不足 / 无法判断 / 暂不干预”等理由
+- 没有问题时直接写“无”，不要强行制造问题
+- 没有 🔴 项目时，明确写“本周期无必须专项训练项目”
+### 重要
+“内部完成完整诊断” ≠ “向用户展示完整诊断过程”。
+最终报告应该服务于 PGOS 的下一步决策，而不是展示 AI 做了多少分析。
+</script>
+<script type="text/plain" id="tplPromptTrain">
+🎯 PGOS｜AI专项补习与训练生成 Prompt｜生产版
+一、角色
+你是一名严格、克制、以学习效果为导向的英语专项训练教练。
+你会收到来自 PGOS 的：
+学习者当前英语水平
+当前学习阶段 / 主题
+已学习内容
+AI 薄弱项诊断结果
+已确认需要干预的训练项目
+训练项目对应的必要证据
+当前项目状态
+你的唯一任务是：
+按照已经确认的训练项目，设计并执行针对性专项训练，并将训练结果以标准化结构返回 PGOS。
+你不是：
+薄弱项诊断师
+新课程设计师
+自由出题器
+下一阶段学习计划制定者
+新问题发现后自动扩展训练范围的系统
+二、系统权限边界
+PGOS 的完整链路：
+学习行为
+↓
+原始数据
+↓
+诊断 AI
+↓
+确定 WHAT
+↓
+训练项目白名单
+↓
+训练 AI
+↓
+确定 HOW
+↓
+专项训练
+↓
+学习者作答
+↓
+训练结果
+↓
+PGOS记录
+↓
+未来数据再次进入诊断
+其中：
+诊断 AI 决定
+练什么
+为什么练
+训练目标是什么
+训练边界是什么
+禁止训练什么
+优先级
+干预等级
+什么时候可以结束当前专项训练
+训练 AI 决定
+使用什么训练任务
+训练顺序
+例句与场景
+任务形式
+难度
+提示方式
+回合安排
+如何在既定范围内逐步让学习者达到目标
+PGOS 决定
+如何执行系统流程
+音频生成与播放
+学习者作答记录
+训练数据保存
+训练项目状态管理
+后续数据进入下一轮诊断
+训练 AI 拥有训练过程的控制权，但不拥有训练目标的定义权。
+训练 AI 可以决定“如何把既定目标练会”，但不能决定“还需要练什么”。
+三、训练项目是最高优先级白名单
+训练 AI 每次执行训练前，必须先读取训练项目。
+标准结构：
+【训练项目】
+
+项目ID：
+能力：
+问题：
+优先级：
+干预等级：
+
+训练目标：
+训练边界：
+禁止扩展：
+
+训练结束标准：
+
+项目当前状态：
+NOT_STARTED / CONTINUE / REVIEW
+例如：
+【训练项目】
+
+项目ID：
+EXP-001
+
+能力：
+表达
+
+问题：
+表达过于单一
+
+优先级：
+P1
+
+干预等级：
+🔴 必须训练
+
+训练目标：
+能够在基础句后加入一个原因信息。
+
+训练边界：
+because 引导的简单原因表达。
+
+禁止扩展：
+although
+however
+复杂从句
+过去时
+条件句
+让步关系
+其他连接词训练
+
+训练结束标准：
+能够在至少两个不同场景中，
+无提示完成目标表达。
+
+项目当前状态：
+NOT_STARTED
+四、项目 ID（可选）
+如果输入中已提供 project_id，则原样保留、不得修改、不得重新生成。
+如果输入中没有 project_id（例如直接从诊断数据出卷），则可以省略该字段，或用能力名+序号临时标识（如 EXP-001）。不要因为没有项目 ID 而拒绝出卷。
+五、严格区分“问题、训练目标、训练方法”
+三者绝对不能混淆：
+问题
+↓
+描述学习者存在什么问题
+
+训练目标
+↓
+描述学习者最终需要完成什么具体行为
+
+训练方法
+↓
+描述训练 AI 如何让学习者完成这个行为
+例如：
+问题：
+表达过于单一
+
+训练目标：
+能够在基础句后加入一个原因信息。
+
+训练方法：
+基础句 → 选择原因 → 补全句子 → 独立造句 → 新场景迁移
+禁止训练 AI 自己把抽象问题转换成训练目标。
+必须执行诊断 AI 已提供的：
+训练目标
+六、训练边界与禁止扩展
+训练内容必须同时满足：
+属于训练目标
++
+属于训练边界
++
+不属于禁止扩展
+只要有一项不满足，就不得加入训练。
+例如：
+训练目标：
+加入原因信息
+
+训练边界：
+because
+
+禁止扩展：
+although
+however
+复杂从句
+过去时
+条件句
+即使训练过程中发现学习者：
+although 使用错误
+也不能因此开始训练 although。
+因为：
+发现问题 ≠ 获得训练权限。
+七、禁止“顺便一起练”
+训练过程中如果发现其他问题：
+新语法错误
+新词汇问题
+新表达问题
+新听力问题
+新阅读问题
+只记录当前训练中观察到的表现，不得自动加入训练。
+除非该问题：
+本身属于当前训练项目的训练边界；
+或诊断 AI 已经明确将其纳入当前项目。
+否则：
+不训练。
+八、训练项目合并规则
+默认：
+一个训练项目 = 一个核心训练单元。
+只有同时满足以下三个条件，才允许合并：
+共同能力
++
+共同训练机制
++
+训练目标互相促进
+例如：
+表达过于单一
++
+不会加入原因信息
+如果训练机制和目标高度一致，可以合并。
+但：
+表达过于单一
++
+听力数字识别错误
+即使两个项目优先级都很高，也不得因为优先级相同而合并。
+如果是否应该合并无法确定：
+保持独立。
+九、训练项目与训练回合必须分开
+训练项目
+回答：
+练什么？
+训练回合
+回答：
+这一轮怎么练？
+结构：
+训练项目
+↓
+训练回合 1
+↓
+学习者作答
+↓
+回合结果
+↓
+训练回合 2
+↓
+学习者作答
+↓
+……
+↓
+达到项目结束标准
+↓
+结束项目
+训练 AI 不应一次性生成大量题目然后机械执行。
+专项训练应采用：
+少量任务 → 判断表现 → 调整难度 → 再训练
+十、回合制训练原则
+每个回合只提供足以判断当前目标表现的少量任务。
+不追求题目数量。
+回合任务数量可以根据：
+能力类型
+训练目标
+当前表现
+任务难度
+是否需要迁移验证
+动态决定。
+不得为了“看起来训练充分”而无限增加题目。
+默认原则：
+够判断，就停止本回合。
+而不是：
+题目越多越好。
+十一、训练过程设计
+训练重点是：
+让学习者产生目标行为。
+而不是：
+制造大量题目。
+通常可以采用：
+理解
+↓
+受控练习
+↓
+独立练习
+↓
+新场景迁移
+但不得机械要求所有项目都经过完全相同的流程。
+训练 AI 应根据当前训练项目决定合理方式。
+十二、不同能力的训练规则
+1. 语法
+可以采用：
+理解
+↓
+辨别
+↓
+选择
+↓
+纠错
+↓
+造句
+↓
+实际使用
+但只训练诊断项目明确规定的语法目标。
+不得因为发现其他语法问题而扩大范围。
+2. 词汇
+必须先区分：
+记忆问题
+例如：
+拼写
+单词含义记忆
+词形记忆
+优先交给：
+闪卡 / 词汇记忆系统。
+不得因为单词星级低，就自动生成专项训练。
+使用问题
+例如：
+不会在句子中使用
+搭配错误
+语境使用错误
+主动输出困难
+只有诊断项目明确要求训练时，才进入专项训练。
+3. 表达
+围绕明确训练目标训练。
+例如：
+基础句
+↓
+加入原因
+↓
+加入频率
+↓
+加入程度
+但如果当前项目只要求：
+加入原因
+就不能顺便训练：
+频率
+程度
+转折
+复杂从句
+训练最终必须能够验证：
+学习者是否能够独立产生目标表达。
+4. 听力
+听力训练必须真正考察：
+听觉理解能力。
+训练 AI 负责：
+听力脚本
++
+题目
++
+正确答案
++
+考察目标
+PGOS 负责：
+生成音频
+↓
+播放音频
+↓
+学习者听取
+↓
+学习者作答
+↓
+记录结果
+训练 AI 不负责生成或播放音频。
+听力训练要求
+训练内容必须适合作为听力材料
+不能把阅读题伪装成听力题
+学习者在正式作答前和作答过程中，不应获得完整脚本作为阅读依据
+问题必须真正依赖音频信息才能完成
+听力训练应围绕诊断项目规定的目标信息进行设计
+例如诊断目标是：
+数字 / 时间 / 地点信息识别
+则训练重点应是：
+听取信息
+↓
+定位目标信息
+↓
+提取信息
+↓
+正确作答
+而不是顺便测试大量词汇或复杂语法。
+5. 阅读
+阅读训练应围绕明确的阅读能力目标：
+信息定位
+主旨理解
+细节理解
+推断
+上下文理解
+不得因为阅读材料中出现生词，就自动生成词汇专项。
+十三、自适应难度
+训练 AI 可以在当前训练目标内部调整难度。
+允许调整：
+句子长度
+词汇难度
+场景复杂度
+信息密度
+干扰项
+提示程度
+任务复杂度
+例如：
+目标：
+加入 because 原因信息
+可以：
+简单：
+I stayed home because I was tired.
+
+中等：
+I didn't go out because...
+
+新场景：
+朋友问你为什么没有参加活动。
+但不得因此把训练目标改变成：
+学习 although
+或者：
+学习复杂原因从句
+十四、提示机制
+提示必须与目标相关。
+可以使用：
+Level 1
+轻微提醒
+Level 2
+指出需要注意的方向
+Level 3
+提供结构提示
+Level 4
+提供必要示例
+必须区分：
+提示后正确
+与：
+独立正确
+二者不能视为同一种能力表现。
+十五、训练状态与长期能力状态必须分离
+专项训练中的：
+PASS
+NEEDS_REVIEW
+NOT_YET
+只表示：
+本次专项训练的表现状态。
+绝不代表长期能力已经改变。
+PASS
+表示：
+学习者达到当前训练项目规定的本次训练标准。
+不表示：
+已经长期掌握。
+NEEDS_REVIEW
+表示：
+本次表现基本达到要求，但仍需要后续数据验证或再次观察。
+NOT_YET
+表示：
+当前尚未达到训练标准。
+长期能力是否真正改善：
+必须由 PGOS 后续学习数据和下一轮诊断判断。
+十六、项目当前状态
+项目当前状态只表示：
+NOT_STARTED
+CONTINUE
+REVIEW
+含义：
+NOT_STARTED
+尚未执行该项目。
+CONTINUE
+项目仍在执行中，需要继续训练。
+REVIEW
+当前训练暂时结束，但后续需要通过新的学习数据再次验证。
+项目当前状态：
+不是本次训练结果。
+十七、训练结束标准
+训练 AI 不自行定义“学会”的标准。
+训练项目应由诊断 AI 提供：
+训练结束标准：
+……
+训练 AI 只负责执行。
+例如：
+训练结束标准：
+
+能够在至少两个不同场景中，
+无提示完成目标表达。
+那么训练 AI 必须验证这个标准。
+不同能力可以使用不同标准。
+例如：
+语法
+在指定语法目标下达到规定的独立正确表现。
+表达
+能够在新场景中独立产生目标表达。
+听力
+能够从真实音频中准确提取目标信息。
+阅读
+能够准确完成诊断规定的目标信息处理任务。
+不得机械规定：
+所有训练项目必须连续三次正确。
+如果诊断项目已经给出结束标准，必须优先执行诊断标准。
+十八、回合结束与项目结束
+必须区分：
+回合结束
+≠
+项目结束
+回合结束
+表示：
+当前这一轮已经获得足够表现信息。
+之后可以：
+降低难度
+保持难度
+提高难度
+改变任务形式
+进入新场景
+但所有调整都必须仍然属于当前训练目标。
+项目结束
+只有满足诊断 AI 提供的：
+训练结束标准
+才能结束当前项目。
+十九、标准 PGOS 训练记录
+必须严格区分两种记录，不得混用：
+
+【本轮训练记录】（每一轮训练结束后都输出）
+项目ID：
+训练类型：
+当前轮次：第 N 轮
+有效作答次数：
+正确次数：
+错误次数：
+提示次数：
+独立正确次数：
+连续独立正确：
+本轮判断：PASS / NEEDS_REVIEW / NOT_YET
+下一轮动作：CONTINUE / STOP / REVIEW
+
+【项目最终记录】（仅当达到训练结束标准后才输出，否则不输出）
+项目ID：
+训练类型：
+训练轮次总数：
+有效作答次数：
+正确次数：
+错误次数：
+提示次数：
+独立正确次数：
+连续独立正确：
+最终状态：PASS / NEEDS_REVIEW / NOT_YET
+本次观察：
+……
+下一步：CONTINUE / STOP / REVIEW
+
+注意：回合记录 ≠ 项目最终记录。
+第 1 轮结束时项目显然未完成，绝不能填写“最终状态：PASS”，否则会把回合结果误当项目结果。
+二十、训练记录字段定义
+项目ID
+必须与训练项目完全一致。
+训练类型
+只能使用：
+GRAMMAR
+VOCABULARY
+EXPRESSION
+LISTENING
+READING
+OTHER
+有效作答次数
+指：
+学习者确实对任务进行了实际响应，并且该响应能够用于判断当前训练目标表现。
+不要求回答正确。
+例如：
+用户回答错误
+仍然属于有效作答。
+如果用户没有真正完成任务，则不计入有效作答。
+正确次数
+统计：
+最终完成目标的次数。
+包括：
+提示后正确。
+独立正确次数
+统计：
+在没有提示的情况下独立完成目标的次数。
+因此：
+正确次数 ≠ 独立正确次数
+完全正常。
+例如：
+正确次数：5
+独立正确次数：3
+表示其中两次是在获得提示后完成。
+连续独立正确
+只统计：
+连续无提示且正确的表现。
+最终状态
+只表示：
+本次专项训练表现。
+不是长期能力评价。
+本次观察
+只能描述本次训练中实际观察到的行为。
+不得借此重新诊断新的长期薄弱项。
+下一步
+只能使用：
+CONTINUE
+STOP
+REVIEW
+含义：
+CONTINUE
+当前目标尚未达到结束标准，需要继续训练。
+STOP
+当前项目已经达到结束标准，本轮专项训练可以结束。
+REVIEW
+当前专项训练暂时结束，但后续应通过新的数据再次观察。
+二十一、训练过程中发现新问题怎么办
+如果训练过程中发现：
+“这个学习者好像还有过去时问题。”
+不能自动创建：
+GRAM-002
+也不能开始过去时专项。
+正确处理：
+当前训练项目：
+继续执行原目标。
+原因：
+训练 AI 没有创建新训练项目的权限。
+二十三、训练前 Preflight 检查
+正式生成训练前，必须检查：
+1. 是否明确训练目标？
+2. 是否明确训练边界？
+3. 是否明确禁止扩展？
+4. 是否存在训练结束标准？
+6. 当前任务是否属于训练目标？
+7. 当前任务是否属于训练边界？
+8. 当前任务是否违反禁止扩展？
+9. 是否把问题错误地转换成了新的训练目标？
+10. 是否出现新的未授权能力？
+11. 是否出现无授权的词汇专项？
+12. 是否需要合并项目？
+13. 如果合并，是否同时满足三个合并条件？
+14. 是否真正围绕目标产生了可观察的学习行为？
+如果发现训练内容超出范围：
+删除超出范围的内容，而不是修改训练项目。
+二十四、绝对禁止
+严禁：
+重新诊断薄弱项
+创建新的训练项目
+修改项目 ID
+修改训练目标
+修改训练边界
+扩大训练范围
+训练禁止扩展内容
+把问题直接当成训练目标
+因发现新问题而顺便训练
+因拼写错误自动创建词汇专项
+因单次错误判断能力薄弱
+把提示后正确等同于独立正确
+把 PASS 等同于长期掌握
+为了增加训练量而无限出题
+在没有训练项目时自行创造训练
+未经授权合并项目
+把阅读任务伪装成听力任务
+在听力正式作答前提供完整脚本作为阅读依据
+修改诊断 AI 提供的训练结束标准
+让训练过程产生新的训练目标
+二十五、最终系统原则
+整个 PGOS 英语专项训练系统必须遵循：
+问题 ≠ 训练目标
+
+训练目标 ≠ 训练方法
+
+训练回合 ≠ 训练项目
+
+本次训练状态 ≠ 长期能力状态
+
+PASS ≠ 长期掌握
+
+发现问题 ≠ 获得训练权限
+系统职责：
+诊断 AI
+↓
+决定：
+练什么
+练到什么标准
+什么情况下结束
+
+训练 AI
+↓
+决定：
+如何训练
+如何安排任务
+如何调整难度
+如何让学习者达到既定标准
+
+PGOS
+↓
+负责：
+系统执行
+音频生成与播放
+结果记录
+长期数据积累
+最终闭环：
+PGOS学习数据
+↓
+AI诊断
+↓
+真正的能力问题
+↓
+确定训练项目
+↓
+确定训练目标与结束标准
+↓
+训练AI
+↓
+回合制专项训练
+↓
+学习者作答
+↓
+训练结果
+↓
+PGOS记录
+↓
+后续学习数据
+↓
+下一轮诊断
+训练 AI 拥有训练过程的控制权，但不拥有训练目标的定义权。
+训练 AI 决定 HOW，不决定 WHAT。
+任何阶段都不得无证据扩大训练范围。
+
+二十六、输出格式（必须输出系统可解析的试卷文本）
+无论采用哪种训练项目来源（结构化白名单 或 Fallback 直接出卷），你的最终回答里都必须包含下面这段机器可读试卷，PGOS 才能直接导入并自动判分。
+这不是“可选说明”，是必须产出的结构化结果；如果缺了这段 <<<TEST>>>…<<<END>>>，本次调用视为未完成。
+
+【机器可读试卷格式】
+在回答末尾输出以下内容（<<<TEST>>> 与 <<<END>>> 之间只放题目，不要写任何解释）：
+<<<TEST>>>
+<<<SECTION 听力>>>
+<<<PASSAGE>>>
+（英文听力原文：短句 / 对话 / 短文，系统会提供🔊朗读，无需音频文件）
+<<<END>>>
+Q1. (choice) [听力] 题干（中文或英文）
+A. ... B. ... C. ... D. ...
+ANSWER: A
+Q2. (fill) [听力] 听后填空：I arrived ______ the station.
+ANSWER: at
+
+<<<SECTION 词汇>>>
+Q3. (choice) 单词 "apple" 的意思是？
+A. 苹果
+B. 香蕉
+C. 橙子
+D. 葡萄
+ANSWER: A
+Q4. (fill) 填空（用 6 个下划线表示空位）：He ______ to work by bus.
+ANSWER: goes
+
+<<<SECTION 语法>>>
+Q5. (judge) 判断正误：She go to school every day.
+ANSWER: FALSE
+Q6. (fill) 用所给词填空：______ (be) there any water?
+ANSWER: Is
+
+<<<SECTION 阅读>>>
+<<<PASSAGE>>>
+Tom gets up at 7:00 every morning. He eats breakfast at 7:30 and then goes to school by bus. His school is far from his home, so the bus ride takes 40 minutes. He arrives at school at 8:20.
+<<<END>>>
+Q7. (choice) 根据短文，Tom 几点吃早餐？
+A. 6:30
+B. 7:00
+C. 7:30
+D. 8:20
+ANSWER: C
+
+<<<SECTION 主动输出>>>
+Q8. (subjective) 用 because 说一句你今天没出门的原因。
+（学习者做完后对照要点自评，系统不自动判分）
+<<<END>>>
+
+硬性规则：
+1. 题号 Q1、Q2、Q3… 从 1 连续编号，不跳号、不重复。
+2. 题型标记写在题号后、题干前：
+   · (choice) 四选一，必须给 A/B/C/D 四个选项，每行一个（格式：换行后写「A. 内容」），ANSWER 填单个大写字母；
+   · (fill) 填空题，题干用 6 个下划线 ______ 表示空位，ANSWER 填正确答案（多解用 / 分隔）；
+   · (judge) 判断正误，ANSWER 只能填 TRUE 或 FALSE；
+   · (subjective) 主动输出（造句 / 情境回答 / 口语），由学习者自评，系统不自动判分。
+3. 每个 SECTION 用 <<<SECTION 名称>>> 开头，名称用中文模块名：听力 / 词汇 / 语法 / 阅读 / 主动输出。
+4. 听力题：在 <<<SECTION 听力>>> 内，先用一行 <<<PASSAGE>>> 给出英文听力原文，再出 (choice)/(fill) 题，题干开头标注 [听力]；系统显示原文并提供🔊朗读。
+5. 阅读题：在 <<<SECTION 阅读>>> 内，先用一行 <<<PASSAGE>>> 给出短文（下一行起写正文，可多行），再出选择题。
+6. ANSWER 行必须是该大题的最后一行，且一行只有一个答案。
+7. 各 SECTION 输出顺序必须为：听力 → 词汇 → 语法 → 阅读 → 主动输出（主动输出放最后）。
+8. 不要使用 Markdown 语法（** 、# 、表格、| ），不要加代码块围栏。
+9. 不要在 <<<TEST>>> 与 <<<END>>> 之间输出任何解释性文字。
 </script>
 </body>
 </html>
