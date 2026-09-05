@@ -835,7 +835,7 @@ async function runImport(){
     if(r.week!==cur.week){
       if(confirm(`已导入到第 ${r.week} 周。现在跳到第 ${r.week} 周开始学习吗？`)){
         document.querySelector('.overlay')&&document.querySelector('.overlay').remove();
-        setProgressAndGo(r.week);
+        setProgressAndGo(r.week, r.stage);
       }
     } else {
       pages.learn(document.getElementById('content'));
@@ -843,9 +843,15 @@ async function runImport(){
     }
   }, 400);
 }
-function setProgressAndGo(week){
-  // 保存进度到该周 Day1，并回学习页
-  api('/progress',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({stage:0,week,day:1})}).then(()=>{refreshProg();render('learn');});
+function setProgressAndGo(week, stage){
+  // 保存进度到该周 Day1，并回学习页。
+  // 修复：stage 过去被硬编码为 0，导致导入到阶段1~5 的周时，
+  // 后端刚写好的 stage（weekimport._move_progress_to）会被这里打回阶段0，
+  // 出现"导入到第2阶段第3周，却跑到第0阶段第3周"的串周现象。
+  // 现在优先用导入结果返回的 stage，其次沿用当前进度，绝不再写死 0。
+  const _p = (state.learn && state.learn.d && state.learn.d.progress) || {};
+  const st = (stage != null) ? stage : (_p.stage || 0);
+  api('/progress',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({stage:st,week,day:1})}).then(()=>{refreshProg();render('learn');});
 }
 // 离线发音：浏览器本地 TTS（优先选本机已下载的英文语音，无需联网/无外部服务）
 let _voices=[], _voice=null, _voiceReady=false;
@@ -3486,10 +3492,10 @@ function _sumPeriod(){
    其余指标（学习天数 / 新学词汇 / 计划完成率等）后端未提供统计接口，按 docx「不编造」原则显示 —。 */
 pages.sum=async function(el){
   refreshProg();
-  let weakData=null, errData=null, activityData=null;
+  let weakData=null, errData=null, activityData=null, reportData=null;
   try{
-    const r=await Promise.all([api('/weakness'), api('/errors'), api('/activity')]);
-    weakData=r[0]; errData=r[1]; activityData=r[2];
+    const r=await Promise.all([api('/weakness'), api('/errors'), api('/activity'), api('/report')]);
+    weakData=r[0]; errData=r[1]; activityData=r[2]; reportData=r[3];
   }catch(e){ /* 不崩：用空数据渲染结构，缺失指标一律 — */ }
   let errTypes=(errData&&errData.error_types)||(weakData&&weakData.error_types)||[];
   const lowWords=(weakData&&weakData.low_star_words)||[];
@@ -3503,7 +3509,7 @@ pages.sum=async function(el){
   const tab=state.sumTab||'week';
   const tabBtn=(k,label)=>`<button class="btn ${tab===k?'':'ghost'} sm" style="flex:1" data-act="sumTab" data-val="${k}">${label}</button>`;
   const dash=`<span style="color:var(--muted)">—</span>`;
-  const noDataNote=`<div class="sub" style="margin-top:6px;color:var(--muted)">注：学习天数 / 新学词汇 / 计划完成率等指标需后端统计接口提供，当前后端未返回，按“不编造”原则显示 —。</div>`;
+  const noDataNote=`<div class="sub" style="margin-top:6px;color:var(--muted)">注：学习天数 / 计划完成率需要「每周计划总数」，后端暂无该数据，按“不编造”原则显示 —；其余指标（造句、复习、周测、听力、新学词汇、错误）均来自真实记录。</div>`;
 
 
   const errOverview = errTypes.length ? errTypes.map(e=>{
@@ -3516,22 +3522,24 @@ pages.sum=async function(el){
     : '<div class="sub" style="margin:6px 0">本周暂无已确认的重点薄弱项。</div>';
   const monthSummary = `本月共记录 ${totalErr} 条错误，涉及 ${errTypes.length} 类：\n` + (errTypes.length?errTypes.map(e=>e.type+' '+e.count_30d+'次').join('\n'):'（无）') + '\n错误统计用于记录学习表现，不直接代表能力薄弱。';
 
+  // 真实报告数据（来自 /api/report）；无则回退占位
+  const RD = reportData || {};
+  const W = RD.week || {}, M = RD.month || {};
+  const mval = (v)=> (v==null? dash : v);
+
   const weekHtml=`
     <div class="card" style="border:1.5px solid var(--primary)">
       <h2>📚 本周学习</h2>
-      ${_anaMetric('本周主题', dash)} ${_anaMetric('学习天数', dash)} ${_anaMetric('计划完成率', dash)}
-      ${_anaMetric('新学词汇', dash)} ${_anaMetric('单词复习', dash)} ${_anaMetric('造句', dash)}
-      ${_anaMetric('听力', dash)} ${_anaMetric('周测', dash)} 
+      ${_anaMetric('本周主题', mval(W.title||'—'))} ${_anaMetric('语法重点', mval(W.grammar||'—'))}
+      ${_anaMetric('造句', mval((W.sentences&&W.sentences.total)+' 句'))} ${_anaMetric('造句均分', mval((W.sentences&&W.sentences.avg)))}
+      ${_anaMetric('单词复习(SRS)', mval(W.reviews)+' 次')} ${_anaMetric('周测', mval(W.quiz_count)+' 次')} ${_anaMetric('周测均分', mval(W.quiz_avg))}
+      ${_anaMetric('听力', mval((W.listening&&W.listening.answered)+' 题'))} ${_anaMetric('听力正确', mval((W.listening&&W.listening.correct)+' 题'))}
     </div>
     <div class="card"><h2>📈 学习效果</h2>
-      ${_anaMetric('听力正确率', dash)} ${_anaMetric('周测平均分', dash)} ${_anaMetric('造句正确率', dash)} ${_anaMetric('错误率', dash)}
-    </div>
-    <div class="card"><h2>🆚 本周 vs 上周</h2>
-      <div class="sub" style="margin-top:4px">绿色=向好，红色=向差。</div>
-      ${_anaTrend('学习天数', 0, 0, ' 天')}
-      ${_anaTrend('新学词汇', 0, 0, ' 个')}
-      ${_anaTrend('单词复习', 0, 0, ' 次')}
-      ${_anaTrend('错误率', 0, 0, '%', true)}
+      ${_anaMetric('听力正确率', mval((W.listening&&W.listening.answered)?Math.round(W.listening.correct*100/W.listening.answered)+'%':'—'))}
+      ${_anaMetric('周测平均分', mval(W.quiz_avg))}
+      ${_anaMetric('造句正确率', mval((W.sentences&&W.sentences.total)?Math.round(W.sentences.good*100/W.sentences.total)+'%':'—'))}
+      ${_anaMetric('错误率', mval((errTypes.length)?Math.round(errTypes.reduce((s,e)=>s+(Number(e.count_30d)||0),0))+' 条/30天':'—'))}
     </div>
     <div class="card"><h2>❌ 错误概览</h2>
       <div class="sub" style="margin-top:4px">仅展示错误事实，不代表能力薄弱；错误 ≠ 薄弱项。</div>
@@ -3542,30 +3550,26 @@ pages.sum=async function(el){
       <div class="sub" style="margin-top:4px">只读已确认的薄弱项及其现有状态，不重新诊断。</div>
       ${notice}
     </div>
-    <div class="card"><h2>🎯 计划完成情况</h2>
-      ${_anaMetric('词汇计划完成', dash)} ${_anaMetric('造句计划完成', dash)} ${_anaMetric('听力计划完成', dash)} 
-    </div>
     <div class="card"><h2>📈 错误率趋势</h2>
       <div class="sub" style="margin-top:4px">按真实错误记录的自然日统计；无记录日不显示、不补 0。</div>
       ${errTrend}
     </div>`;
 
   const monthHtml=`
-    <div class="card" style="border:1.5px solid var(--primary)"><h2>📚 本月概况</h2>
-      ${_anaMetric('学习天数', dash)} ${_anaMetric('已到期计划完成率', dash)} ${_anaMetric('新学词汇', dash)}
-      ${_anaMetric('单词复习', dash)} ${_anaMetric('造句', dash)} ${_anaMetric('听力', dash)} ${_anaMetric('周测', dash)} 
+    <div class="card" style="border:1.5px solid var(--primary)"><h2>📚 本月概况（${mval(M.label)}）</h2>
+      ${_anaMetric('造句', mval((M.sentences&&M.sentences.total)+' 句'))} ${_anaMetric('造句均分', mval((M.sentences&&M.sentences.avg)))}
+      ${_anaMetric('听力', mval((M.listening&&M.listening.answered)+' 题'))} ${_anaMetric('听力正确', mval((M.listening&&M.listening.correct)+' 题'))}
+      ${_anaMetric('周测', mval(M.quiz_count)+' 次')} ${_anaMetric('新学词汇', mval(M.words_output)+' 个')}
+      ${_anaMetric('错误新增', mval((M.errors&&M.errors.new)))} ${_anaMetric('错误已修正', mval((M.errors&&M.errors.fixed)))}
     </div>
     <div class="card"><h2>📈 近四周趋势</h2>
       ${(()=>{ const wk=(activityData&&activityData.weeks)||[];
-        const line=(key,title,lib)=>{ if(!wk.length) return _anaMetric(title,'—');
+        const line=(key,title)=>{ if(!wk.length) return _anaMetric(title,'—');
           if(wk.every(w=>w[key]==null)) return _anaMetric(title,'—');
           const arr=wk.map(w=>({label:w.label, v:(w[key]==null?0:w[key])}));
-          return _anaMiniLine(arr,title,lib); };
+          return _anaMiniLine(arr,title); };
         return line('learning_days','学习天数')+line('listening_acc','听力正确率')+line('quiz_avg','测评平均分')+_anaMetric('词汇完成率','—');
       })()}
-    </div>
-    <div class="card"><h2>📚 本月完成情况</h2>
-      ${_anaProgress('词汇', 0, 0)} ${_anaProgress('造句', 0, 0)} ${_anaProgress('听力', 0, 0)} 
     </div>
     <div class="card"><h2>❌ 本月错误趋势</h2>
       <div class="sub" style="margin-top:4px">仅展示错误事实与趋势，不进行能力诊断。</div>
@@ -3581,17 +3585,17 @@ pages.sum=async function(el){
 
   let bodyHtml, reportText;
   if(tab==='copy'){
-    reportText=_buildSumText(tab==='week'?'周报':'月报', period, errTypes, confirmed, byDay, totalErr, monthSummary);
+    reportText=_buildReportText(RD, tab==='week'?'周报':'月报', period);
     bodyHtml=`<div class="card" style="border:1.5px solid var(--primary)"><h2>📋 复制报告</h2>
       <div class="sub" style="margin-top:4px">下方为当前「${tab==='week'?'周报':'月报'}」可复制文本，直接整段发给 AI 或保存。</div>
       <textarea class="codebox" id="sumCopyBox" readonly style="margin-top:9px;height:280px">${esc(reportText)}</textarea>
       <button class="btn" style="margin-top:9px" data-act="copySummaryReport">📋 复制这段文本</button>
     </div>`;
   } else if(tab==='month'){
-    reportText=_buildSumText('月报', period, errTypes, confirmed, byDay, totalErr, monthSummary);
+    reportText=_buildReportText(RD, '月报', period);
     bodyHtml=monthHtml;
   } else {
-    reportText=_buildSumText('周报', period, errTypes, confirmed, byDay, totalErr, monthSummary);
+    reportText=_buildReportText(RD, '周报', period);
     bodyHtml=weekHtml;
   }
   state.sumText=reportText;
@@ -3625,20 +3629,32 @@ function _recentActivityHtml(acts){
   }).join('');
   return `<div class="card" style="margin-top:10px"><h2>🕐 最近活动</h2><div class="sub">按模块分组，显示最近记录数和表现（数据来自后端真实记录）。</div>${rows}</div>`;
 }
-/* 生成可复制的纯文本总结（周报/月报共用） */
-function _buildSumText(kind, period, errTypes, confirmed, byDay, totalErr, monthSummary){
-  const L=['【English OS 学习总结 · '+kind+'】','周期：'+(kind==='月报'?period.month:period.week),'生成时间：'+new Date().toLocaleString(),''];
-  L.push('—— 错误概览（仅事实，不代表能力薄弱）——');
-  if(errTypes.length){
-    errTypes.forEach(e=>L.push(`· ${e.type}（${e.level||''}）：近30天 ${e.count_30d||0} 次，累计 ${e.total||0}`));
-  } else L.push('· 本周暂无错误记录');
-  L.push('','—— 错误按日分布 ——');
-  const keys=Object.keys(byDay).sort();
-  L.push(keys.length?keys.map(d=>`· ${d.slice(5)}：${byDay[d]} 次`).join('\n'):'· 暂无按日错误记录');
-  L.push('','—— 需要注意（只读已确认薄弱项）——');
-  L.push(confirmed.length?confirmed.map(e=>`· ${e.type}（${e.level||''} · 已确认）`).join('\n'):'· 本周暂无已确认的重点薄弱项');
-  if(kind==='月报'){ L.push('','—— 本月总结 ——', monthSummary); }
-  L.push('','（学习天数 / 新学词汇 / 计划完成率等需后端统计接口；当前未提供，按“不编造”原则未显示。）');
+/* 生成可复制的纯文本总结（周报/月报共用）—— 数据来自 /api/report 真实统计 */
+function _buildReportText(RD, kind, period){
+  const w=RD&&RD.week||{}, m=RD&&RD.month||{}, p=RD&&RD.progress||{};
+  const L=[];
+  L.push('【English OS 学习总结报告 · '+kind+'】');
+  L.push('生成时间：'+new Date().toLocaleString());
+  if(p.week) L.push('当前进度：第'+p.week+'周「'+(w.title||'')+'」'+(w.grammar?(' · 语法：'+w.grammar):''));
+  L.push('');
+  if(kind==='周报'){
+    L.push('=== 本周（第'+(p.week||'?')+'周）===');
+    L.push('造句：'+(w.sentences?w.sentences.total:0)+' 句（正确 '+ (w.sentences?w.sentences.good:0) +'，均分 '+(w.sentences?w.sentences.avg:0)+'）');
+    L.push('单词复习(SRS)：'+(w.reviews||0)+' 次');
+    L.push('周测：'+(w.quiz_count||0)+' 次，均分 '+(w.quiz_avg||0));
+    L.push('听力：'+(w.listening?w.listening.answered:0)+' 题，答对 '+(w.listening?w.listening.correct:0));
+    if(w.err_types&&w.err_types.length){
+      L.push('高频错误类型（本周）：');
+      w.err_types.forEach(e=>L.push('  - '+e.type+'：'+e.current+' 次'));
+    }
+  } else {
+    L.push('=== 本月（'+(m.label||'?')+'）===');
+    L.push('造句：'+(m.sentences?m.sentences.total:0)+' 句（正确 '+ (m.sentences?m.sentences.good:0) +'，均分 '+(m.sentences?m.sentences.avg:0)+'）');
+    L.push('听力：'+(m.listening?m.listening.answered:0)+' 题，答对 '+(m.listening?m.listening.correct:0));
+    L.push('周测：'+(m.quiz_count||0)+' 次');
+    L.push('新学词汇：'+(m.words_output||0)+' 个');
+    L.push('错误：新增 '+(m.errors?m.errors.new:0)+'，已修正 '+(m.errors?m.errors.fixed:0));
+  }
   return L.join('\n');
 }
 

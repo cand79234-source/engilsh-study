@@ -16,6 +16,7 @@ import srs
 from ai_service import (correct_sentence, ERROR_TYPES, attempts_of,
                         today_attempts, analyze)
 import fileimport
+import report as _report
 
 app = FastAPI(title="English OS")
 
@@ -905,6 +906,20 @@ def activity(weeks: int = 4):
         return {"recent": recent, "weeks": out_weeks}
     finally:
         conn.close()
+
+
+@app.get("/api/report")
+def api_report():
+    """总结页周报/月报统计。
+
+    数据全部来自现有表（sentences / quizzes / listening_progress /
+    errors / reviews / weeks / word_output），不编造任何数字；
+    算不出的指标返回 None，前端显示「—」。字段口径见 report.py 文件头。
+
+    注：前端 pages.sum 一直请求本接口，此前后端未实现（404），
+    导致周报/月报的核心指标全部为空。
+    """
+    return _report.build_report()
 
 
 # ---------- 专项训练（补习）----------

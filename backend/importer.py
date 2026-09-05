@@ -73,6 +73,9 @@ def _is_english_word(tok):
 
 # 识别"整行是一句英文"(无中文、含句末标点)
 _IS_ENG_SENT = re.compile(r"^[A-Za-z0-9 .,!?'\-;:()\"\/\u2019\u2018]+[.!?]$")
+# IPA 音标片段，如 /kənˈtɪnjuː/ /ˈkɒlɪɡ/ /ɪmˈpruːv/。
+# 词头行里夹在单词与中文释义之间，必须优先剥离，否则会被当成"多个英文词"。
+_IPA_SEG_RE = re.compile(r"\s*/\[?[^/]{1,40}/\]?\s*")
 # 识别"整行纯中文句子"(用于配对例句中译)
 _HAS_CN = re.compile(r"[\u4e00-\u9fff]")
 # 固定搭配行：形如  固定搭配：「a」b；「c」d
@@ -83,7 +86,11 @@ _LIST_MARK_RE = re.compile(r"^[\s]*[-–—•·▪◦‣▪]+\s+")
 
 def _strip_list_marker(s):
     """去掉行首的列表标记（如 '- I like it.' → 'I like it.'）。"""
-    return _LIST_MARK_RE.sub("", s.rstrip())
+    s = _LIST_MARK_RE.sub("", s.rstrip())
+    # 用户/AI 常用 "* " 做例句列表标记（官方提示词用 "- "，实际粘贴多为 "* "）。
+    # "*" 同时是重点词标记，因此只在例句识别这条路径上剥离行首星号。
+    s = re.sub(r"^\s*\*\s+", "", s)
+    return s
 
 
 def _is_eng_sentence(s):
@@ -202,7 +209,11 @@ def _is_word_header_line(line):
     if _is_eng_sentence(s):
         return False
     # 词数控制：一行若含多个空格分隔的英文词，多为句子而非词头
-    eng_tokens = re.findall(r"[A-Za-z]+", s)
+    # 先剥掉 IPA 音标再数英文词：音标里的 ASCII 字母（k/ə/n/ˈ/t/ɪ/n/j/u/ː 中的
+    # k,n,t,nju…）会被 [A-Za-z]+ 切出碎片，导致 "continue /kənˈtɪnjuː/"
+    # 被数成 5 个英文词而误判为"句子不是词头"。
+    s_wo_ipa = _IPA_SEG_RE.sub(" ", s)
+    eng_tokens = re.findall(r"[A-Za-z]+", s_wo_ipa)
     if len(eng_tokens) > 2:
         return False
     return True
@@ -211,6 +222,10 @@ def _is_word_header_line(line):
 def _build(left, right):
     left = left.strip()
     right = right.strip()
+    # 剥离左侧的 IPA 音标。原正则 ^([A-Za-z][A-Za-z'\-]*)...$ 要求 left
+    # 只能是纯单词，"continue /kənˈtɪnjuː/" 拖着音标 → 不匹配 → 返回 None
+    # → 整行被丢进 skipped → 一个词都导不进去。
+    left = _IPA_SEG_RE.sub(" ", left).strip()
     # ★ 重点词标记：用户在单词行打 ★，表示"这个词要重点升级"
     focus = False
     if "★" in left or "★" in right or "*" in left or "*" in right:
