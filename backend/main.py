@@ -800,6 +800,113 @@ def history(limit: int = 100):
     return [dict(r) for r in rows]
 
 
+# ---------- 活动聚合：最近活动 + 近四周趋势 ----------
+# 全部基于真实表（quizzes / listening_progress / sentences / history），
+# 不生成任何假数据；算不出的指标返回 null，由前端显示「—」。
+def _act_date(s):
+    return str(s)[:10] if s else ""
+
+
+def _iso_week(s):
+    """返回 (year, week) 用于按自然周分组；无日期返回 None。"""
+    d = _act_date(s)
+    try:
+        y, m, day = map(int, d.split("-"))
+        return datetime(y, m, day).isocalendar()[:2]
+    except Exception:
+        return None
+
+
+@app.get("/api/activity")
+def activity(weeks: int = 4):
+    conn = get_conn()
+    try:
+        acts = []  # (date, type, title, detail, score, ok)
+        # 测评
+        for r in conn.execute(
+                "SELECT kind, stage, week, score, created_at FROM quizzes "
+                "ORDER BY created_at DESC").fetchall():
+            acts.append((_act_date(r["created_at"]), "测评", "测评",
+                         f"{r['kind']} · S{r['stage']}W{r['week']}", r["score"], None))
+        # 听力
+        for r in conn.execute(
+                "SELECT stage, week, day, listening_done, listening_total, created_at "
+                "FROM listening_progress ORDER BY created_at DESC").fetchall():
+            acc = None
+            tot = r["listening_total"] or 0
+            done = r["listening_done"] or 0
+            if tot:
+                acc = round(done * 100 / tot)
+            acts.append((_act_date(r["created_at"]), "听力", "听力练习",
+                         f"S{r['stage']}W{r['week']}D{r['day']}", acc, None))
+        # 造句
+        for r in conn.execute(
+                "SELECT word, score, good, created_at FROM sentences "
+                "ORDER BY created_at DESC").fetchall():
+            acts.append((_act_date(r["created_at"]), "造句", "造句",
+                         f"目标词 {r['word']}", r["score"], 1 if r["good"] else 0))
+        # 背词
+        for r in conn.execute(
+                "SELECT detail, created_at FROM history WHERE action='learn_vocab' "
+                "ORDER BY created_at DESC").fetchall():
+            acts.append((_act_date(r["created_at"]), "背词", "学习单词",
+                         r["detail"], None, None))
+        acts.sort(key=lambda x: x[0], reverse=True)
+        recent = [{"type": t, "title": ti, "detail": d, "date": dt,
+                   "score": sc, "ok": ok}
+                  for (dt, t, ti, d, sc, ok) in acts[:50]]
+
+        # 近 N 周聚合（学习天数 / 听力正确率 / 测评平均分）
+        week_map = {}
+
+        def _touch(dt):
+            iw = _iso_week(dt)
+            if iw:
+                week_map.setdefault(iw, {"days": set(), "lt": 0, "ld": 0, "qs": []})
+                week_map[iw]["days"].add(dt)
+            return iw
+
+        for (dt, t, ti, d, sc, ok) in acts:
+            iw = _touch(dt)
+            if iw is None:
+                continue
+            wk = week_map[iw]
+            if t == "测评" and sc is not None:
+                wk["qs"].append(sc)
+        # 听力正确率需要原始 done/total（acts 里已折算成百分比，这里从表再聚）
+        for r in conn.execute(
+                "SELECT created_at, listening_done, listening_total "
+                "FROM listening_progress").fetchall():
+            dt = _act_date(r["created_at"])
+            _touch(dt)
+            iw = _iso_week(dt)
+            if iw is None:
+                continue
+            wk = week_map[iw]
+            wk["ld"] += r["listening_done"] or 0
+            wk["lt"] += r["listening_total"] or 0
+
+        all_weeks = sorted(week_map.keys())
+        recent_weeks = all_weeks[-weeks:]
+        out_weeks = []
+        for i, iw in enumerate(recent_weeks):
+            wk = week_map[iw]
+            lt = wk["lt"]
+            ld = wk["ld"]
+            listen_acc = round(ld * 100 / lt) if lt else None
+            quiz_avg = round(sum(wk["qs"]) / len(wk["qs"])) if wk["qs"] else None
+            out_weeks.append({
+                "label": f"W{i + 1}",
+                "learning_days": len(wk["days"]),
+                "listening_acc": listen_acc,
+                "quiz_avg": quiz_avg,
+                "vocab_rate": None,  # 后端无「计划总数」，完成率无法真实计算，返回 null
+            })
+        return {"recent": recent, "weeks": out_weeks}
+    finally:
+        conn.close()
+
+
 # ---------- 专项训练（补习）----------
 # 完整流程：
 #   用户把 prompt_md 发给外部 AI → AI 返回含 <<<TEST>>> ... <<<END>>> 标记的一张卷

@@ -3486,10 +3486,10 @@ function _sumPeriod(){
    其余指标（学习天数 / 新学词汇 / 计划完成率等）后端未提供统计接口，按 docx「不编造」原则显示 —。 */
 pages.sum=async function(el){
   refreshProg();
-  let weakData=null, errData=null;
+  let weakData=null, errData=null, activityData=null;
   try{
-    const r=await Promise.all([api('/weakness'), api('/errors')]);
-    weakData=r[0]; errData=r[1];
+    const r=await Promise.all([api('/weakness'), api('/errors'), api('/activity')]);
+    weakData=r[0]; errData=r[1]; activityData=r[2];
   }catch(e){ /* 不崩：用空数据渲染结构，缺失指标一律 — */ }
   let errTypes=(errData&&errData.error_types)||(weakData&&weakData.error_types)||[];
   const lowWords=(weakData&&weakData.low_star_words)||[];
@@ -3556,11 +3556,13 @@ pages.sum=async function(el){
       ${_anaMetric('单词复习', dash)} ${_anaMetric('造句', dash)} ${_anaMetric('听力', dash)} ${_anaMetric('周测', dash)} 
     </div>
     <div class="card"><h2>📈 近四周趋势</h2>
-      
-      ${_anaMiniLine([{label:'W1',v:4},{label:'W2',v:5},{label:'W3',v:4},{label:'W4',v:5}],'学习天数')}
-      ${_anaMiniLine([{label:'W1',v:72},{label:'W2',v:78},{label:'W3',v:75},{label:'W4',v:80}],'词汇完成率')}
-      ${_anaMiniLine([{label:'W1',v:60},{label:'W2',v:65},{label:'W3',v:70},{label:'W4',v:75}],'听力正确率')}
-      ${_anaMiniLine([{label:'W1',v:22},{label:'W2',v:18},{label:'W3',v:16},{label:'W4',v:14}],'错误率',true)}
+      ${(()=>{ const wk=(activityData&&activityData.weeks)||[];
+        const line=(key,title,lib)=>{ if(!wk.length) return _anaMetric(title,'—');
+          if(wk.every(w=>w[key]==null)) return _anaMetric(title,'—');
+          const arr=wk.map(w=>({label:w.label, v:(w[key]==null?0:w[key])}));
+          return _anaMiniLine(arr,title,lib); };
+        return line('learning_days','学习天数')+line('listening_acc','听力正确率')+line('quiz_avg','测评平均分')+_anaMetric('词汇完成率','—');
+      })()}
     </div>
     <div class="card"><h2>📚 本月完成情况</h2>
       ${_anaProgress('词汇', 0, 0)} ${_anaProgress('造句', 0, 0)} ${_anaProgress('听力', 0, 0)} 
@@ -3594,8 +3596,8 @@ pages.sum=async function(el){
   }
   state.sumText=reportText;
 
-  /* 最近活动（方案 B 内嵌） */
-  const recentActs=_recentActivityHtml();
+  /* 最近活动（方案 B 内嵌）—— 真实数据来自 /api/activity */
+  const recentActs=_recentActivityHtml(activityData&&activityData.recent);
 
   el.innerHTML=`
   <h1>📊 学习总结</h1>
@@ -3609,18 +3611,19 @@ pages.sum=async function(el){
   ${recentActs}
   `;
 };
-function _recentActivityHtml(){
-  const d=historyData();
-  if(!d.length) return '';
+function _recentActivityHtml(acts){
+  const d = acts || [];
+  if(!d.length) return `<div class="card" style="margin-top:10px"><h2>🕐 最近活动</h2><div class="sub">还没有学习活动记录。去「学习 / 听力 / 复习 / 测评」做几道题，这里就会出现真实的练习记录。</div></div>`;
   const byType={}; d.forEach(x=>{ byType[x.type]=(byType[x.type]||[]); byType[x.type].push(x); });
   const rows=Object.entries(byType).map(([t,list])=>{
     const last=list[list.length-1];
     let extra='';
-    if(t==='测评'||t==='听力'){ const avg=Math.round(list.reduce((s,x)=>s+(x.score||0),0)/list.length); extra=`均分 ${avg}`; }
-    else if(t==='造句'||t==='闪卡'){ const rate=Math.round(list.filter(x=>x.ok).length/list.length*100); extra=`正确率 ${rate}%`; }
-    return `<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--border);font-size:13px"><span><b>${t}</b> ${list.length} 条</span><span style="color:var(--muted)">最近 ${last.date} · ${extra}</span></div>`;
+    if(t==='测评'){ const avg=Math.round(list.reduce((s,x)=>s+(x.score||0),0)/list.length); extra=`均分 ${avg}`; }
+    else if(t==='听力'&&last.score!=null){ extra=`正确率 ${last.score}%`; }
+    else if(t==='造句'){ const rate=Math.round(list.filter(x=>x.ok).length/list.length*100); extra=`正确率 ${rate}%`; }
+    return `<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--border);font-size:13px"><span><b>${t}</b> ${list.length} 条</span><span style="color:var(--muted)">最近 ${last.date}${extra?(' · '+extra):''}</span></div>`;
   }).join('');
-  return `<div class="card" style="margin-top:10px"><h2>🕐 最近活动</h2><div class="sub">按模块分组，显示最近记录数和表现。</div>${rows}</div>`;
+  return `<div class="card" style="margin-top:10px"><h2>🕐 最近活动</h2><div class="sub">按模块分组，显示最近记录数和表现（数据来自后端真实记录）。</div>${rows}</div>`;
 }
 /* 生成可复制的纯文本总结（周报/月报共用） */
 function _buildSumText(kind, period, errTypes, confirmed, byDay, totalErr, monthSummary){
@@ -4450,62 +4453,6 @@ async function listenImport(){
   }finally{ if(btn){btn.disabled=false;btn.textContent='🚀 解析并导入';} }
 }
 
-/* ============ 历史页（三种方案预览）============ */
-const HISTORY_KEY='eos_history_v1';
-function historyLoad(){ try{ return JSON.parse(localStorage.getItem(HISTORY_KEY)||'[]'); }catch(e){ return []; } }
-function historySave(arr){ try{ localStorage.setItem(HISTORY_KEY, JSON.stringify(arr)); }catch(e){} }
-function historySeed(){
-  const base=new Date('2026-08-23T08:00:00');
-  const arr=[];
-  for(let d=0;d<14;d++){
-    const dt=new Date(base); dt.setDate(base.getDate()+d);
-    const ds=dt.toISOString().slice(0,10);
-    // 每天听力
-    arr.push({id:'h'+d+'l', type:'听力', title:'听力练习', detail:'Part A 5题 / Part B 3题 / Part C 2题', date:ds, score:Math.floor(60+Math.random()*35)});
-    // 每天造句 10句
-    for(let s=0;s<10;s++) arr.push({id:'h'+d+'s'+s, type:'造句', title:'造句', detail:'目标词 practice', date:ds, ok:Math.random()>0.25});
-    // 每天闪卡 20张
-    for(let f=0;f<20;f++) arr.push({id:'h'+d+'f'+f, type:'闪卡', title:'闪卡复习', detail:'remember / forget', date:ds, ok:Math.random()>0.3});
-    // 每周测评（第0、7天）
-    if(d===0||d===7) arr.push({id:'h'+d+'q', type:'测评', title:'周测', detail:'听力/词汇/语法/阅读/主动输出', date:ds, score:Math.floor(65+Math.random()*25)});
-  }
-  arr.sort((a,b)=>a.date.localeCompare(b.date)||b.type.localeCompare(a.type));
-  historySave(arr);
-  return arr;
-}
-function historyData(){
-  let d=historyLoad();
-  if(!d.length) d=historySeed();
-  return d;
-}
-pages.history=async function(el){
-  refreshProg();
-  const mode=state.historyMode||'A';
-  const data=historyData();
-  const tab=(k,label)=>`<button class="btn ${mode===k?'':'ghost'} sm" style="flex:1" data-act="historyTab" data-val="${k}">${label}</button>`;
-
-  // A: 统一时间线
-  const htmlA=`<div class="card"><h2>📜 统一时间线（方案 A）</h2><div class="sub">所有活动按时间倒序，一条流。</div>
-    ${data.slice().reverse().map(x=>`<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--border);font-size:13px"><span><b>${x.type}</b> ${esc(x.title)} · ${esc(x.detail)}</span><span style="color:var(--muted);white-space:nowrap">${x.date}${x.score!=null?' · '+x.score+'分':x.ok!=null?(x.ok?' ✅':' ❌'):''}</span></div>`).join('')}
-  </div>`;
-
-  // B: 总结页内嵌
-  const byType={}; data.forEach(x=>{ byType[x.type]=(byType[x.type]||[]); byType[x.type].push(x); });
-  const htmlB=`<div class="card"><h2>📊 总结页内嵌（方案 B）</h2><div class="sub">按模块分组，嵌在总结页底部。</div>
-    ${Object.entries(byType).map(([t,list])=>`<div style="margin-top:10px"><b style="font-size:14px">${t}</b> <span class="badge">${list.length} 条</span>
-      <div class="sub">最近：${esc(list[list.length-1].date)} · ${t==='测评'||t==='听力'?'均分 '+Math.round(list.reduce((s,x)=>s+(x.score||0),0)/list.length):'正确率 '+Math.round(list.filter(x=>x.ok).length/list.length*100)+'%'}</div>
-    </div>`).join('')}
-  </div>`;
-
-  // C: 按模块分
-  const htmlC=`<div class="card"><h2>🗂 按模块分（方案 C）</h2><div class="sub">每个模块有自己的时间线，分散在各页。</div>
-    ${Object.entries(byType).map(([t,list])=>`<details class="weakcat" open><summary><span>${t}</span><span class="weakcnt">${list.length}</span></summary>
-      ${list.slice().reverse().map(x=>`<div class="wcitem" style="font-size:12.5px"><div class="wn">${esc(x.title)}${x.score!=null?` <b>${x.score}分</b>`:x.ok!=null?(x.ok?' <span style="color:var(--green)">✓</span>':' <span style="color:var(--red)">✗</span>'):''}</div><div class="wd">${esc(x.detail)} · ${x.date}</div></div>`).join('')}
-    </details>`).join('')}
-  </div>`;
-
-  el.innerHTML=`<h1>📜 历史</h1><div style="display:flex;gap:7px;margin:6px 0">${tab('A','A 统一时间线')}${tab('B','B 总结页内嵌')}${tab('C','C 按模块分')}</div><div class="sub">共 ${data.length} 条记录 · 两周虚拟数据</div>${mode==='A'?htmlA:mode==='B'?htmlB:htmlC}`;
-};
 
 async function render(page){
   const el=document.getElementById('content');
