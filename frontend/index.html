@@ -113,10 +113,16 @@ textarea{font-family:monospace;font-size:13px;min-height:110px;line-height:1.6}
 /* 底部导航 */
 .bottomnav{position:fixed;bottom:0;left:0;right:0;height:calc(var(--nav-h) + env(safe-area-inset-bottom));background:#fff;
   border-top:1px solid var(--border);display:flex;padding-bottom:env(safe-area-inset-bottom);z-index:50}
-.bottomnav a{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;
+.bottomnav a{flex:1;min-width:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;
   color:var(--muted);text-decoration:none;font-size:11px;font-weight:600;cursor:pointer}
 .bottomnav a .ico{font-size:22px;line-height:1}
+.bottomnav a span:not(.ico){white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
 .bottomnav a.active{color:var(--primary)}
+/* 6 个 tab 在窄屏（≤400px）收紧字号与图标，避免文字被挤断行 */
+@media (max-width:400px){
+  .bottomnav a{font-size:10px;gap:0;padding:0 1px}
+  .bottomnav a .ico{font-size:19px}
+}
 
 /* 弹窗 / 进度调整 */
 .overlay{position:fixed;inset:0;background:rgba(15,23,42,.45);display:none;align-items:flex-end;justify-content:center;z-index:90}
@@ -259,6 +265,21 @@ document.addEventListener('click', function(e){
     renderFlashcard(document.getElementById('content')); }
   else if (act === 'revGrade') gradeFlash(parseInt(v,10));
   else if (act === 'revExit') { state.revMode='home'; render('review'); }
+  else if (act === 'listenPlay' || act === 'listenPlaySlow'){
+    const wrap=el.closest('[data-listen]');
+    const s=wrap?wrap.getAttribute('data-sentence'):'';
+    if(!s){ toast('暂无可播放内容'); return; }
+    listenSpeak(s, act==='listenPlaySlow'?0.6:1);
+  }
+  else if (act === 'listenReveal'){
+    const wrap=el.closest('[data-listen]');
+    const rev=document.getElementById('lrev_'+v);
+    if(rev){
+      const showing=rev.style.display!=='none';
+      rev.style.display=showing?'none':'';
+      if(!showing){ rev.textContent=wrap?(wrap.getAttribute('data-sentence')||''):''; rev.style.color='var(--text)'; }
+    }
+  }
   else if (act === 'revWeak') { state.revMode='weak'; render('review'); }
   else if (act === 'revAll') { state.revMode='all'; render('review'); }
   else if (act === 'sumTab') { state.sumTab=v; render('sum'); }
@@ -1110,29 +1131,60 @@ pages.listen=async function(el){
 };
 function listenCardHtml(it){
   const id=it.id||it.item_id||'';
-  return `<div class="card" style="margin-top:10px" data-listen="${esc(id)}">
-    <h2>${esc(it.title||'听力练习')}</h2>
-    <div class="sub">${esc(it.desc||'')}</div>
-    <div style="margin:9px 0">
-      <audio controls src="${esc(it.audio||'')}" style="width:100%"></audio>
-      <div class="sub" style="margin-top:4px">（正式素材上线后提供播放）</div>
+  const word=it.word||'';
+  const sentence=it.sentence||'';
+  const trans=it.translation||'';
+  return `<div class="card" style="margin-top:10px" data-listen="${esc(id)}"
+      data-sentence="${esc(sentence)}">
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px">
+      <h2 style="margin:0">${word?('🎧 '+esc(word)):'🎧 听写练习'}</h2>
+      <span class="badge" style="background:var(--primary-bg);color:var(--primary);flex-shrink:0">听写</span>
     </div>
-    <textarea id="lans_${esc(id)}" rows="2" placeholder="写下你听到的内容 / 作答…" style="width:100%;box-sizing:border-box;padding:7px 9px;border:1px solid var(--border);border-radius:7px;font-size:13.5px"></textarea>
-    <button class="btn" style="margin-top:8px" data-act="listenSubmit" data-id="${esc(id)}">提交</button>
+    <div class="sub" style="margin-top:6px">${trans?('中文：'+esc(trans)):'听音写句'}</div>
+    <div class="btnrow" style="margin-top:9px">
+      <button class="btn ghost" data-act="listenPlay" data-id="${esc(id)}">🔊 播放</button>
+      <button class="btn ghost" data-act="listenPlaySlow" data-id="${esc(id)}">🐢 慢速</button>
+      <button class="btn ghost" data-act="listenReveal" data-id="${esc(id)}">👁 看原文</button>
+    </div>
+    <div id="lrev_${esc(id)}" class="sub" style="margin-top:7px;display:none;font-weight:700"></div>
+    <textarea id="lans_${esc(id)}" rows="2" placeholder="写下你听到的英文句子…"
+      style="width:100%;box-sizing:border-box;padding:7px 9px;border:1px solid var(--border);border-radius:7px;font-size:13.5px;margin-top:8px"></textarea>
+    <div class="btnrow" style="margin-top:8px">
+      <button class="btn" data-act="listenSubmit" data-id="${esc(id)}" data-ok="1">✅ 听懂了</button>
+      <button class="btn ghost" data-act="listenSubmit" data-id="${esc(id)}" data-ok="0">❌ 没听清</button>
+    </div>
   </div>`;
+}
+/* TTS 朗读：优先浏览器语音合成，失败时提示 */
+function listenSpeak(text, rate){
+  try{
+    if(!('speechSynthesis' in window)){ toast('当前浏览器不支持朗读'); return; }
+    window.speechSynthesis.cancel();
+    const u=new SpeechSynthesisUtterance(text);
+    u.lang='en-US'; u.rate=rate||1;
+    window.speechSynthesis.speak(u);
+  }catch(_){ toast('朗读失败'); }
 }
 async function listenSubmit(el){
   const id=el.getAttribute('data-id');
+  const ok=el.getAttribute('data-ok')==='1';
   const ta=document.getElementById('lans_'+id);
   const v=ta?ta.value.trim():'';
-  if(!v){ toast('请先作答'); return; }
-  el.disabled=true; el.textContent='提交中…';
-  let r=null;
-  try{ r=await api('/listening/submit',{method:'POST',headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({item_id:id,correct:null,text:v})}); }catch(_){ r=null; }
-  el.disabled=false; el.textContent='提交';
-  const wrap=el.closest('[data-listen]'); if(wrap) wrap.style.opacity=0.6;
-  toast(r&&r.ok?'已提交 ✅':'提交失败，请重试');
+  const wrap=el.closest('[data-listen]');
+  // 听懂了必须写下内容，避免空点
+  if(ok && !v){ toast('先写下你听到的句子'); if(ta) ta.focus(); return; }
+  const btn=el; btn.disabled=true;
+  try{
+    await api('/listening/submit',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({item_id:id,correct:ok,text:v})});
+  }catch(_){}
+  btn.disabled=false;
+  if(wrap){
+    wrap.style.opacity=0.62;
+    const rev=document.getElementById('lrev_'+id);
+    if(rev){ rev.style.display=''; rev.textContent=(wrap.getAttribute('data-sentence')||''); rev.style.color=ok?'var(--green)':'var(--red)'; }
+  }
+  toast(ok?'已记录：听懂 ✅':'已记录：待加强 ❌');
 }
 
 /* ============ 专项训练页：贴 AI 出的卷 → 后端解析 → 逐题判分 ============ */

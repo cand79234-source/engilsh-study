@@ -989,9 +989,47 @@ def test_grade(body: dict):
 
 # ---------- 听力骨架 ----------
 @app.get("/api/listening/next")
-def listening_next():
-    """返回下一批听力素材（占位：素材库后续补，目前恒为空，不报错）。"""
-    return {"ok": True, "items": []}
+def listening_next(n: int = 5):
+    """返回下一批听力素材。
+
+    素材来源：`example_sentences`（单词例句 + 中文翻译），属于系统内已有的真实数据，
+    不硬编码任何假素材。练习形式：听英文句子（TTS 朗读）→ 看中文翻译 → 自评是否听懂。
+
+    参数：
+      n = 返回条数（默认 5，上限 20）
+
+    返回：{"ok":true,"items":[{"id","word","sentence","translation"}...]}
+    表为空或不存在时返回空数组，不报错。
+    """
+    n = max(1, min(int(n or 5), 20))
+    conn = get_conn()
+    try:
+        # 确认素材表存在（老库可能还没建）
+        exists = conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='example_sentences'"
+        ).fetchone()
+        if not exists:
+            return {"ok": True, "items": []}
+        rows = conn.execute(
+            "SELECT id, word, sentence, translation FROM example_sentences "
+            "WHERE sentence IS NOT NULL AND TRIM(sentence)<>'' "
+            "ORDER BY RANDOM() LIMIT ?",
+            (n,),
+        ).fetchall()
+    except Exception:
+        rows = []
+    finally:
+        conn.close()
+    items = []
+    for r in rows:
+        d = dict(r) if not isinstance(r, dict) else r
+        items.append({
+            "id": d.get("id"),
+            "word": d.get("word") or "",
+            "sentence": d.get("sentence") or "",
+            "translation": d.get("translation") or "",
+        })
+    return {"ok": True, "items": items}
 
 
 @app.post("/api/listening/submit")
