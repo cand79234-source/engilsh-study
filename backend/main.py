@@ -42,6 +42,46 @@ def demo_status():
             "routes": sorted(demo.READ_ROUTES)}
 
 
+@app.get("/api/weak/trend8w")
+def weak_trend8w():
+    """薄弱项页「近 8 周」趋势线。
+
+    每周给出：错误次数 / 薄弱项(🟡)类型数 / 相比前一周是向好还是向差。
+    只统计 is_demo=0 的真实数据，示例数据不进来。
+    """
+    try:
+        conn = get_conn()
+        try:
+            data = _report._trend_8w(conn, _report._demo_filter())
+        finally:
+            conn.close()
+    except Exception:
+        data = []
+    return {"ok": True, "weeks": data}
+
+
+@app.post("/api/demo/clear")
+def demo_clear():
+    """一键清空示例数据：只删 is_demo=1 的行，真实数据一行不动。
+
+    示例数据（8 周模拟曲线）只可能来自显式写入，正常链路不会产线 is_demo=1 的行，
+    所以即使库里没有示例数据，这个接口也是安全的空操作。
+    """
+    removed = {}
+    conn = get_conn()
+    try:
+        for table in ("errors", "quizzes", "sentences", "word_output"):
+            try:
+                removed[table] = int(
+                    conn.execute("DELETE FROM %s WHERE is_demo = 1" % table).rowcount or 0)
+            except Exception:
+                removed[table] = 0  # 该表没有 is_demo 列 → 跳过，不动任何数据
+        conn.commit()
+    finally:
+        conn.close()
+    return {"ok": True, "removed": removed, "total": sum(removed.values())}
+
+
 class DemoModeMiddleware(BaseHTTPMiddleware):
     """演示模式（?demo=1）：读返回快照，写一律拒绝。
 
@@ -1472,12 +1512,23 @@ def grade_test_paper(text, answers, kind):
     try:
         p = svc.get_progress()
         conn = get_conn()
-        conn.execute(
-            "INSERT INTO quizzes (kind, stage, week, score, passed, detail_json, created_at) "
-            "VALUES (?,?,?,?,?,?,?)",
-            (kind or "week", p.get("stage", 0), p.get("week", 1), score,
-             1 if passed else 0,
-             json.dumps({"correct": correct, "total": total}, ensure_ascii=False), ts()))
+        # 留存原题 + 作答：历史成绩里能点开回看「当时考了什么、我答了什么」。
+        # 老库若还没补上这两列（init_db 迁移未跑），自动退回原来的简写入，不影响判分。
+        try:
+            conn.execute(
+                "INSERT INTO quizzes (kind, stage, week, score, passed, detail_json,"
+                " paper_json, answers_json, created_at) VALUES (?,?,?,?,?,?,?,?,?)",
+                (kind or "week", p.get("stage", 0), p.get("week", 1), score,
+                 1 if passed else 0,
+                 json.dumps({"correct": correct, "total": total, "questions": detail, "by_section": by_section}, ensure_ascii=False),
+                 text or "", json.dumps(answers or {}, ensure_ascii=False), ts()))
+        except Exception:
+            conn.execute(
+                "INSERT INTO quizzes (kind, stage, week, score, passed, detail_json, created_at) "
+                "VALUES (?,?,?,?,?,?,?)",
+                (kind or "week", p.get("stage", 0), p.get("week", 1), score,
+                 1 if passed else 0,
+                 json.dumps({"correct": correct, "total": total, "questions": detail, "by_section": by_section}, ensure_ascii=False), ts()))
         conn.commit()
         conn.close()
     except Exception:
@@ -1488,11 +1539,16 @@ def grade_test_paper(text, answers, kind):
 
 @app.get("/api/test/history")
 def test_history(limit: int = 50):
-    """历史测评成绩（测评页「📈 历史成绩」与补习共用）。"""
+    """历史测评成绩（测评页「📈 历史成绩」与补习共用）。
+
+    除分数外回传 paper_json（原题）/ answers_json（作答）/ detail_json（每题对错与归因），
+    前端点开某次成绩即可回看当次卷面，不需要另开页面。
+    """
     conn = get_conn()
     try:
         rows = conn.execute(
-            "SELECT kind, stage, week, score, passed, created_at FROM quizzes "
+            "SELECT id, kind, stage, week, score, passed, created_at, detail_json,"
+            " paper_json, answers_json FROM quizzes "
             "ORDER BY id DESC LIMIT ?", (limit,)).fetchall()
     finally:
         conn.close()
@@ -1506,31 +1562,53 @@ def test_prompt(kind: str = "week"):
     return {"prompt": build_test_prompt(kind or "week")}
 
 
-def build_test_prompt(kind):
-    ctx = ""
-    try:
-        errs = svc.error_breakdown()[:5]
-        if errs:
-            ctx += "【你最近常犯的错误类型】\n" + "\n".join(
-                f"- {e['type']}（近30天 {e['count_30d']} 次，累计 {e['total']} 次）"
-                for e in errs) + "\n"
-    except Exception:
-        pass
-    try:
-        low = srs.weak_output_words(threshold=3)[:5]
-        if low:
-            ctx += "【主动输出偏弱词】" + "、".join(w["word"] for w in low) + "\n"
-    except Exception:
-        pass
-    kind_label = {"week": "周测", "month": "月测", "stage": "阶段测"}.get(kind, "周测")
-    fmt = """【机器可读试卷格式】
-在回答末尾输出以下内容（<<<TEST>>> 与 <<<END>>> 之间只放题目，不要写任何解释）：
+# 周测 / 月测 / 阶段测 共用一套《通用英语测评试卷生成模板》，
+# 三者的区别只有「范围 / 难度 / 题量」三个参数，结构完全一致。
+TEST_KIND_CFG = {
+    "week":  ("周测",   "本周新学词汇 + 本周薄弱项",     "当前水平",     "12–16"),
+    "month": ("月测",   "本月累计薄弱项 + 当月新学",     "当前水平略升", "18–24"),
+    "stage": ("阶段测", "本阶段全部目标 + 累计薄弱项",   "阶段目标",     "24–30"),
+}
+
+TEST_PROMPT_TPL = """你是一名严格、克制、以测评效果为导向的英语试卷生成器。
+
+【角色】
+你只负责按下方确认的测评项目生成试卷，不重新诊断、不新增训练范围。
+
+【本次测评类型】
+{kind}  （取值：周测 / 月测 / 阶段测）
+
+【范围与难度】（按类型调节，不要超范围）
+- 周测：覆盖本周新学词汇与本周薄弱项，难度 = 当前水平，题量 12–16。
+- 月测：覆盖本月累计薄弱项 + 当月新学，难度 = 当前水平略升，题量 18–24。
+- 阶段测：覆盖本阶段全部目标与累计薄弱项，难度 = 阶段目标，题量 24–30。
+范围：{scope}
+难度：{difficulty}
+题量：{count}
+
+【输入：学习者当前数据】
+水平：{level}
+阶段：{stage}
+已学：{learned}
+薄弱项（来自错误本，仅作出题参考）：
+{weakness}
+
+【核心原则】
+1. 单错 ≠ 薄弱项：偶发一次的错误（🔵记忆项）不得直接当成必练项，
+   只在「近30天≥2次（🟡薄弱项）」或诊断已认定为「🔴阻塞项」时才围绕它出题。
+2. 围绕已确认薄弱项出题，但不得因此无限扩张到其他未授权能力。
+3. 题型服务于目标：听力真考听觉、阅读真考理解，不把阅读伪装成听力。
+4. 测评结果回流：试卷作答后由系统记录，进入下一轮诊断。
+
+【输出格式（必须输出系统可解析的试卷文本）】
+在回答末尾输出以下内容（<<<TEST>>> 与 <<<END>>> 之间只放题目，不写解释）：
+
 <<<TEST>>>
 <<<SECTION 听力>>>
 <<<PASSAGE>>>
-（英文听力原文：短句 / 对话 / 短文，系统会提供🔊朗读，无需音频文件）
+（英文听力原文；系统提供🔊朗读，无需音频文件）
 <<<END>>>
-Q1. (choice) [听力] 题干（中文或英文）
+Q1. (choice) [听力] 题干
 A. ... B. ... C. ... D. ...
 ANSWER: A
 Q2. (fill) [听力] 听后填空：I arrived ______ the station.
@@ -1551,27 +1629,91 @@ ANSWER: Is
 
 <<<SECTION 阅读>>>
 <<<PASSAGE>>>
-（英文短文，可多行）
+（短文正文，可多行）
 <<<END>>>
-Q7. (choice) 根据短文选择正确项。
-A. ... B. ... C. ... D. ...
+Q7. (choice) 根据短文，Tom 几点吃早餐？
+A. 6:30 B. 7:00 C. 7:30 D. 8:20
 ANSWER: C
 
 <<<SECTION 主动输出>>>
-Q8. (subjective) 用所学语法说一句关于你自己的话。
-（学习者对照要点自评，系统不自动判分）
+Q8. (subjective) 用 because 说一句你今天没出门的原因。（学习者自评，系统不自动判分）
 <<<END>>>
 
 硬性规则：
-1. 题号 Q1、Q2… 从 1 连续编号，不跳号、不重复。
-2. 题型：(choice) 四选一，ANSWER 填单个大写字母；(fill) 填空，ANSWER 填正确答案（多解用 / 分隔）；(judge) 判断正误，ANSWER 填 TRUE/FALSE；(subjective) 主动输出，不计分。
-3. 每个 SECTION 用 <<<SECTION 名称>>> 开头，名称用中文：听力 / 词汇 / 语法 / 阅读 / 主动输出。
-4. 各 SECTION 输出顺序必须为：听力 → 词汇 → 语法 → 阅读 → 主动输出。
-5. 不要使用 Markdown、不要加代码块围栏，不要在 <<<TEST>>> 与 <<<END>>> 之间输出解释性文字。"""
-    header = (f"请基于下面的学习数据，出一份「{kind_label}」英语能力测评卷。"
-              "题目要针对学习者的真实薄弱点，难度匹配其当前阶段。\n\n")
-    footer = "\n\n请严格按下方格式输出试卷：\n" + fmt
-    return header + (ctx or "（暂无可用学习数据，请按常规 A2 难度出题）\n") + footer
+1. 题号 Q1… 从 1 连续编号，不跳号。
+2. (choice) 四选一，A/B/C/D 每行一个，ANSWER 单字母；(fill) 用 6 个下划线表示空位；(judge) ANSWER 仅 TRUE/FALSE；(subjective) 学习者自评。
+3. SECTION 名称用中文模块名：听力 / 词汇 / 语法 / 阅读 / 主动输出。
+4. 听力先 <<<PASSAGE>>> 给原文再出题；阅读先 <<<PASSAGE>>> 给短文再出题。
+5. ANSWER 行是大题最后一行。
+6. 不使用 Markdown 语法、不加代码块围栏。
+7. <<<TEST>>> 与 <<<END>>> 之间不写任何解释。
+"""
+
+
+def _error_levels():
+    """每个错误类型当前的最高等级：🔴阻塞(3) > 🟡薄弱(2) > 🔵记忆(1)。
+
+    等级由 ai_service.correct_sentence 写入 errors.level：
+    近30天同错≥2次 → 🟡，单次 → 🔵，诊断认定 → 🔴。
+    """
+    try:
+        conn = get_conn()
+        try:
+            rows = conn.execute(
+                "SELECT error_type AS t, MAX(CASE level WHEN '🔴' THEN 3 "
+                "WHEN '🟡' THEN 2 WHEN '🔵' THEN 1 ELSE 0 END) AS lv "
+                "FROM errors GROUP BY error_type").fetchall()
+        finally:
+            conn.close()
+        return {r["t"]: int(r["lv"] or 0) for r in rows}
+    except Exception:
+        return {}
+
+
+def build_test_prompt(kind):
+    """生成「周测 / 月测 / 阶段测」提示词：同一套框架，只按类型调范围/难度/题量。"""
+    lvmap = _error_levels()
+    ctx = ""
+    try:
+        errs = svc.error_breakdown()[:8]
+        if errs:
+            lines = []
+            for e in errs:
+                lv = lvmap.get(e["type"], 0)
+                icon = "🔴" if lv >= 3 else ("🟡" if lv == 2 else "🔵")
+                lines.append(
+                    f"- {e['type']} {icon}  近30天 {e['count_30d']} · 累计 {e['total']}"
+                    + ("（记忆项：偶发，不作为必练项）" if icon == "🔵" else ""))
+            ctx += "【薄弱项（近30天次数 · 累计次数 · 等级）】\n" + "\n".join(lines) + "\n"
+    except Exception:
+        pass
+    try:
+        low = srs.weak_output_words(threshold=3)[:5]
+        if low:
+            ctx += "【主动输出偏弱词】" + "、".join(w["word"] for w in low) + "\n"
+    except Exception:
+        pass
+
+    label, scope, difficulty, count = TEST_KIND_CFG.get(kind, TEST_KIND_CFG["week"])
+    try:
+        prog = svc.get_progress() or {}
+    except Exception:
+        prog = {}
+    learned = ""
+    try:
+        learned = ", ".join(w["word"] for w in srs.weak_output_words(threshold=6)[:10])
+    except Exception:
+        learned = ""
+
+    return TEST_PROMPT_TPL.format(
+        kind=label, scope=scope, difficulty=difficulty, count=count,
+        level=prog.get("level") or "（未测定）",
+        stage=f"第 {prog.get('stage', 0)} 阶段 · 第 {prog.get('week', 1)} 周",
+        learned=learned or "（暂无记录）",
+        weakness=(ctx or "（暂无已确认薄弱项，请按常规 A2 难度出题）"),
+    )
+
+
 
 
 # ---------- 听力模块（前端：粘贴 AI 材料 → 解析入库 → 练习 → 提交）----------

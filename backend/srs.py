@@ -362,6 +362,18 @@ def flashcard_items(limit=50, max_cols=3, max_exs=2):
                if w.lower() not in colmap and w.lower() not in exmap]
     fb = _fallback_from_weeks(conn, missing, max_cols, max_exs) if missing else {}
 
+    # 主动输出五星（复习页「今日到期明细」要显示「星标 / 已复习次数 / 下次到期」）
+    starmap = {}
+    if words:
+        try:
+            ph = ",".join("?" * len(words))
+            for r in conn.execute(
+                    "SELECT word, stars FROM word_output "
+                    "WHERE word IN (%s)" % ph, words).fetchall():
+                starmap[(r["word"] or "").lower()] = r["stars"] or 0
+        except Exception:
+            starmap = {}
+
     for c in cards:
         word = (c.get("ref_key") or "").strip()
         if not word:
@@ -384,6 +396,8 @@ def flashcard_items(limit=50, max_cols=3, max_exs=2):
             "direction": "zh2en" if reverse else "en2zh",
             "reps": reps,
             "interval": c.get("interval") or 0,
+            "stars": starmap.get(wl, 0),
+            "next_due": (c.get("next_due") or "")[:10],
             # 翻面后的「怎么用」扩展区，前端没数据就不渲染
             "collocations": [
                 {"phrase": x.get("phrase") or "", "meaning": x.get("meaning") or "",

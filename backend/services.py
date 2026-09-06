@@ -141,12 +141,34 @@ def error_breakdown(days=90):
         total = conn.execute("SELECT COUNT(*) n FROM errors WHERE error_type=?", (t,)).fetchone()["n"]
         # 30天内频次
         since30 = (date.today() - timedelta(days=30)).isoformat()
+        since60 = (date.today() - timedelta(days=60)).isoformat()
         count_30 = conn.execute(
             "SELECT COUNT(*) n FROM errors WHERE error_type=? AND created_at >= ?",
             (t, since30)).fetchone()["n"]
-        level = "🔴" if n >= 10 else ("🟡" if n >= 5 else "🔵")
+        # 前一个 30 天（30–60 天前）：用来判断这类错是越来越少（向好）还是越来越多（向差）
+        prev_30 = conn.execute(
+            "SELECT COUNT(*) n FROM errors WHERE error_type=? "
+            "AND created_at >= ? AND created_at < ?",
+            (t, since60, since30)).fetchone()["n"]
+        # 等级优先取 errors.level 里最高的一级（与 ai_service 写入的 🟡/🔵/🔴 同源）：
+        # 近30天同错≥2次 → 🟡，单次 → 🔵；老库没有 level 列时退回按次数判断。
+        level = None
+        try:
+            lvrow = conn.execute(
+                "SELECT MAX(CASE level WHEN '🔴' THEN 3 WHEN '🟡' THEN 2 "
+                "WHEN '🔵' THEN 1 ELSE 0 END) lv FROM errors WHERE error_type=?",
+                (t,)).fetchone()
+            lv = int(lvrow["lv"] or 0) if lvrow else 0
+            if lv:
+                level = "🔴" if lv >= 3 else ("🟡" if lv == 2 else "🔵")
+        except Exception:
+            level = None
+        if not level:
+            level = "🔴" if n >= 10 else ("🟡" if n >= 5 else "🔵")
+        trend = "better" if count_30 < prev_30 else ("worse" if count_30 > prev_30 else "flat")
         result.append({
-            "type": t, "count_30d": count_30, "total": total, "level": level,
+            "type": t, "count_30d": count_30, "prev_30d": prev_30, "total": total,
+            "level": level, "trend": trend,
             "recent": [dict(r) for r in recent],
             "patterns": _find_patterns(conn, t),
             "remedy": REMEDY_BY_TYPE.get(t, ""),

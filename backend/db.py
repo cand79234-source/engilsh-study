@@ -721,6 +721,31 @@ def init_db():
         "week": "INTEGER",
     })
 
+    # ---- 测评留存：历史成绩要能点开回看「原题 + 作答」----
+    # 老库的 quizzes 只有分数，回看不了当次卷子，这里补齐留存列。
+    # kind 老库已有（'weekly'/'stage'），此处类型带上 monthly 语义由写入侧决定，列存在则跳过。
+    _ensure_columns(conn, "quizzes", {
+        "paper_json": "TEXT DEFAULT ''",      # 完整 <<<TEST>>> 试卷原文
+        "answers_json": "TEXT DEFAULT '{}'",  # 学习者作答 {"1":"A","2":"at"}
+        "kind": "TEXT DEFAULT 'weekly'",      # weekly / monthly / stage
+    })
+
+    # ---- 错题合并与分级：错误按 (词 + 类型 + 归一化文本) 合并，近30天≥2次才晋级🟡 ----
+    _ensure_columns(conn, "errors", {
+        "norm_text": "TEXT DEFAULT ''",   # 归一化错误片段（压缩空白 + 转小写），仅用于合并判定
+        "level": "TEXT DEFAULT '🔵'",      # 🔴阻塞 / 🟡薄弱（近30天≥2次）/ 🔵记忆（单次）
+        "is_demo": "INTEGER DEFAULT 0",   # 1 = 近8周示例数据，报告与统计默认排除，可一键清空
+    })
+    # 老数据回填：历史错误行的 norm_text 为空会导致合并失效，用 error_text 兜底
+    try:
+        conn.execute(
+            "UPDATE errors SET norm_text = error_text "
+            "WHERE (norm_text IS NULL OR norm_text = '') AND error_text IS NOT NULL")
+        conn.execute(
+            "UPDATE errors SET level = '🔵' WHERE level IS NULL OR level = ''")
+    except Exception as e:
+        print("[db.init_db] errors 老数据回填跳过(可忽略):", e)
+
     # 老数据回填：用 word 反查它属于哪一周（只补 stage IS NULL 的行，可重复运行）
     _backfill_week_columns(conn)
 

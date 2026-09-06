@@ -14,6 +14,7 @@
 """
 import json
 import re
+from datetime import datetime, timedelta
 
 from db import get_conn, ts, insert_get_id
 from srs import schedule_review
@@ -27,6 +28,55 @@ PASS_LINE = 85          # >=85 基本掌握
 BASE_SCORE = 90         # 无错基准分
 PENALTY = {"heavy": 30, "medium": 20, "light": 12}
 MIN_SCORE = 20
+
+# ---- 错题分级：单错 ≠ 薄弱项 ----
+LEVEL_BLOCK = "🔴"    # 阻塞项：必须调整学习安排（由诊断侧标记，不在此自动升级）
+LEVEL_WEAK = "🟡"     # 薄弱项：近30天同一个错出现 ≥2 次
+LEVEL_MEMORY = "🔵"   # 记忆项：偶发/单次，交给闪卡解决，不改课程
+
+
+def norm_error_text(text):
+    """归一化错误片段：压缩空白 + 转小写。
+
+    只用于「这是不是同一个错」的合并判定，入库仍保留学习者原样写法。
+    例："I  like" 与 "i like" 视作同一个错，只累加次数不重复建条目。
+    """
+    return re.sub(r"\s+", " ", (text or "").strip()).lower()
+
+
+def days_ago_str(n):
+    """n 天前的 ISO 串，可直接与 created_at 做字符串比较
+    （created_at 为 ISO 格式，字典序即时间序，SQLite 与 PG 通用）。"""
+    return (datetime.now() - timedelta(days=n)).isoformat(timespec="seconds")
+
+
+def recent_error_count(conn, word, etype, norm, since):
+    """近 since 之后，这个 (词 + 错误类型 + 归一化片段) 一共出现过几次。
+
+    数据取自 sentences.errors_json：每次作答一行，能真实反映「近30天犯了几次」；
+    errors 表已按 (词+类型+归一化) 合并成一行，从它自身看不出时间分布。
+    取不到数据时保守返回 1（不晋级）。
+    """
+    n = 0
+    try:
+        rows = conn.execute(
+            "SELECT errors_json FROM sentences WHERE word=? AND created_at>=?",
+            (word, since)).fetchall()
+    except Exception:
+        return 1
+    for r in rows:
+        try:
+            items = json.loads(r["errors_json"] or "[]")
+        except Exception:
+            continue
+        for it in items or []:
+            if not isinstance(it, dict):
+                continue
+            if (it.get("type") == etype
+                    and norm_error_text(it.get("where", "")) == norm):
+                n += 1
+                break
+    return n
 
 # 中文检测（中英混杂 → 需要复核，绝不 PASS）
 _CJK = re.compile(r"[\u4e00-\u9fff]+")
@@ -1333,27 +1383,41 @@ def correct_sentence(sentence, stage=0, week=3, day=1, word="", task_key="",
          json.dumps(res["errors"], ensure_ascii=False),
          json.dumps(res["optimizations"], ensure_ascii=False), now))
 
-    # 错题本：只有真错才写入；同一 word + 错误片段只是累加次数
+    # 错题本：只有真错才写入；同一个 (词 + 错误类型 + 归一化错误片段) 合并成一条，只累加次数
     bank_ids = []
     for e in res["errors"]:
         where, etype = e["where"], e["type"]
+        norm = norm_error_text(where)
         exist = conn.execute(
             "SELECT id, times FROM errors WHERE source='sentence' AND word=?"
-            " AND error_text=? AND error_type=?", (word, where, etype)).fetchone()
+            " AND error_type=? AND norm_text=?", (word, etype, norm)).fetchone()
         if exist:
             conn.execute(
                 "UPDATE errors SET times=?, last_at=?, sentence_text=? WHERE id=?",
                 (int(exist["times"] or 0) + 1, now, res["original"], exist["id"]))
-            bank_ids.append(exist["id"])
+            bank_id = exist["id"]
         else:
-            bank_ids.append(insert_get_id(
+            bank_id = insert_get_id(
                 conn,
                 "INSERT INTO errors (error_type, original, corrected, explanation,"
-                " source, created_at, word, task_key, error_text, sentence_text,"
-                " times, first_at, last_at, fixed)"
-                " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                " source, created_at, word, task_key, error_text, norm_text, level,"
+                " sentence_text, times, first_at, last_at, fixed)"
+                " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 (etype, where, e["correct"], e["explanation"], "sentence", now,
-                 word, task_key, where, res["original"], 1, now, now, 0)))
+                 word, task_key, where, norm, LEVEL_MEMORY, res["original"],
+                 1, now, now, 0))
+        bank_ids.append(bank_id)
+        # 晋级判定：近30天同一个错出现 ≥2 次才算「薄弱项🟡」；只错一次只累加次数，仍标「记忆项🔵」。
+        # 🔴阻塞项由诊断侧单独标记，这里不自动升级，避免偶发错误被放大成「必须调整学习」。
+        lvl = (LEVEL_WEAK if recent_error_count(conn, word, etype, norm,
+                                                days_ago_str(30)) >= 2
+               else LEVEL_MEMORY)
+        try:
+            conn.execute(
+                "UPDATE errors SET level=? WHERE word=? AND error_type=? AND norm_text=?",
+                (lvl, word, etype, norm))
+        except Exception:
+            pass
 
     # 写对了 → 把该词此前未改正的错题标记为已改正（不删除）
     fixed_ids = []
