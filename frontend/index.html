@@ -99,6 +99,8 @@ h2{font-size:15px;font-weight:700;display:flex;align-items:center;gap:8px}
 .optb.chosen{background:var(--primary);color:#fff;border-color:var(--primary)}
 .optb.ok{background:var(--green-bg);border-color:var(--green);color:var(--green)}
 .optb.no{background:var(--red-bg);border-color:var(--red);color:var(--red)}
+.optb:disabled{opacity:1;cursor:default}
+.gapans{font-size:12px;font-weight:700;color:var(--green);margin-left:5px;white-space:nowrap}
 
 /* 设置 */
 label{font-size:13px;color:var(--muted);display:block;margin:9px 0 5px;font-weight:600}
@@ -373,8 +375,6 @@ document.addEventListener('click', function(e){
   else if (act === 'copyPrompt') copyPrompt();
   else if (act === 'copyWeekPrompt') copyWeekPrompt();
   else if (act === 'copyErrorReport') copyErrorReport();
-  else if (act === 'clearWeakDemo') clearWeakDemo();
-  else if (act === 'seedWeakDemo') seedWeakDemo();
   else if (act === 'copySummaryReport') copySummaryReport();
   else if (act === 'revFlash') startFlashcard();
   else if (act === 'revFlip') { state.revFlipped=!state.revFlipped;
@@ -404,14 +404,15 @@ document.addEventListener('click', function(e){
   else if (act === 'tOpt'){ tOpt(el); }
   else if (act === 'tSubOk'){ tSubOk(el); }
   else if (act === 'sumTab'){ state.sumTab=v; render('sum'); }
-  else if (act === 'seedSumDemo'){ setSumDemo(true); render('sum'); }
-  else if (act === 'clearSumDemo'){ setSumDemo(false); render('sum'); }
   else if (act === 'historyTab'){ state.historyMode=v; render('history'); }
   /* ---- 补习 / 专项训练 ---- */
   else if (act === 'copyDiagPrompt') copyDiagPrompt();
   else if (act === 'copyTrainPrompt') copyTrainPrompt();
   else if (act === 'trainCopyFormat') trainCopyFormat();
   else if (act === 'trainImport') trainImport();
+  else if (act === 'trainFold'){ const tb=document.getElementById('trainImportBody'); if(tb){ tb.style.display=tb.style.display==='none'?'block':'none'; } }
+  else if (act === 'trainSample'){ const ta=document.getElementById('trainJson'); if(ta){ ta.value=trainSampleJson(); toast('已填入示例格式，可直接点「🚀 解析并导入」'); } }
+  else if (act === 'trainHistoryAll') trainShowHistory(null);
   else if (act === 'trainBackList'){ state.trainMode='list'; render('train'); }
   else if (act === 'trainStart') trainStart(v);
   else if (act === 'trainHistory') trainShowHistory(v);
@@ -2532,14 +2533,9 @@ pages.errors=async function(el){
   try{
     const r = await Promise.all([api('/errors'), api('/error-bank'), api('/weakness')]);
     errs=r[0]; bank=r[1]; wk=r[2];
-  }catch(e){ /* 后端不可达：走演示数据 */ }
+  }catch(e){ /* 后端不可达：按空数据渲染，不编造 */ }
   state.errs=errs; state.bank=bank;
-  const capsReal=(wk&&wk.capabilities&&wk.capabilities.categories)||[];
-  const realHas=capsReal.some(c=>c.items&&c.items.length);
-  const force=useWeakDemoForce();
-  const demo=(useWeakDemo() && !realHas) || force;
-  if(demo) seedWeakSnapDemo(force);
-  const wkUsed=demo?MOCK_WEAK:wk;
+  const wkUsed=wk;
   state.weak=wkUsed;
   refreshProg();
   const active=errs.filter(e=>e.count_30d>0).length;
@@ -2547,13 +2543,6 @@ pages.errors=async function(el){
   const weakN=state._weakTotal||0;
   const lowN=((wkUsed&&wkUsed.low_star_words)||[]).length;
   const bankN=(bank&&bank.items)?bank.items.length:((bank&&bank.total!=null)?bank.total:0);
-  const banner=demo
-    ? `<div class="card" style="margin-top:10px;border:1px dashed #f59e0b;background:#fffbeb">
-        ⚠️ 当前为<strong>演示数据</strong>（已注入约 3 周虚拟错误，含 🔴 阻塞 / 🟡 薄弱 + 趋势历史），方便你测试「复制报告 / 补习提示词」与趋势图。
-        <button class="btn ghost sm" data-act="clearWeakDemo" style="margin-left:6px">🧹 清除演示数据</button></div>`
-    : `<div class="card" style="margin-top:10px;border:1px dashed var(--border);background:var(--primary-bg)">
-        当前为真实数据（后端返回项较少）。想看丰富的演示效果？
-        <!-- 演示入口：删除演示时整段移除此按钮 BEGIN --><button class="btn ghost sm" data-act="seedWeakDemo" style="margin-left:6px">🧪 看演示数据（两周）</button><!-- 演示入口 END --></div>`;
   el.innerHTML=`
     <div class="stickybar">
       <button class="topback" data-act="revExit">← 返回复习</button>
@@ -2562,7 +2551,6 @@ pages.errors=async function(el){
     </div>
     <div class="sub" style="margin-top:8px">只列会改变后续学习安排的能力项（近30天有错 ${active} 类）。
       拼错单词不算薄弱项——那只是这个词没记住，交给闪卡星级。</div>
-    ${banner}
     ${weakHtml}
 
     <div class="card" style="margin-top:12px;background:var(--primary-bg)">
@@ -2618,73 +2606,6 @@ function _weakHit(it, def){
     return (k&&k.indexOf(A)>=0) || (lb&&lb.toLowerCase().indexOf(A)>=0);
   });
 }
-/* ==================================================================
-   演示数据（两周虚拟错误）：后端暂时没返回薄弱项时，用来测试
-   「复制报告 / 补习提示词」与趋势图。默认开启，真实数据回来即让位。
-   ================================================================== */
-const MOCK_WEAK = {
-  capabilities: {
-    categories: [
-      {key:'grammar', label:'语法', items:[
-        {key:'past_tense',   label:'一般过去时反复错', count:12, detail:'近30天 12 次：was/were 混用、规则动词 +ed 漏掉', advice:'集中练 5 个高频不规则动词 + 一般过去时叙述'},
-        {key:'third_person', label:'三单反复错',       count:6,  detail:'近30天 6 次：he/she/it 后动词漏 -s', advice:'造句时刻意点名主语第三人称'},
-        {key:'countable',    label:'可数/不可数反复错',count:0,  detail:'', advice:''},
-        {key:'tense_mix',    label:'时态混用',          count:0,  detail:'', advice:''}
-      ]},
-      {key:'structure', label:'句型 / 结构', items:[
-        {key:'want_to',      label:'不会使用 want to + do', count:9, detail:'近30天 9 次：want 后直接跟动词原形', advice:'用 want to + 动词 造 10 句'},
-        {key:'comparative',  label:'不会使用比较级',        count:4, detail:'近30天 4 次', advice:''},
-        {key:'reason',       label:'不会组织原因表达',      count:3, detail:'近30天 3 次：because 从句缺失', advice:''},
-        {key:'cn_order',     label:'总是把中文语序直接搬到英语', count:0, detail:'', advice:''}
-      ]},
-      {key:'expression', label:'表达', items:[
-        {key:'same_structure', label:'造句反复出现同一种结构错误', count:5, detail:'近30天 5 次', advice:''},
-        {key:'monotonous',     label:'表达过于单一',              count:7, detail:'近30天 7 次：只会用 I think', advice:''},
-        {key:'function',       label:'某种交际功能不会表达',      count:2, detail:'近30天 2 次', advice:''}
-      ]},
-      {key:'listening', label:'听力能力', items:[
-        {key:'liaison',     label:'连读反复听不出来',                count:8, detail:'近30天 8 次', advice:''},
-        {key:'pattern',     label:'特定句型反复听不懂',              count:5, detail:'近30天 5 次', advice:''},
-        {key:'detail_info', label:'数字/时间/地点等信息反复识别错误', count:3, detail:'近30天 3 次', advice:''}
-      ]},
-      {key:'reading', label:'阅读理解', items:[
-        {key:'sentence_type',  label:'某类句型经常理解错',   count:0, detail:'', advice:''},
-        {key:'main_structure', label:'经常抓错主干',         count:6, detail:'近30天 6 次', advice:''},
-        {key:'long_sentence',  label:'长句拆解能力不足',     count:4, detail:'近30天 4 次', advice:''}
-      ]}
-    ],
-    spelling_count: 14,
-    spelling_note: '属「单词没记住」，交给闪卡星级处理。'
-  },
-  low_star_words: [
-    {word:'although', stars:2, total_attempts:5},
-    {word:'nevertheless', stars:1, total_attempts:3},
-    {word:'despite', stars:2, total_attempts:4}
-  ]
-};
-const DEMO_FLAG='eos_weak_demo';
-const DEMO_FORCE='eos_weak_demo_force';
-function useWeakDemo(){ try{ return localStorage.getItem(DEMO_FLAG)!=='0'; }catch(e){ return true; } }
-function setWeakDemo(on){ try{ localStorage.setItem(DEMO_FLAG, on?'1':'0'); }catch(e){} }
-function useWeakDemoForce(){ try{ return localStorage.getItem(DEMO_FORCE)==='1'; }catch(e){ return false; } }
-function setWeakDemoForce(on){ try{ localStorage.setItem(DEMO_FORCE, on?'1':'0'); }catch(e){} }
-/* 注入 3 周虚拟历史，使趋势图立即有折线（本周 < 上周 = 改善）。force=true 时覆盖已有快照 */
-function seedWeakSnapDemo(force){
-  if(!force && _wsnapLoad().length) return;
-  const offs=[21,14,7], fac=[2.0,1.5,1.15];
-  const snaps=offs.map((off,i)=>{
-    const d=new Date(); d.setDate(d.getDate()-off);
-    const ds=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
-    const map={};
-    MOCK_WEAK.capabilities.categories.forEach(c=>c.items.forEach(it=>{
-      const v=Math.max(0,Math.round((it.count||0)*fac[i]));
-      map['@'+c.key]=(map['@'+c.key]||0)+v;
-      if((it.count||0)>0) map[c.key+'|'+it.key]=v;
-    }));
-    return {d:ds, map:map};
-  });
-  try{ localStorage.setItem(WSNAP_KEY, JSON.stringify(snaps)); }catch(e){}
-}
 /* 扫描当前薄弱项，返回大类信号色：red=含阻塞 / yellow=含薄弱 / blue=含记忆项 */
 function weakSummaryMark(){
   const caps=(state.weak&&state.weak.capabilities)||{};
@@ -2697,21 +2618,6 @@ function weakSummaryMark(){
   }));
   return m;
 }
-function clearWeakDemo(){
-  setWeakDemo(false); setWeakDemoForce(false);
-  try{ localStorage.removeItem(WSNAP_KEY); }catch(e){}
-  toast('已清除演示数据，切回真实数据');
-  render('errors');
-}
-/* ===== 演示功能 seedWeakDemo（部署前整段删除 BEGIN） ===== */
-/* 手动「看演示数据」：强制覆盖真实数据，注入两周虚拟错误 + 趋势历史 */
-function seedWeakDemo(){
-  setWeakDemo(true); setWeakDemoForce(true);
-  seedWeakSnapDemo(true);
-  toast('已注入演示数据（两周）');
-  render('errors');
-}
-/* ===== 演示功能 seedWeakDemo（部署前整段删除 END） ===== */
 /* ---------- 薄弱项趋势 ----------
    后端只给「近30天累计次数」，没有按天的时间序列，所以趋势靠本地每日快照比：
    今天之前最后一次快照 vs 当前值 → 改善 / 恶化 / 稳定 / 新出现。
@@ -3060,21 +2966,7 @@ pages.listen=async function(el){
   const hasPass=mat&&mat.passage&&mat.questions&&mat.questions.length>0;
 
   el.innerHTML=`
-  <div class="card" style="border:1.5px solid var(--primary)">
-    <div style="display:flex;justify-content:space-between;align-items:center">
-      <h2 style="margin:0">🎧 今日听力</h2>
-      <span class="badge">${done}/${total}</span>
-    </div>
-    <div class="sub" style="margin-top:2px">阶段${cur} · W${cw} · D${cd}
-      ${mat?`· 已导入「${esc(mat.title||'')}」`:'· 系统生成'}
-    </div>
-    <div class="progressbar"><div style="width:${total?Math.min(done/total*100,100):0}%"></div></div>
-    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px">
-      <span class="badge" style="background:${parts.A?(parts.A.correct===parts.A.total?'var(--green-bg);color:var(--green)':'var(--red-bg);color:var(--red)'):'var(--primary-bg);color:var(--primary)'}">A 词汇听辨 ${parts.A?parts.A.correct+'/'+parts.A.total:'0/5'}</span>
-      <span class="badge" style="background:${parts.B?(parts.B.correct===parts.B.total?'var(--green-bg);color:var(--green)':'var(--red-bg);color:var(--red)'):'var(--primary-bg);color:var(--primary)'}">B 短句填空 ${parts.B?parts.B.correct+'/'+parts.B.total:'0/3'}</span>
-      <span class="badge" style="background:${parts.C?(parts.C.correct===parts.C.total?'var(--green-bg);color:var(--green)':'var(--red-bg);color:var(--red)'):'var(--primary-bg);color:var(--primary)'}">C 短文理解 ${parts.C?parts.C.correct+'/'+parts.C.total:'0/2'}</span>
-    </div>
-  </div>
+  <div class="card" id="listenTop" style="border:1.5px solid var(--primary)">${listenTopHtml()}</div>
 
   <div class="card">
     <div style="display:flex;justify-content:space-between;align-items:center;gap:8px">
@@ -3104,7 +2996,146 @@ pages.listen=async function(el){
   </div>
 
   ${renderListenParts({hasDlg,hasPass,mat})}`;
+  // 恢复当天已做的作答（提交过或没提交都保留），避免切页回来白做
+  listenRestoreAll();
 };
+
+/* 顶部进度卡：单独抽出来，提交后只刷这一块，绝不整页重渲染（否则会清空用户作答） */
+function listenTopHtml(){
+  const p=state.lp||{stage:0,week:1,day:1};
+  const cur=p.stage, cw=p.week, cd=p.day;
+  const mat=state.listenMat, lprog=state.listenProg;
+  const done=lprog?lprog.listening_done:0, total=(lprog&&lprog.listening_total)||10;
+  const parts=(lprog&&lprog.parts)||{};
+  return `
+    <div style="display:flex;justify-content:space-between;align-items:center">
+      <h2 style="margin:0">🎧 今日听力</h2>
+      <span class="badge">${done}/${total}</span>
+    </div>
+    <div class="sub" style="margin-top:2px">阶段${cur} · W${cw} · D${cd}
+      ${mat?`· 已导入「${esc(mat.title||'')}」`:'· 系统生成'}
+    </div>
+    <div class="progressbar"><div style="width:${total?Math.min(done/total*100,100):0}%"></div></div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px">
+      <span class="badge" style="background:${parts.A?(parts.A.correct===parts.A.total?'var(--green-bg);color:var(--green)':'var(--red-bg);color:var(--red)'):'var(--primary-bg);color:var(--primary)'}">A 词汇听辨 ${parts.A?parts.A.correct+'/'+parts.A.total:'0/5'}</span>
+      <span class="badge" style="background:${parts.B?(parts.B.correct===parts.B.total?'var(--green-bg);color:var(--green)':'var(--red-bg);color:var(--red)'):'var(--primary-bg);color:var(--primary)'}">B 短句填空 ${parts.B?parts.B.correct+'/'+parts.B.total:'0/3'}</span>
+      <span class="badge" style="background:${parts.C?(parts.C.correct===parts.C.total?'var(--green-bg);color:var(--green)':'var(--red-bg);color:var(--red)'):'var(--primary-bg);color:var(--primary)'}">C 短文理解 ${parts.C?parts.C.correct+'/'+parts.C.total:'0/2'}</span>
+    </div>`;
+}
+async function listenRefreshTop(){
+  try{ const pr=await api('/progress'); if(pr) state.lp={stage:pr.stage, week:pr.week, day:pr.day}; }catch(e){}
+  try{
+    const p=state.lp||{};
+    const r=await api(`/listening/${p.stage}/${p.week}/${p.day}`);
+    if(r){ state.listenMat=r.material||null; state.listenProg=r.progress||null; }
+  }catch(e){}
+  const box=document.getElementById('listenTop');
+  if(box) box.innerHTML=listenTopHtml();
+}
+
+/* ---------- 当天作答本地留存：刷新 / 切页 / 重进听力页都能看到自己做了什么 ---------- */
+const LANS_KEY='eos_listen_ans_v1';
+function _lansKey(){ const p=state.lp||{stage:0,week:1,day:1}; return (p.stage||0)+'-'+(p.week||1)+'-'+(p.day||1); }
+function _lansAll(){ try{ return JSON.parse(localStorage.getItem(LANS_KEY)||'{}')||{}; }catch(e){ return {}; } }
+function _lansGet(part){ const a=_lansAll(); const o=a[_lansKey()]; return (o&&o[part])||null; }
+function _lansSet(part, obj){
+  if(!part) return;
+  const a=_lansAll(), k=_lansKey();
+  a[k]=a[k]||{}; a[k][part]=obj||{};
+  try{ localStorage.setItem(LANS_KEY, JSON.stringify(a)); }catch(e){}
+}
+function _lansClearDay(stage, week, day){
+  const a=_lansAll();
+  delete a[(stage!=null?stage:(state.lp||{}).stage||0)+'-'+(week||(state.lp||{}).week||1)+'-'+(day||(state.lp||{}).day||1)];
+  try{ localStorage.setItem(LANS_KEY, JSON.stringify(a)); }catch(e){}
+}
+function partOfEl(el){ const b=el?el.closest('#partA,#partB,#partC'):null; return b?b.id.slice(4):''; }
+/* 采集当前作答快照 */
+function listenCollect(part, card){
+  if(!part||!card) return null;
+  if(part==='B') return {vals:Array.prototype.map.call(card.querySelectorAll('input.gapin'), function(i){ return i.value||''; })};
+  return {
+    sel:Array.prototype.map.call(card.querySelectorAll('[data-act=optTap]'), function(b){ return b.classList.contains('picked')?'1':'0'; }),
+    openq:Array.prototype.map.call(card.querySelectorAll('.openq'), function(q){
+      if(!q.dataset.done) return '';
+      return q.querySelector('.picked.ok')?'1':(q.querySelector('.picked.no')?'0':'');
+    })
+  };
+}
+/* 已答题数（实时） */
+function listenAnswered(part){
+  const box=document.getElementById('part'+part); if(!box) return 0;
+  if(part==='B'){
+    return Array.prototype.filter.call(box.querySelectorAll('input.gapin'), function(i){ return String(i.value||'').trim()!==''; }).length;
+  }
+  let n=0;
+  Array.prototype.forEach.call(box.querySelectorAll('[data-act=optTap]'), function(b){ if(b.classList.contains('picked')) n++; });
+  Array.prototype.forEach.call(box.querySelectorAll('.openq'), function(q){ if(q.dataset.done) n++; });
+  return n;
+}
+function updateLive(part){
+  if(!part) return;
+  const live=document.getElementById('live_'+part); if(!live) return;
+  live.textContent='已答 '+listenAnswered(part)+' / '+Math.max(state._tot[part]||1,1);
+}
+/* 填空答错：保留用户输入，只在旁边标出正确答案（不再清空） */
+function showGapAns(inp){
+  if(!inp) return;
+  const nxt=inp.nextSibling;
+  if(nxt && nxt.classList && nxt.classList.contains('gapans')) return;
+  const ans=inp.getAttribute('data-ans');
+  if(!ans) return;
+  const sp=document.createElement('span');
+  sp.className='gapans'; sp.textContent='→ '+ans;
+  inp.parentNode.insertBefore(sp, inp.nextSibling);
+}
+function lockListenPart(card){
+  if(!card) return;
+  Array.prototype.forEach.call(card.querySelectorAll('[data-act=optTap]'), function(b){ b.disabled=true; b.classList.add('locked'); });
+  Array.prototype.forEach.call(card.querySelectorAll('[data-act=openTap]'), function(b){ b.disabled=true; });
+}
+function listenRestoreAll(){ ['A','B','C'].forEach(listenRestorePart); }
+function listenRestorePart(part){
+  const st=_lansGet(part); if(!st) return;
+  const box=document.getElementById('part'+part); if(!box) return;
+  const card=box.closest('.card')||box;
+  if(part==='B'){
+    const ins=box.querySelectorAll('input.gapin');
+    (st.vals||[]).forEach(function(v,i){
+      const inp=ins[i]; if(!inp||!v) return;
+      inp.value=v; inp.readOnly=true;
+      const ok=normGap(v)===normGap(inp.getAttribute('data-ans'));
+      inp.classList.add(ok?'ok':'no');
+      if(!ok) showGapAns(inp);
+    });
+  } else {
+    const btns=box.querySelectorAll('[data-act=optTap]');
+    (st.sel||[]).forEach(function(v,i){
+      const b=btns[i]; if(!b||v!=='1') return;
+      listenMarkPicked(b);
+      Array.prototype.forEach.call(b.parentNode.querySelectorAll('[data-act=optTap]'), function(x){ x.disabled=true; x.classList.add('locked'); });
+    });
+    const opens=box.querySelectorAll('.openq');
+    (st.openq||[]).forEach(function(v,i){
+      const q=opens[i]; if(!q||v===''||q.dataset.done) return;
+      q.dataset.done='1';
+      const mk=document.createElement('span');
+      mk.className='picked '+(v==='1'?'ok':'no'); mk.style.display='none';
+      q.appendChild(mk);
+      Array.prototype.forEach.call(q.querySelectorAll('[data-act=openTap]'), function(b){ b.disabled=true; });
+      const fl=document.createElement('span');
+      fl.style.cssText='font-size:12px;font-weight:700;margin-left:8px;color:'+(v==='1'?'var(--green)':'var(--red)');
+      fl.textContent=v==='1'?'已记为听懂':'已记为未听懂';
+      const br=q.querySelector('.btnrow'); if(br) br.appendChild(fl);
+    });
+  }
+  updateLive(part);
+  if(st.done){
+    const btn=card.querySelector('[data-act=partSubmit][data-part='+part+']');
+    if(btn){ btn.disabled=true; btn.textContent='Part '+part+' 已记录 '+(st.correct||0)+'/'+Math.max(state._tot[part]||1,1); }
+    lockListenPart(card);
+  }
+}
 
 function renderListenParts(o){
   const wl=(state.today&&state.today.words)||[];
@@ -3166,7 +3197,8 @@ function gapInput(idx, ans){
   const has = (ans!==null && ans!==undefined && String(ans).trim()!=='');
   return `<input class="gapin${has?'':' noans'}" type="text" autocomplete="off" autocapitalize="off"
     autocorrect="off" spellcheck="false" data-idx="${idx}" data-ans="${esc(has?ans:'')}"
-    ${has?'':'data-noans="1"'} placeholder="${has?'?':'无答案'}" aria-label="第 ${idx+1} 空" />`;
+    ${has?'':'data-noans="1"'} placeholder="${has?'?':'无答案'}" aria-label="第 ${idx+1} 空"
+    oninput="updateLive('B')" />`;
 }
 /* 对话行：保留 A: / B: 前缀（A 蓝、B 绿），行首带朗读按钮 */
 function dlgLine(who, inner, speakText){
@@ -3338,11 +3370,8 @@ function openTap(el){
   flag.style.color=ok?'var(--green)':'var(--red)';
   flag.textContent=ok?'已记为听懂':'已记为未听懂';
   q.querySelector('.btnrow').appendChild(flag);
-  const live=document.getElementById('live_C');
-  if(live){
-    const done=q.parentNode.querySelectorAll('.openq[data-done]').length;
-    live.textContent=`已答 ${done} / ${state._tot.C}`;
-  }
+  updateLive('C');
+  _lansSet('C', listenCollect('C', q.closest('.card')));
   toast(ok?'✅ 已记为听懂':'❌ 已记为未听懂');
 }
 
@@ -3362,7 +3391,7 @@ async function partSubmit(part){
         inp.readOnly=true;
         inp.classList.add(ok?'ok':'no');
         if(ok){ correct++; }
-        else{ inp.value=''; inp.placeholder=inp.getAttribute('data-ans')||'?'; inp.classList.add('showans'); }
+        else{ showGapAns(inp); }          // 保留你填的内容，只在旁边标出正确答案
       });
       state._tot.B=ins.length||1;
     } else {
@@ -3371,15 +3400,15 @@ async function partSubmit(part){
   }
   const total=Math.max(state._tot[part]||1,1);
   const cur=state.lp||{stage:0,week:1,day:1};
-  if(btn){btn.disabled=true;btn.textContent='已记录';}
+  // 锁定作答 + 本地留存（刷新/切页回来仍在），绝不整页重渲染
+  lockListenPart(card);
+  _lansSet(part, Object.assign(listenCollect(part, card)||{}, {done:1, correct:correct}));
+  if(btn){ btn.disabled=true; btn.textContent=`Part ${part} 已记录 ${correct}/${total}`; }
+  updateLive(part);
   await api('/listening/answer',{method:'POST',headers:{'Content-Type':'application/json'},
     body:JSON.stringify({stage:cur.stage,week:cur.week,day:cur.day,part:part,correct:correct,total:total})});
-  toast(`Part ${part}：答对 ${correct}/${total}，已记录${correct<total?'（空的正确词已填出）':''}`);
-  // 留 2.6 秒看对错；若用户已切到别的页，就不要强行把他们拽回听力页
-  setTimeout(()=>{
-    const onListen=document.querySelector('.bottomnav a[data-page=listen]');
-    if(onListen && onListen.classList.contains('active')) pages.listen(document.getElementById('content'));
-  },2600);
+  toast(`Part ${part}：答对 ${correct}/${total}，已记录（作答保留在页面上，可对照看）`);
+  listenRefreshTop();                      // 只刷新顶部进度条，不清空任何作答
 }
 function normGap(s){
   return String(s==null?'':s).trim().toLowerCase()
@@ -3389,22 +3418,26 @@ function normGap(s){
 /* 点选项：一次作答，锁定本题。选对=绿(ok)，选错=红(no)且把正确项也标绿。partSubmit 统计 .chosen.ok */
 function optTap(el){
   if(el.classList.contains('picked')) return;      // 本题已作答
+  const ok=listenMarkPicked(el);
+  toast(ok?'✅ 对':'❌ 答错');
+  const part=partOfEl(el);
+  _lansSet(part, listenCollect(part, el.closest('.card')));
+  updateLive(part);                                 // 「已答 X/N」跟着进度走
+}
+/* 标记一次选择：选对=绿(ok)，选错=红(no)且把正确项也标绿；返回是否答对 */
+function listenMarkPicked(el){
   const word=el.getAttribute('data-word');
   const opt=el.getAttribute('data-opt');
   const q=el.parentNode;
   const isCorrect=String(opt).toLowerCase()===String(word||'').toLowerCase();
-  // 用户本次选择标绿/红并记为 picked（本题锁定）
   el.classList.add('picked');
   el.classList.add(isCorrect?'ok':'no');
   if(!isCorrect){
-    // 答错：把正确项也标绿提示
     q.querySelectorAll('[data-opt]').forEach(b=>{
       if(String(b.getAttribute('data-opt')).toLowerCase()===String(word||'').toLowerCase()) b.classList.add('ok');
     });
-    toast('❌ 答错');
-  } else {
-    toast('✅ 对');
   }
+  return isCorrect;
 }
 function tSubOk(el){
   const no=el.getAttribute('data-no');
@@ -3618,43 +3651,6 @@ pages.sum=async function(el){
   const dash=`<span style="color:var(--muted)">—</span>`;
   const noDataNote=`<div class="sub" style="margin-top:6px;color:var(--muted)">注：学习天数 / 新学词汇 / 计划完成率等指标需后端统计接口提供，当前后端未返回，按“不编造”原则显示 —。</div>`;
 
-  /* ---------- 演示数据（周报/月报） ---------- */
-  const DEMO_FLAG_SUM='eos_sum_demo';
-  function useSumDemo(){ try{ return localStorage.getItem(DEMO_FLAG_SUM)!=='0'; }catch(e){ return true; } }
-  function setSumDemo(on){ try{ localStorage.setItem(DEMO_FLAG_SUM, on?'1':'0'); }catch(e){} }
-  const demo=useSumDemo();
-  const demoStudyDays=5;
-  const demoNewWords=42;
-  const demoReviews=63;
-  const demoSentences=12;
-  const demoListeningQ=8;
-  const demoListeningC=6;
-  const demoQuizN=2;
-  const demoQuizAvg=82;
-  const demoPlanRate=78;
-  const demoErrorRate=15;
-  const demoLastStudyDays=4;
-  const demoLastNewWords=28;
-  const demoLastReviews=55;
-  const demoLastErrorRate=22;
-  const demoPlanVocab=80;
-  const demoPlanSent=60;
-  const demoPlanListen=75;
-
-  /* 演示数据：错误概览 / 本周需注意 / 错误趋势 也填充，方便先看结构 */
-  if(demo){
-    const _recent=n=>{ const out=[]; const base=new Date(2026,7,23); for(let k=0;k<n;k++){ const dt=new Date(base); dt.setDate(base.getDate()+(k%14)); out.push({created_at: dt.getFullYear()+'-'+('0'+(dt.getMonth()+1)).slice(-2)+'-'+('0'+dt.getDate()).slice(-2)}); } return out; };
-    errTypes=[
-      {type:'时态混乱', level:'🔴 阻塞', count_30d:18, total:42, recent:_recent(18)},
-      {type:'介词搭配错误', level:'🟡 薄弱', count_30d:11, total:23, recent:_recent(11)},
-      {type:'冠词缺失', level:'🟡 薄弱', count_30d:7, total:15, recent:_recent(7)},
-      {type:'拼写错误', level:'🔵 记忆', count_30d:9, total:30, recent:_recent(9)},
-    ];
-    confirmed=errTypes.filter(e=>{const lv=String(e.level||''); return lv.indexOf('🔴')>=0||lv.indexOf('🟡')>=0;});
-    byDay={}; errTypes.forEach(e=>{(e.recent||[]).forEach(r=>{const d=String(r.created_at||'').slice(0,10); if(d) byDay[d]=(byDay[d]||0)+1;});});
-    totalErr=errTypes.reduce((s,e)=>s+(Number(e.count_30d)||0),0);
-  }
-
   const errOverview = errTypes.length ? errTypes.map(e=>{
     const lv=(e.level||'').match(/^(\S+)/);
     return `<div class="sumrow"><span class="srl"><b>${esc(e.type)}</b><span class="sdot" style="margin-left:6px">${esc(lv?lv[1]:'')}</span></span><span class="srr">近30天 ${e.count_30d||0} · 累计 ${e.total||0}</span></div>`;
@@ -3668,19 +3664,19 @@ pages.sum=async function(el){
   const weekHtml=`
     <div class="card" style="border:1.5px solid var(--primary)">
       <h2>📚 本周学习</h2>
-      ${_anaMetric('本周主题', demo?'Unit 3 - Daily Routine':dash)} ${_anaMetric('学习天数', demo?demoStudyDays+' 天':dash)} ${_anaMetric('计划完成率', demo?demoPlanRate+'%':dash)}
-      ${_anaMetric('新学词汇', demo?demoNewWords+' 个':dash)} ${_anaMetric('单词复习', demo?demoReviews+' 次':dash)} ${_anaMetric('造句', demo?demoSentences+' 句':dash)}
-      ${_anaMetric('听力', demo?demoListeningQ+' 题（对 '+demoListeningC+'）':dash)} ${_anaMetric('周测', demo?demoQuizN+' 次，均分 '+demoQuizAvg:dash)} ${demo?'':noDataNote}
+      ${_anaMetric('本周主题', dash)} ${_anaMetric('学习天数', dash)} ${_anaMetric('计划完成率', dash)}
+      ${_anaMetric('新学词汇', dash)} ${_anaMetric('单词复习', dash)} ${_anaMetric('造句', dash)}
+      ${_anaMetric('听力', dash)} ${_anaMetric('周测', dash)} ${noDataNote}
     </div>
     <div class="card"><h2>📈 学习效果</h2>
-      ${_anaMetric('听力正确率', demo?Math.round(demoListeningC/demoListeningQ*100)+'%':dash)} ${_anaMetric('周测平均分', demo?demoQuizAvg+' 分':dash)} ${_anaMetric('造句正确率', demo?'83%':dash)} ${_anaMetric('错误率', demo?demoErrorRate+'%':dash)}
+      ${_anaMetric('听力正确率', dash)} ${_anaMetric('周测平均分', dash)} ${_anaMetric('造句正确率', dash)} ${_anaMetric('错误率', dash)}
     </div>
     <div class="card"><h2>🆚 本周 vs 上周</h2>
-      <div class="sub" style="margin-top:4px">${demo?'对比基于演示数据，仅展示结构。':''}绿色=向好，红色=向差。</div>
-      ${_anaTrend('学习天数', demo?demoStudyDays:null, demo?demoLastStudyDays:null, ' 天')}
-      ${_anaTrend('新学词汇', demo?demoNewWords:null, demo?demoLastNewWords:null, ' 个')}
-      ${_anaTrend('单词复习', demo?demoReviews:null, demo?demoLastReviews:null, ' 次')}
-      ${_anaTrend('错误率', demo?demoErrorRate:null, demo?demoLastErrorRate:null, '%', true)}
+      <div class="sub" style="margin-top:4px">绿色=向好，红色=向差。以下指标需后端统计接口提供，当前显示 —。</div>
+      ${_anaTrend('学习天数', null, null, ' 天')}
+      ${_anaTrend('新学词汇', null, null, ' 个')}
+      ${_anaTrend('单词复习', null, null, ' 次')}
+      ${_anaTrend('错误率', null, null, '%', true)}
     </div>
     <div class="card"><h2>❌ 错误概览</h2>
       <div class="sub" style="margin-top:4px">仅展示错误事实，不代表能力薄弱；错误 ≠ 薄弱项。</div>
@@ -3692,7 +3688,7 @@ pages.sum=async function(el){
       ${notice}
     </div>
     <div class="card"><h2>🎯 计划完成情况</h2>
-      ${_anaMetric('词汇计划完成', demo?demoPlanVocab+'%':dash)} ${_anaMetric('造句计划完成', demo?demoPlanSent+'%':dash)} ${_anaMetric('听力计划完成', demo?demoPlanListen+'%':dash)} ${demo?'':noDataNote}
+      ${_anaMetric('词汇计划完成', dash)} ${_anaMetric('造句计划完成', dash)} ${_anaMetric('听力计划完成', dash)} ${noDataNote}
     </div>
     <div class="card"><h2>📈 错误率趋势</h2>
       <div class="sub" style="margin-top:4px">按真实错误记录的自然日统计；无记录日不显示、不补 0。</div>
@@ -3701,18 +3697,14 @@ pages.sum=async function(el){
 
   const monthHtml=`
     <div class="card" style="border:1.5px solid var(--primary)"><h2>📚 本月概况</h2>
-      ${_anaMetric('学习天数', demo?'18 天':dash)} ${_anaMetric('已到期计划完成率', demo?'76%':dash)} ${_anaMetric('新学词汇', demo?'156 个':dash)}
-      ${_anaMetric('单词复习', demo?'240 次':dash)} ${_anaMetric('造句', demo?'48 句':dash)} ${_anaMetric('听力', demo?'32 题（对 24）':dash)} ${_anaMetric('周测', demo?'8 次，均分 79':dash)} ${demo?'':noDataNote}
+      ${_anaMetric('学习天数', dash)} ${_anaMetric('已到期计划完成率', dash)} ${_anaMetric('新学词汇', dash)}
+      ${_anaMetric('单词复习', dash)} ${_anaMetric('造句', dash)} ${_anaMetric('听力', dash)} ${_anaMetric('周测', dash)} ${noDataNote}
     </div>
     <div class="card"><h2>📈 近四周趋势</h2>
-      ${demo?'<div class="sub" style="margin-top:4px">趋势基于演示数据，仅展示结构。</div>':''}
-      ${_anaMiniLine([{label:'W1',v:4},{label:'W2',v:5},{label:'W3',v:4},{label:'W4',v:5}],'学习天数')}
-      ${_anaMiniLine([{label:'W1',v:72},{label:'W2',v:78},{label:'W3',v:75},{label:'W4',v:80}],'词汇完成率')}
-      ${_anaMiniLine([{label:'W1',v:60},{label:'W2',v:65},{label:'W3',v:70},{label:'W4',v:75}],'听力正确率')}
-      ${_anaMiniLine([{label:'W1',v:22},{label:'W2',v:18},{label:'W3',v:16},{label:'W4',v:14}],'错误率',true)}
+      <div class="sub" style="margin-top:4px">近四周趋势需要后端统计接口支持；当前未返回，按“不编造”原则不绘制曲线。</div>
     </div>
     <div class="card"><h2>📚 本月完成情况</h2>
-      ${_anaProgress('词汇', demo?156:0, demo?200:0)} ${_anaProgress('造句', demo?48:0, demo?60:0)} ${_anaProgress('听力', demo?32:0, demo?40:0)} ${demo?'':noDataNote}
+      ${_anaProgress('词汇', 0, 0)} ${_anaProgress('造句', 0, 0)} ${_anaProgress('听力', 0, 0)} ${noDataNote}
     </div>
     <div class="card"><h2>❌ 本月错误趋势</h2>
       <div class="sub" style="margin-top:4px">仅展示错误事实与趋势，不进行能力诊断。</div>
@@ -3743,10 +3735,6 @@ pages.sum=async function(el){
   }
   state.sumText=reportText;
 
-  const demoBanner = demo
-    ? `<div class="card" style="margin-top:10px;border:1.5px dashed #f59e0b;background:#fffbeb"><b>⚠️ 演示数据</b>：当前周报/月报使用虚拟数据展示完整结构（学习天数、词汇、计划完成率、vs上周对比、趋势等）。<button class="btn ghost sm" data-act="clearSumDemo" style="margin-left:6px">🧹 清除演示数据</button></div>`
-    : `<div class="card" style="margin-top:10px;border:1.5px dashed var(--primary);background:var(--primary-bg)">当前后端未返回学习天数/词汇/计划完成率等统计指标，显示 —。<button class="btn ghost sm" data-act="seedSumDemo" style="margin-left:6px">🧪 看演示数据</button></div>`;
-
   /* 最近活动（方案 B 内嵌） */
   const recentActs=_recentActivityHtml();
 
@@ -3758,7 +3746,6 @@ pages.sum=async function(el){
     ${tabBtn('copy','📋 复制报告')}
   </div>
   <div class="sub" style="margin-bottom:8px">${tab==='month'?('周期：'+period.month):('周期：'+period.week)}</div>
-  ${demoBanner}
   ${bodyHtml}
   ${recentActs}
   `;
@@ -3933,7 +3920,7 @@ function copyTrainPrompt(){
     '','────────────────────────────',
     '【本次输出要求】',
     '1）训练依据优先级：① 若上方已列出结构化训练项目 → 只练这些，不得新增/扩大范围；② 若未列出结构化项目，但上方「PGOS 学习数据」中已存在 🔴 必须训练 或 🟡 建议训练 的问题 → 依据这些数据直接出卷，不要因为没有结构化项目而拒绝；③ 若既没有结构化项目，也没有 🔴/🟡 数据 → 直接说明无项目可练，不要自行创造训练。',
-    '2）采用回合制：一轮只给够判断表现的少量题目，不要一次甩几十道。',
+    '2）采用回合制：一轮直接出满 10～15 题（一次出够，做完再判断），不要只给 2～3 题，也不要一次甩几十道。',
     '3）每轮结束输出「本轮训练记录」；仅当达到结束标准时再输出「项目最终记录」（见提示词第十九节）。',
     '4）除正常训练输出外，在回答末尾必须再输出一段「<<<TEST>>>…<<<END>>>」机器可读试卷（格式见提示词第二十六节），PGOS 才能直接导入并自动判分。'
   ];
@@ -4054,7 +4041,7 @@ function trainParse(txt){
       intervention_level:String(p.intervention_level||'SUGGESTED').toUpperCase(),
       training_goal:p.training_goal||'', training_boundary:p.training_boundary||'',
       forbidden:p.forbidden||[], exit_standard:p.exit_standard||'',
-      exit_rule:Object.assign({independent_correct:2, consecutive_independent:2, max_rounds:6, per_round:4}, p.exit_rule||{}),
+      exit_rule:Object.assign({independent_correct:2, consecutive_independent:2, max_rounds:6, per_round:10}, p.exit_rule||{}),
       status:p.status||'NOT_STARTED', items:items,
       created_at:p.created_at||_nowISO(), updated_at:_nowISO()
     });
@@ -4116,6 +4103,54 @@ function trainRenderPaper(el){
   html += ok ? renderTestPaper(state.testParsed) : '<div class="sub">试卷为空，请重新导入。</div>';
   el.innerHTML=html;
 }
+/* 历史成绩汇总：把本地训练记录算成「练了多少 / 对了多少 / 错了多少」 */
+function trainScoreSummary(pid){
+  const d=trainLoad();
+  const sess=(d.sessions||[]).filter(function(x){ return !pid||x.project_id===pid; });
+  const ids={}; sess.forEach(function(x){ ids[x.session_id]=1; });
+  const atts=(d.attempts||[]).filter(function(a){ return ids[a.session_id]; });
+  const valid=atts.filter(function(a){ return !a.manual; });
+  const ok=valid.filter(function(a){ return a.is_correct; }).length;
+  return {
+    sessions:sess.length,
+    rounds:(d.rounds||[]).filter(function(r){ return ids[r.session_id]; }).length,
+    valid:valid.length, correct:ok, wrong:valid.length-ok,
+    rate: valid.length?Math.round(ok/valid.length*100):null,
+    hint: atts.filter(function(a){ return a.used_hint; }).length,
+    indep: valid.filter(function(a){ return a.is_independent; }).length,
+    pass: sess.filter(function(x){ return String(x.final_status||'').toUpperCase()==='PASS'; }).length,
+    last: sess.length?(sess[sess.length-1].ended_at||sess[sess.length-1].started_at):null
+  };
+}
+function trainScoreCard(){
+  const d=trainLoad(), ps=d.projects||[];
+  const t=trainScoreSummary(null);
+  const rows=ps.filter(function(p){ return (d.sessions||[]).some(function(x){ return x.project_id===p.project_id; }); })
+    .map(function(p){
+      const x=trainScoreSummary(p.project_id);
+      return `<div class="trow"><span class="tk">${esc(ABILITY_CN[p.ability]||p.ability||'其他')}</span>
+        <span>${x.sessions} 次 · 作答 <b>${x.valid}</b> · 正确 <b style="color:var(--green)">${x.correct}</b> · 错误 <b style="color:var(--red)">${x.wrong}</b> · 正确率 <b>${x.rate!=null?x.rate+'%':'—'}</b></span></div>`;
+    }).join('');
+  const bar=t.rate!=null?`<div class="progressbar" style="margin-top:8px"><div style="width:${t.rate}%"></div></div>`:'';
+  return `<div class="card" style="margin-top:12px;border:1.5px solid var(--primary);background:var(--primary-bg)">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px">
+        <div style="font-size:14px;font-weight:800;color:var(--primary)">📈 历史成绩</div>
+        <button class="btn ghost sm" data-act="trainHistoryAll">全部记录 ›</button>
+      </div>
+      <div class="sub" style="margin-top:2px">只统计你真实的本地训练记录：练了多少、对了多少、错了多少。</div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:9px">
+        <span class="badge">训练 ${t.sessions} 次</span>
+        <span class="badge">有效作答 ${t.valid} 题</span>
+        <span class="badge" style="background:var(--green-bg);color:var(--green)">正确 ${t.correct}</span>
+        <span class="badge" style="background:var(--red-bg);color:var(--red)">错误 ${t.wrong}</span>
+        <span class="badge" style="background:#fff;color:var(--primary)">正确率 ${t.rate!=null?t.rate+'%':'—'}</span>
+      </div>
+      ${bar}
+      ${rows?`<div style="margin-top:9px;background:#fff;border-radius:9px;padding:2px 4px">${rows}</div>`
+            :'<div class="sub" style="margin-top:8px">还没有训练记录，做完一次练习这里就有数了。</div>'}
+      <div class="sub" style="margin-top:6px">独立正确 ${t.indep} 次 · 用过提示 ${t.hint} 次 · 达标(PASS) ${t.pass} 次${t.last?(' · 最近 '+_fmtWhen(t.last)):''}</div>
+    </div>`;
+}
 function trainRenderList(el){
   const d=trainLoad(), ps=d.projects;
   const listHtml = ps.length ? ps.map(p=>{
@@ -4158,11 +4193,22 @@ function trainRenderList(el){
 
     ${listHtml}
 
+    ${trainScoreCard()}
+
     <div class="card" style="margin-top:12px">
-      <div style="font-size:14px;font-weight:800">📥 导入训练项目 / 试卷</div>
-      <div class="sub" style="margin-top:4px">把 AI 输出的 JSON 整段粘进来。同一个项目 ID 再次导入会更新题目并保留训练历史。</div>
-      <textarea class="codebox" id="trainJson" placeholder='{"projects":[{"project_id":"EXP-001","ability":"EXPRESSION","problem":"表达过于单一", ...}]}' style="margin-top:9px"></textarea>
-      <button class="btn" style="margin-top:9px" data-act="trainImport">导入</button>
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px">
+        <div style="font-size:14px;font-weight:800">📥 导入训练项目 / 试卷</div>
+        <button class="btn ghost sm" data-act="trainFold">▽ 展开 / 收起</button>
+      </div>
+      <div class="sub" style="margin-top:2px">把 AI 输出的 JSON（或「<<<TEST>>>…<<<END>>>」试卷）整段粘进来。同一个项目 ID 再次导入会更新题目并保留训练历史。</div>
+      <div id="trainImportBody" style="margin-top:8px">
+        <textarea class="codebox" id="trainJson" placeholder='{"projects":[{"project_id":"EXP-001","ability":"EXPRESSION","problem":"表达过于单一", ...}]}'></textarea>
+        <div class="btnrow" style="margin-top:8px">
+          <button class="btn green" data-act="trainSample">✨ 填入示例格式</button>
+          <button class="btn" data-act="trainImport">🚀 解析并导入</button>
+        </div>
+        <div class="sub" style="margin-top:6px">粘贴后点「🚀 解析并导入」：JSON 会存成训练项目，试卷文本会直接进作答判分。</div>
+      </div>
     </div>
 
     <div class="card" style="margin-top:12px;border:1.5px solid var(--primary);background:var(--primary-bg)">
@@ -4178,15 +4224,16 @@ function trainRenderList(el){
     </div>`;
 }
 /* 输出格式：告诉 AI 用什么结构吐试卷（JSON）。补习提示词会把它附在最后，作为同一份。 */
-function trainFormatBlock(){
-  const sample=JSON.stringify({type:'PGOS_TRAINING_PACK',version:1,projects:[{
+/* 示例 JSON：补习页「✨ 填入示例」与提示词里的输出格式共用同一份 */
+function trainSampleJson(){
+  return JSON.stringify({type:'PGOS_TRAINING_PACK',version:1,projects:[{
     project_id:'EXP-001', ability:'EXPRESSION', problem:'表达过于单一',
     priority:'P1', intervention_level:'MUST',
     training_goal:'能够在基础句后使用 because 补充一个简单原因',
     training_boundary:'because + 简单原因表达',
     forbidden:['although','however','复杂从句','过去时','条件句'],
     exit_standard:'能够在两个不同场景中独立完成目标表达',
-    exit_rule:{independent_correct:2, consecutive_independent:2, max_rounds:6, per_round:4},
+    exit_rule:{independent_correct:2, consecutive_independent:2, max_rounds:6, per_round:12},
     status:'NOT_STARTED',
     items:[
       {id:'EXP-001-Q1', type:'FILL', prompt:'I stay home because ______.', accepted:['I was tired','I am tired'], hints:['想想原因用什么开头','用 because 后面接一个完整小句','I was tired']},
@@ -4194,6 +4241,9 @@ function trainFormatBlock(){
       {id:'EXP-001-Q3', type:'STRUCTURE', prompt:'用 because 把两句连起来：I stayed home. I was tired.', must_include:['because'], must_not_include:['although','however'], hints:['先写主句，再加 because']},
       {id:'EXP-001-Q4', type:'SENTENCE', prompt:'用 because 说一句你今天没出门的原因。', hints:['I stayed home because ...']}
     ]}]}, null, 1);
+}
+function trainFormatBlock(){
+  const sample=trainSampleJson();
   return [
     '【试卷输出格式】',
     '请你除了正常训练输出之外，再额外输出一份严格符合下面格式的 JSON，我要把它整段复制进 PGOS 的补习模块。',
@@ -4205,7 +4255,8 @@ function trainFormatBlock(){
     '4）CHOICE 必须有 options 数组（每项 {key,text}）和 answer；FILL 必须有 accepted 数组（可接受答案，可多个）；',
     '   STRUCTURE 必须有 must_include，可选 must_not_include；SENTENCE 由学习者自评，不用给标准答案。',
     '5）hints 是分级提示，最多 4 条，从轻到重，不给完整答案在前三条里。',
-    '6）题量控制在 4～12 题一轮够用即可，不要一次出几十道。',
+    '6）题量：每个训练项目一轮必须出 10～15 题。少于 10 题样本不足（无法判断表现），多于 15 题会拖长单回合；',
+    '   exit_rule.per_round 请填 10～15 之间的整数，并与 items 里的实际题数保持一致。',
     '7）exit_rule 是用来判断本项目能否结束的规则：independent_correct=需要几次独立正确，consecutive_independent=需要几次连续独立正确，max_rounds=最多几个回合，per_round=每回合几题。不要删字段。',
     '',
     '示例（照着这个结构写，内容换成我们这次的真实训练项目）：',
@@ -4237,7 +4288,7 @@ function trainStart(pid){
 function trainNewRound(){
   const tr=state.tr, d=trainLoad();
   const p=d.projects.find(x=>x.project_id===tr.pid);
-  const per=Math.max(1, Math.min(6, Number(((p.exit_rule||{}).per_round)||4)));
+  const per=Math.max(1, Math.min(15, Number(((p.exit_rule||{}).per_round)||10)));
   const usedIds=new Set((d.attempts||[]).filter(a=>a.session_id===tr.session_id).map(a=>a.question_id));
   const fresh=(p.items||[]).filter(q=>!usedIds.has(q.id));
   const pool=fresh.length?fresh:(p.items||[]);
@@ -4387,7 +4438,7 @@ function trainNext(){
 function trainFinishRound(){
   const tr=state.tr, d=trainLoad();
   const p=d.projects.find(x=>x.project_id===tr.pid);
-  const rule=Object.assign({independent_correct:2, consecutive_independent:2, max_rounds:6, per_round:4}, (p&&p.exit_rule)||{});
+  const rule=Object.assign({independent_correct:2, consecutive_independent:2, max_rounds:6, per_round:10}, (p&&p.exit_rule)||{});
   const needIndep=Number(rule.independent_correct||2), needConsec=Number(rule.consecutive_independent||2);
   const maxR=Number(rule.max_rounds||6);
   const passed=(tr.indep||0)>=needIndep || (tr.consec||0)>=needConsec;
@@ -4516,6 +4567,7 @@ function trainRenderHistory(el){
       <span style="font-weight:800;font-size:15.5px;flex:1;min-width:0">📈 训练历史${pid?(' · '+esc(pid)):''}</span>
     </div>
     <div class="sub" style="margin-top:8px">这里的 PASS / NEEDS_REVIEW 只表示当次训练表现，不等于长期能力已经改变。</div>
+    ${trainScoreCard()}
     ${html}`;
 }
 function trainShowHistory(pid){ state.trainHistPid=pid; state.trainMode='history'; render('train'); }
@@ -4590,6 +4642,7 @@ async function listenImport(){
     const box=document.getElementById('listenImportRes'); if(!box){toast('完成');return;}
     if(r&&r.ok){
       saveQBank(text);
+      _lansClearDay(stage, week, day);          // 材料换了，旧作答不再有效
       box.innerHTML=`<div class="res" style="background:#f0fdf4;border-color:#bbf7d0;margin-top:8px">
         ✅ 已导入 阶段${stage}·W${week}·D${day}「${esc(r.title||'')}」
         · 对话 ${r.dialogue_lines} 句 · 填空 ${r.blank_count} · 选择 ${r.question_count} ${r.replaced?'（覆盖旧材料）':''}
@@ -5514,22 +5567,25 @@ although 使用错误
 达到项目结束标准
 ↓
 结束项目
-训练 AI 不应一次性生成大量题目然后机械执行。
+训练 AI 不应一次性生成远超本回合所需的题目然后机械执行。
 专项训练应采用：
 少量任务 → 判断表现 → 调整难度 → 再训练
 十、回合制训练原则
-每个回合只提供足以判断当前目标表现的少量任务。
-不追求题目数量。
-回合任务数量可以根据：
+每个回合提供足以判断当前目标表现的一批任务。
+题量硬性要求：每个训练项目每回合固定出 10～15 题。
+少于 10 题样本不足，不足以判断表现；
+多于 15 题会拖长单回合，降低训练密度。
+回合任务数量可以在 10～15 这个区间内根据：
 能力类型
 训练目标
 当前表现
 任务难度
 是否需要迁移验证
 动态决定。
-不得为了“看起来训练充分”而无限增加题目。
+不得为了“看起来训练充分”而无限增加题目，
+也不得只出 2～3 题就结束一回合。
 默认原则：
-够判断，就停止本回合。
+一次把本回合的 10～15 题出够，做完再判断。
 而不是：
 题目越多越好。
 十一、训练过程设计

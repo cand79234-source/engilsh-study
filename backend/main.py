@@ -19,7 +19,6 @@ import fileimport
 import report as _report
 import training as _training
 import link as _link
-import demo
 
 app = FastAPI(title="English OS")
 
@@ -30,84 +29,6 @@ app = FastAPI(title="English OS")
 ACCESS_TOKEN = (os.environ.get("EOS_TOKEN") or "").strip()
 # 健康检查/保活不鉴权：Render 的 healthCheck 与 UptimeRobot 无法带自定义头
 PUBLIC_API_PATHS = {"/api/health"}
-
-
-@app.get("/api/demo/status")
-def demo_status():
-    """演示模式是否可用（前端据此决定要不要显示切换入口）。
-
-    不鉴权也能查：它只回答「这份部署有没有带演示数据包」，不泄露任何真实数据。
-    """
-    return {"available": demo.available(), "meta": demo.meta(),
-            "routes": sorted(demo.READ_ROUTES)}
-
-
-@app.post("/api/demo/clear")
-def demo_clear():
-    """一键清空示例数据：只删 is_demo=1 的行，真实数据一行不动。
-
-    示例数据（8 周模拟曲线）只可能来自显式写入，正常链路不会产线 is_demo=1 的行，
-    所以即使库里没有示例数据，这个接口也是安全的空操作。
-    """
-    removed = {}
-    conn = get_conn()
-    try:
-        for table in ("errors", "quizzes", "sentences", "word_output"):
-            try:
-                removed[table] = int(
-                    conn.execute("DELETE FROM %s WHERE is_demo = 1" % table).rowcount or 0)
-            except Exception:
-                removed[table] = 0  # 该表没有 is_demo 列 → 跳过，不动任何数据
-        conn.commit()
-    finally:
-        conn.close()
-    return {"ok": True, "removed": removed, "total": sum(removed.values())}
-
-
-class DemoModeMiddleware(BaseHTTPMiddleware):
-    """演示模式（?demo=1）：读返回快照，写一律拒绝。
-
-    挂在鉴权之后、业务之前。网址带 demo=1 才生效；
-    不带 demo=1 时这里一行都不干预，真实数据该怎么走还怎么走。
-    """
-
-    async def dispatch(self, request, call_next):
-        # 只有显式带 demo 参数才进入演示模式
-        try:
-            demo_on = request.query_params.get("demo") in ("1", "true", "yes")
-        except Exception:
-            demo_on = False
-        if not demo_on:
-            return await call_next(request)
-
-        path = request.url.path
-        if not path.startswith("/api/"):
-            return await call_next(request)
-
-        # 写操作：直接拒绝。演示页手滑点了保存也不能污染真实数据。
-        if request.method not in ("GET", "HEAD", "OPTIONS"):
-            return JSONResponse(
-                {"ok": False, "error": "演示模式不支持保存（数据未写入）。"
-                                       "去掉网址里的 ?demo=1 即可正常使用。"},
-                status_code=403)
-
-        status, data = demo.get(path)
-        if status == "pass":
-            # 配置类接口（课程结构、导入格式…）跟学习数据无关，
-            # 拦了只会让页面莫名其妙报错，直接走真实数据。
-            return await call_next(request)
-        if status == "miss":
-            # 这个接口没有演示数据：明确告诉前端，而不是静默返回真实数据
-            # （否则你会以为自己在看演示，其实看到的是真实数据）
-            return JSONResponse(
-                {"ok": False,
-                 "error": "演示模式没有这个接口的数据。",
-                 "demo": True, "path": path},
-                status_code=404)
-        out = dict(data) if isinstance(data, dict) else data
-        if isinstance(out, dict):
-            out["_demo"] = True
-        return JSONResponse(out)
 
 
 class TokenAuthMiddleware(BaseHTTPMiddleware):
@@ -139,10 +60,6 @@ class TokenAuthMiddleware(BaseHTTPMiddleware):
 # 我们要 CORS 处理 OPTIONS 预检（含 ACAO 头），所以 CORS 后注册。
 # TokenAuth 早于 CORS 执行，但已对 OPTIONS 放行（见上面 dispatch），CORS 再补头。
 app.add_middleware(TokenAuthMiddleware)
-# DemoMode 后注册 → 比 TokenAuth 更靠近请求，先执行。
-# 演示数据只是公开快照，让它在鉴权之前拦截，这样开了口令的站点
-# 也能直接用 ?demo=1 给别人看效果，不必泄露真实口令。
-app.add_middleware(DemoModeMiddleware)
 app.add_middleware(
     CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
