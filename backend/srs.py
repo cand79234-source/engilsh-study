@@ -7,6 +7,7 @@
 - 复习采用主动回忆：给出词，要求用户自己造句，再由判定。
 - 每天自动把到期项注入"今日复习"（需求第十七节）。
 """
+import json
 from datetime import date, datetime, timedelta
 from db import get_conn, ts
 
@@ -267,16 +268,100 @@ def weak_output_words(threshold=3, limit=20):
     return [dict(r) for r in rows]
 
 
-def flashcard_items(limit=50):
+def _batch_by_word(conn, table, cols, words, batch=200):
+    """按 word 批量取行，返回 {小写词: [行dict, ...]}。
+
+    用一次 IN 查询拿全，不要每张卡查两次 —— PostgreSQL 每次往返都是网络开销。
+    """
+    out = {}
+    ws = [w.lower() for w in words if w]
+    if not ws:
+        return out
+    for i in range(0, len(ws), batch):
+        chunk = ws[i:i + batch]
+        ph = ",".join(["?"] * len(chunk))
+        try:
+            rows = conn.execute(
+                f"SELECT {cols} FROM {table} WHERE LOWER(word) IN ({ph})",
+                list(chunk)).fetchall()
+        except Exception as e:
+            # 搭配/例句只是锦上添花，查不到不该让整页复习挂掉
+            print(f"[srs._batch_by_word] {table} 查询失败（忽略）:", e)
+            return out
+        for r in rows:
+            out.setdefault(str(r["word"]).lower(), []).append(dict(r))
+    return out
+
+
+def _fallback_from_weeks(conn, words, limit_cols=3, limit_exs=2):
+    """内置搭配/例句表没覆盖的词，回退到导入时自带的例句与搭配。
+
+    为什么需要：collocations / example_sentences 两张表只有内置词库会写
+    （seed_builtin），用户自己导入的词从来不进这两张表。但导入时例句和搭配
+    是存在 weeks.vocab_json 里的 —— 只放在那里就形成数据孤岛：
+    学习页看得到，闪卡看不到，用户就觉得「闪卡和线上版不一样」。
+
+    这里只在内置表查不到时才兜底扫描，内置词完全不会走到这个分支。
+    """
+    wanted = {w.lower() for w in words if w}
+    if not wanted:
+        return {}
+    try:
+        rows = conn.execute("SELECT vocab_json FROM weeks").fetchall()
+    except Exception as e:
+        print("[srs._fallback_from_weeks] weeks 读取失败（忽略）:", e)
+        return {}
+    out = {}
+    for r in rows:
+        try:
+            vocab = json.loads(r["vocab_json"] or "[]")
+        except Exception:
+            continue                      # 坏 JSON 跳过，不影响其它周
+        if not isinstance(vocab, list):
+            continue
+        for v in vocab:
+            if not isinstance(v, dict):
+                continue
+            w = str(v.get("word") or "").strip().lower()
+            if w not in wanted or w in out:
+                continue
+            cols = v.get("collocations") if isinstance(v.get("collocations"), list) else []
+            exs = v.get("examples") if isinstance(v.get("examples"), list) else []
+            # 老格式：单独的 example / translation 字符串
+            if not exs and v.get("example"):
+                exs = [{"sentence": v["example"], "translation": v.get("translation") or ""}]
+            cols = [c for c in cols if isinstance(c, dict) and (c.get("phrase") or "").strip()]
+            exs = [e for e in exs if isinstance(e, dict) and (e.get("sentence") or "").strip()]
+            if cols or exs:
+                out[w] = {"collocations": cols[:limit_cols], "examples": exs[:limit_exs]}
+            if len(out) >= len(wanted):
+                return out
+    return out
+
+
+def flashcard_items(limit=50, max_cols=3, max_exs=2):
     """② 今日复习闪卡数据：到期 vocab 卡 + 词典释义（翻牌后才显示中文）。
 
     - 主测「英文 → 意义识别」：正面只给英文 + 发音，翻牌才给中文。
     - 成熟卡（reps>=2）中约 1/4 反过来测「中文 → 英文」做主动提取，
       但绝不让所有卡片都变成中文默写。
+    - 翻面后附带「固定搭配 + 例句」：优先取 collocations / example_sentences
+      两张表（内置词库），取不到再回退到导入时存在 weeks.vocab_json 里的。
     """
     conn = get_conn()
     cards = due_vocab_reviews(limit=limit)
     out = []
+    words = [(c.get("ref_key") or "").strip() for c in cards]
+    words = [w for w in words if w]
+    colmap = _batch_by_word(conn, "collocations",
+                            "word, phrase, meaning, example", words)
+    exmap = _batch_by_word(conn, "example_sentences",
+                           "word, sentence, translation", words)
+    # 只在两张表都查不到时才去扫 weeks（内置词不会触发）
+    missing = [w for w in words
+               if w.lower() not in colmap and w.lower() not in exmap]
+    fb = _fallback_from_weeks(conn, missing, max_cols, max_exs) if missing else {}
+
     for c in cards:
         word = (c.get("ref_key") or "").strip()
         if not word:
@@ -287,6 +372,9 @@ def flashcard_items(limit=50):
         reps = c.get("reps") or 0
         # 成熟卡中约 1/4 做反向主动提取（中文 → 英文）
         reverse = reps >= 2 and (c["id"] % 4 == 0)
+        wl = word.lower()
+        cols = colmap.get(wl) or (fb.get(wl) or {}).get("collocations") or []
+        exs = exmap.get(wl) or (fb.get(wl) or {}).get("examples") or []
         out.append({
             "id": c["id"],
             "word": word,
@@ -296,6 +384,16 @@ def flashcard_items(limit=50):
             "direction": "zh2en" if reverse else "en2zh",
             "reps": reps,
             "interval": c.get("interval") or 0,
+            # 翻面后的「怎么用」扩展区，前端没数据就不渲染
+            "collocations": [
+                {"phrase": x.get("phrase") or "", "meaning": x.get("meaning") or "",
+                 "example": x.get("example") or ""}
+                for x in cols[:max_cols]
+            ],
+            "examples": [
+                {"sentence": x.get("sentence") or "", "translation": x.get("translation") or ""}
+                for x in exs[:max_exs]
+            ],
         })
     conn.close()
     return out
