@@ -250,6 +250,7 @@ def import_rich_week(text, forced_stage=None, forced_week=None):
             new_vocab.append({
                 "day": day, "group_name": g["name"],
                 "word": w["word"], "meaning": meaning, "pos": pos,
+                "phonetic": w.get("phonetic", "") or "",
                 "collocations": collocs,
                 "examples": examples,
                 "ex_source": ex_src,
@@ -334,6 +335,7 @@ def _build_word_entry(conn, known, day, gname, w, counters):
     return {
         "day": day, "group_name": gname,
         "word": w["word"], "meaning": meaning, "pos": pos,
+        "phonetic": w.get("phonetic", "") or "",
         "collocations": collocs,
         "examples": examples,
         "ex_source": ex_src,
