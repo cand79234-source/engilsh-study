@@ -261,7 +261,6 @@ textarea{font-family:monospace;font-size:13px;min-height:110px;line-height:1.6}
 </style>
 </head>
 <body>
-<div id="demoBannerHost"></div>
 <div class="topbar">
   <div class="brand">English OS</div>
   <button class="prog-pill" id="topProg" onclick="openProg()">阶段0 · W1 · D1</button>
@@ -305,56 +304,8 @@ function promptEosToken() {
   return (v == null) ? null : v.trim();
 }
 
-// 数据走同源后端：页面与后端同域部署，所有 /api 请求走相对路径
-const API_BASE = '';
-
-/* ---------- 演示模式（?demo=1）----------
-   网址带 demo=1 时，所有请求自动带上这个参数：
-     - 读接口 → 后端返回预生成的 8 周快照（不查库）
-     - 写接口 → 后端直接 403，一个字都不会写进你的真实数据
-   去掉参数就回到真实数据。看完想彻底删掉这个功能，
-   git revert 那个 commit 即可，没有任何数据残留。 */
-/* 演示模式开关：仅认网址参数 ?demo=1，去掉就回真实数据。
-   用 try 包裹，避免在非浏览器环境（如 Node 测试桩）里因
-   URLSearchParams / location 不存在而直接抛错。 */
-const DEMO = (function(){
-  try { return (new URLSearchParams(location.search).get('demo')||'') === '1'; }
-  catch(e){ return false; }
-})();
-
-function withDemo(p){
-  if(!DEMO) return p;
-  return p + (p.indexOf('?') >= 0 ? '&' : '?') + 'demo=1';
-}
-
-function demoBanner(){
-  if(!DEMO) return '';
-  return `<div style="position:sticky;top:0;z-index:9999;background:#fef3c7;
-    border-bottom:1px solid #fcd34d;color:#92400e;padding:8px 12px;
-    font-size:12.5px;line-height:1.5;text-align:center">
-    <b>演示模式</b> · 下面是 8 周示例数据，仅供查看，<b>不会保存</b>。
-    <a href="./" style="color:#b45309;font-weight:700">退出演示</a>
-  </div>`;
-}
-
-/* 页面内的「示例数据 / 真实数据」切换条。
-   不是独立页面 —— 就长在总结页和薄弱项页顶上，点了整页换数据源。
-   演示数据不查库、不写库，所以切过去看多少遍都不会弄脏真实记录。 */
-function demoSwitchHtml(){
-  if(DEMO){
-    return `<div style="background:#fef3c7;border:1px solid #fcd34d;border-radius:10px;
-      padding:9px 11px;margin:6px 0;font-size:12.5px;color:#92400e;line-height:1.55">
-      🧪 <b>正在看 8 周示例数据</b>（不会保存、不进你的库）
-      <a href="./" style="color:#b45309;font-weight:700;margin-left:6px">← 切回真实数据</a>
-    </div>`;
-  }
-  return `<div style="background:#f1f5f9;border:1px solid #e2e8f0;border-radius:10px;
-    padding:9px 11px;margin:6px 0;font-size:12.5px;color:#475569;line-height:1.55">
-    🧪 想先看看有数据的样子？
-    <a href="?demo=1" style="color:var(--primary);font-weight:700;margin-left:4px">切到 8 周示例数据 →</a>
-    <span style="color:var(--muted)">（只读，不写库）</span>
-  </div>`;
-}
+// 数据统一走原始共享后端：阶段定义（阶段0｜A1+→A2）、课程 12 周主题、进度与词库都用同一份原数据。
+const API_BASE = '';  // 同源：跟随部署域名（Render/GitHub Pages），使用你的真实后端数据
 
 async function apiRaw(p, opt) {
   // 真正的 fetch：带 token、透传 opt
@@ -365,7 +316,7 @@ async function apiRaw(p, opt) {
     headers['X-Auth-Token'] = tok;
   }
   const finalOpt = Object.assign({}, opt || {}, { headers });
-  const r = await fetch(API_BASE + '/api' + withDemo(p), finalOpt);
+  const r = await fetch(API_BASE + '/api' + p, finalOpt);
   return r;
 }
 
@@ -391,41 +342,22 @@ async function api(p, opt) {
   }
   return r.json();
 }
-/* 与 api() 相同，但返回原始 Response 而不是解析后的 JSON。
-   用于导入这类「出错时必须把服务器原文显示给用户」的场景：
-   api() 里 `if (r.status !== 401) return r.json()` 会在 500 且 body 非 JSON 时
-   抛出 "Unexpected token ..."，真实原因（OOM、字段约束冲突等）全被吞掉，
-   用户只看到一句没头没尾的「导入请求失败」。401 重输口令的行为保持一致。 */
-async function apiResp(p, opt){
-  let r = await apiRaw(p, opt);
-  if (r.status !== 401) return r;
-  setEosToken('');
-  const v = promptEosToken();
-  if (!v) return r;
-  setEosToken(v);
-  return await apiRaw(p, opt);
-}
 function esc(s){return (s==null?'':String(s)).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');}
 
 /* 统一事件委托：凡是参数来自用户导入内容（单词/搭配/例句）的点击，
    一律用 data-act + data-val 而非内联 onclick。
    原因：HTML 转义救不了内联 JS——onclick="speak('I'm ...')" 里的撇号会直接破坏 JS 语法，
    而英语里 I'm / don't / it's 遍地都是。data-* 属性不会被执行，取值后才调用。 */
-document.addEventListener('click', async function(e){
+document.addEventListener('click', function(e){
   const el = e.target.closest('[data-act]');
   if (!el) return;
   const act = el.getAttribute('data-act');
   const v = el.getAttribute('data-val');
   if (act === 'speak') { e.stopPropagation(); speak(v); }
-  else if (act === 'toggleDue') toggleDue();
-  else if (act === 'toggleHist') toggleHist(v);
-  else if (act === 'copyQuizAnalysis') copyQuizAnalysis(v);
-  else if (act === 'clearDemo') clearDemo();
   else if (act === 'toggleW') toggleW(v);
   else if (act === 'master') master(v);
   else if (act === 'openErr') openErr(v);
   else if (act === 'wlookup') wordLookup(v);
-  else if (act === 'wordProfile') wordProfileSheet(v);
   if (act === 'showColloc') showColloc(v, el.getAttribute('data-val2') || '');
   else if (act === 'check') submitSentence(v);
   else if (act === 'redo') redoSentence(v);
@@ -440,7 +372,9 @@ document.addEventListener('click', async function(e){
   else if (act === 'copyRevWords') copyRevWords();
   else if (act === 'copyPrompt') copyPrompt();
   else if (act === 'copyWeekPrompt') copyWeekPrompt();
-  else if (act === 'copyErrorReport') await copyErrorReport();
+  else if (act === 'copyErrorReport') copyErrorReport();
+  else if (act === 'clearWeakDemo') clearWeakDemo();
+  else if (act === 'seedWeakDemo') seedWeakDemo();
   else if (act === 'copySummaryReport') copySummaryReport();
   else if (act === 'revFlash') startFlashcard();
   else if (act === 'revFlip') { state.revFlipped=!state.revFlipped;
@@ -470,25 +404,27 @@ document.addEventListener('click', async function(e){
   else if (act === 'tOpt'){ tOpt(el); }
   else if (act === 'tSubOk'){ tSubOk(el); }
   else if (act === 'sumTab'){ state.sumTab=v; render('sum'); }
+  else if (act === 'seedSumDemo'){ setSumDemo(true); render('sum'); }
+  else if (act === 'clearSumDemo'){ setSumDemo(false); render('sum'); }
   else if (act === 'historyTab'){ state.historyMode=v; render('history'); }
   /* ---- 补习 / 专项训练 ---- */
   else if (act === 'copyDiagPrompt') copyDiagPrompt();
-  else if (act === 'copyTrainPrompt') await copyTrainPrompt();
+  else if (act === 'copyTrainPrompt') copyTrainPrompt();
   else if (act === 'trainCopyFormat') trainCopyFormat();
-  else if (act === 'trainImport') await trainImport();
+  else if (act === 'trainImport') trainImport();
   else if (act === 'trainBackList'){ state.trainMode='list'; render('train'); }
-  else if (act === 'trainStart') await trainStart(v);
+  else if (act === 'trainStart') trainStart(v);
   else if (act === 'trainHistory') trainShowHistory(v);
-  else if (act === 'trainDel') await trainDel(v);
+  else if (act === 'trainDel') trainDel(v);
   else if (act === 'trainBackList') trainBackList();
   else if (act === 'trainPick') trainPick(v);
-  else if (act === 'trainHint') await trainHint();
-  else if (act === 'trainSubmit') await trainSubmit();
-  else if (act === 'trainSelf') await trainSelf(v);
-  else if (act === 'trainNext') await trainNext();
-  else if (act === 'trainAgain') await trainAgain();
-  else if (act === 'trainQuit') await trainQuit();
-  else if (act === 'trainCopyRecord') await trainCopyRecord();
+  else if (act === 'trainHint') trainHint();
+  else if (act === 'trainSubmit') trainSubmit();
+  else if (act === 'trainSelf') trainSelf(v);
+  else if (act === 'trainNext') trainNext();
+  else if (act === 'trainAgain') trainAgain();
+  else if (act === 'trainQuit') trainQuit();
+  else if (act === 'trainCopyRecord') trainCopyRecord();
 });
 /* 填空实时计数：用户每填/改一个空，刷新「已答 X / N」 */
 document.addEventListener('input', function(e){
@@ -646,12 +582,14 @@ function renderWords(words){
         <div><div class="en">${esc(w.word)} ${w.phonetic?`<span class="ph">${esc(w.phonetic)}</span>`:''}</div><div class="cn">${esc(w.meaning)||''}</div></div>
         <div style="display:flex;align-items:center;gap:7px">
           <span class="spk" data-role="spk" title="听发音" data-act="speak" data-val="${esc(w.word)}">🔊</span>
+          ${w.pos?`<span class="badge" style="${done?'background:#dcfce7;color:var(--green)':''}">${esc(w.pos)}</span>`:''}
           ${done?'✅':''}
         </div>
       </div>
       ${isOpen?`<div class="detail">
         <div style="display:flex;justify-content:flex-end;margin-bottom:6px"><button class="btn ghost sm" data-act="toggleW" data-val="${esc(w.word)}">↑ 收起</button></div>
         <div class="row" style="display:flex;align-items:center;gap:6px"><b>${esc(w.word)}</b>
+          ${w.pos?`<span style="color:var(--muted)">· ${esc(w.pos)}</span>`:''}
           <span style="color:var(--muted)">/${esc(w.meaning)}/</span>
           <span class="spk" style="margin-left:auto" data-act="speak" data-val="${esc(w.word)}">🔊</span></div>
         ${collocs.length?`<div class="row"><span class="lbl">固定搭配 · 点开看解释</span>
@@ -791,58 +729,11 @@ async function wordLookup(word){
     const body=ov.querySelector('#wlookup_body');
     if(!r||!r.found){ body.textContent='本地词典未收录该词'; return; }
     const ph=r.phonetic?`/${esc(r.phonetic)}/ `:'';
-    body.innerHTML=`<div style="font-size:15px;line-height:1.7;margin-top:4px">${ph}${esc(r.meaning)||'（无释义）'}</div>
-      <button class="btn ghost sm" style="margin-top:10px" data-act="wordProfile" data-val="${esc(word)}">📖 查看这个词的学习档案</button>`;
+    const pos=r.pos?`<span class="badge" style="background:var(--primary-bg);color:var(--primary)">${esc(r.pos)}</span> `:'';
+    body.innerHTML=`<div style="font-size:15px;line-height:1.7;margin-top:4px">${pos}${ph}${esc(r.meaning)||'（无释义）'}</div>`;
   }catch(e){
     const body=ov.querySelector('#wlookup_body'); if(body)body.textContent='查询失败，请重试';
   }
-}
-/* 词全息档案：把一个词在学习 / 造句 / 错误 / 复习 / 主动输出 / 专项训练里的
-   全部痕迹摊开。此前这些数据分散在七张表里，没有任何地方能看到全貌。 */
-async function wordProfileSheet(word){
-  const ov=document.createElement('div');ov.className='overlay';
-  ov.onclick=(e)=>{if(e.target===ov)ov.remove();};
-  ov.style.cssText='align-items:flex-end;z-index:98;display:flex';
-  ov.innerHTML=`<div class="sheet" style="max-width:480px">
-    <button class="close" onclick="this.closest('.overlay').remove()">✕</button>
-    <div style="font-size:18px;font-weight:800;color:var(--primary)">${esc(word)}
-      <span style="font-size:12px;font-weight:600;color:var(--muted);margin-left:6px">学习档案</span></div>
-    <div id="wprof_body" style="margin-top:10px;font-size:13.5px;color:var(--muted)">加载中…</div>
-  </div>`;
-  document.body.appendChild(ov);
-  requestAnimationFrame(()=>ov.classList.add('show'));
-  try{
-    const r=await api('/word/'+encodeURIComponent(word)+'/profile');
-    const body=ov.querySelector('#wprof_body');
-    if(!body) return;
-    if(!r||!r.ok){ body.textContent='这个词还没有任何学习记录。'; return; }
-    body.innerHTML=wordProfileHtml(r);
-  }catch(e){
-    const b=ov.querySelector('#wprof_body'); if(b) b.textContent='加载失败，请重试';
-  }
-}
-function wordProfileHtml(p){
-  const row=(k,v)=>`<div class="trow"><span class="tk">${esc(k)}</span><span>${v}</span></div>`;
-  const d=p.dict||{}, s=p.sentences||{}, e=p.errors||{}, rv=p.reviews, o=p.output, t=p.training;
-  let h='';
-  if(d.meaning) h+=`<div style="font-size:15px;line-height:1.7">${d.phonetic?('/'+esc(d.phonetic)+'/ '):''}${esc(d.meaning)}</div>`;
-  h+='<div class="tbody" style="margin-top:9px">';
-  if(p.learned) h+=row('学过',`阶段${p.learned.stage} · W${p.learned.week} · D${p.learned.day}`);
-  h+=row('造句',`${s.count||0} 句 · 均分 ${(s.avg==null?'—':s.avg)}`);
-  h+=row('错误',`${e.times||0} 次 · 已改正 ${e.fixed||0} 条`);
-  if(rv) h+=row('复习',`对 ${rv.total_correct||0} 次 · 错 ${rv.total_wrong||0} 次`);
-  if(o) h+=row('主动输出',`${'★'.repeat(o.stars||0)}${'☆'.repeat(Math.max(0,5-(o.stars||0)))} ${o.stars||0}/5`);
-  if(t) h+=row('专项训练',`${t.count||0} 次 · 正确率 ${(t.rate==null?'—':t.rate+'%')}`);
-  h+='</div>';
-  if((e.latest||[]).length){
-    h+='<div style="margin-top:11px;font-weight:700;font-size:13px">最近的错误</div>';
-    h+=e.latest.map(x=>`<div class="thist">${esc(x.type||'')}：${esc(x.original||'')}${x.corrected?(' → '+esc(x.corrected)):''}</div>`).join('');
-  }
-  if((s.latest||[]).length){
-    h+='<div style="margin-top:11px;font-weight:700;font-size:13px">最近的造句</div>';
-    h+=s.latest.map(x=>`<div class="thist">${esc(x.text||'')} <span style="color:var(--muted)">${esc(x.verdict||'')}${(x.score!=null?(' · '+x.score+'分'):'')}</span></div>`).join('');
-  }
-  return h;
 }
 async function toggleW(word){state.openWord=(state.openWord===word)?null:word;renderWordsInto();}
 function renderWordsInto(){const t=state.today;document.getElementById('wordlist').innerHTML=renderWords(t.words);}
@@ -923,16 +814,7 @@ async function runImport(){
   const box=document.getElementById('imp_rich_result');
   let r;
   try{
-    const resp=await apiResp('/words/import',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:raw, merge:true, week:p.week})});
-    if(!resp.ok){
-      // 服务器返回非 2xx：body 多半不是 JSON，别让 r.json() 抛出无意义的
-      // "Unexpected token"，把状态码和服务器原文一起摆出来，方便定位。
-      let msg=`导入失败（HTTP ${resp.status}）`;
-      try{ const t=await resp.text(); if(t) msg+='：'+String(t).slice(0,200); }catch(_){}
-      box.innerHTML=`<div class="res" style="background:#fee2e2;border-color:#fecaca;color:var(--red)">${esc(msg)}</div>`;
-      btn.textContent='🚀 解析并导入';btn.disabled=false;return;
-    }
-    r=await resp.json();
+    r=await api('/words/import',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:raw, merge:true, week:p.week})});
   }catch(e){box.innerHTML=`<div class="res" style="background:#fee2e2;border-color:#fecaca;color:var(--red)">导入请求失败：${esc(e.message)}</div>`;btn.textContent='🚀 解析并导入';btn.disabled=false;return;}
   if(!r.ok){
     box.innerHTML=`<div class="res" style="background:#fee2e2;border-color:#fecaca;color:var(--red)">${esc(r.error||'未识别到内容')}</div>`;
@@ -957,7 +839,7 @@ async function runImport(){
     if(r.week!==cur.week){
       if(confirm(`已导入到第 ${r.week} 周。现在跳到第 ${r.week} 周开始学习吗？`)){
         document.querySelector('.overlay')&&document.querySelector('.overlay').remove();
-        setProgressAndGo(r.week, r.stage);
+        setProgressAndGo(r.week);
       }
     } else {
       pages.learn(document.getElementById('content'));
@@ -965,15 +847,9 @@ async function runImport(){
     }
   }, 400);
 }
-function setProgressAndGo(week, stage){
-  // 保存进度到该周 Day1，并回学习页。
-  // 修复：stage 过去被硬编码为 0，导致导入到阶段1~5 的周时，
-  // 后端刚写好的 stage（weekimport._move_progress_to）会被这里打回阶段0，
-  // 出现"导入到第2阶段第3周，却跑到第0阶段第3周"的串周现象。
-  // 现在优先用导入结果返回的 stage，其次沿用当前进度，绝不再写死 0。
-  const _p = (state.learn && state.learn.d && state.learn.d.progress) || {};
-  const st = (stage != null) ? stage : (_p.stage || 0);
-  api('/progress',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({stage:st,week,day:1})}).then(()=>{refreshProg();render('learn');});
+function setProgressAndGo(week){
+  // 保存进度到该周 Day1，并回学习页
+  api('/progress',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({stage:0,week,day:1})}).then(()=>{refreshProg();render('learn');});
 }
 // 离线发音：浏览器本地 TTS（优先选本机已下载的英文语音，无需联网/无外部服务）
 let _voices=[], _voice=null, _voiceReady=false;
@@ -1305,43 +1181,24 @@ function _optDropped(o){
   const t=String((o.suggestion||'')+' '+(o.reason||'')+' '+(o.sample||'')+' '+(o.note||''));
   return /自动当作大写|手机字体|长得一样|不存在单独的/.test(t);
 }
-/* 统一作答模板：不论第几次作答，都渲染成同一套结构
-   「判定 · 分数/100 · 等级」+ 原句 +（自复制 / 没有明显错误）+ 错误说明 + 可以优化 + 试着这样扩写。
-   过去按次数走不同分支（首次/补做/最新各一套），同一句话换个次序就长得不一样，现在统一。 */
-function _selfCopyKind(a, list, i){
-  const mine=(a.sentence||'').trim().toLowerCase();
-  if(!mine) return '';
-  if(i>0){
-    const prev=((list||[])[i-1]||{}).sentence||'';
-    if(prev && prev.trim().toLowerCase()===mine) return 'repeat';
-  }
-  const meta=(state.tkMeta||{})[a._tk||'']||{};
-  const tpl=(meta.sample||meta.template||'').trim().toLowerCase();
-  if(tpl && tpl===mine) return 'template';
-  return '';
-}
-function _verdictOf(a, sc, hasErr, hasTask, pass){
-  if(a.status==='UNCERTAIN') return {icon:'⚠️', v:'系统无法完全判断', lv:'待确认', c:'#b45309'};
-  if(pass)        return {icon:'✅', v:'正确',           lv:'基本掌握', c:'var(--green)'};
-  if(hasErr)      return {icon:'❌', v:'有错误',         lv:'需要改进', c:'var(--red)'};
-  if(hasTask)     return {icon:'⚠️', v:'未完成题目要求', lv:'需要改进', c:'#b45309'};
-  return            {icon:'❌', v:'有错误',         lv:'需要改进', c:'var(--red)'};
-}
 function attemptCard(a,tk,i,isLast){
   const sc=Number(a.score||0);
   const errs=a.errors||[], opts=(a.optimizations||[]).filter(o=>!_optDropped(o)), tasks=a.task_issues||[];
   const hasErr=errs.length>0, hasTask=tasks.length>0;
   const pass = sc>=85 && !hasErr && !hasTask;
-  a._tk=tk;
-  // 第 1 行固定：判定 · 分数/100 · 等级
-  const vd=_verdictOf(a, sc, hasErr, hasTask, pass);
-  const head=`<div style="font-size:15.5px;font-weight:800;color:${vd.c}">${vd.v}·${sc}/100·${vd.lv}</div>`;
-  // 状态行：自复制（照抄上次/例句）优先，其次才是「没有明显错误」
-  const cpKind=_selfCopyKind(a, histOf(tk), i);
-  let stateLine='';
-  if(cpKind) stateLine+=`<div style="margin-top:6px;font-size:13.5px;color:#b45309">自复制（和${cpKind==='template'?'例句':'上次'}写得一模一样，换个说法再练一次效果更好）</div>`;
-  if(!hasErr && !hasTask) stateLine+=`<div style="margin-top:4px;font-size:13.5px;color:var(--muted)">没有明显错误</div>`;
-  else if(hasTask) stateLine+=`<div style="margin-top:4px;font-size:13.5px;color:var(--muted)">没有明显语法错误（题目要求见下）</div>`;
+  let head;
+  if(pass){
+    head=`<div style="font-size:15.5px;font-weight:800;color:var(--green)">✅ 正确 · ${sc}/100 · 基本掌握</div>`;
+  }else if(hasErr){
+    head=`<div style="font-size:15.5px;font-weight:800;color:var(--red)">❌ 有错误 · ${sc}/100 · 需要改进</div>`;
+  }else if(hasTask){
+    head=`<div style="font-size:15.5px;font-weight:800;color:#b45309">⚠️ 未完成题目要求 · ${sc}/100 · 需要改进</div>`;
+  }else{
+    head=`<div style="font-size:15.5px;font-weight:800;color:var(--red)">❌ 有错误 · ${sc}/100 · 需要改进</div>`;
+  }
+  if(a.status==='UNCERTAIN'){
+    head=`<div style="font-size:15.5px;font-weight:800;color:#b45309">⚠️ 系统无法完全判断 · ${sc}/100</div>`;
+  }
   const errHtml = errs.length
     ? `<div style="margin-top:7px;font-size:13px;font-weight:800;color:var(--red)">🔍 哪里错了 / 为什么错</div>`
       + errs.map((e,j)=>`<div style="background:#fff;border:1px solid #fecaca;border-radius:9px;padding:8px 10px;margin:6px 0">
@@ -1350,7 +1207,8 @@ function attemptCard(a,tk,i,isLast){
         <div style="font-size:13.5px;color:#475569;margin-top:4px">💡 <b>为什么错：</b>${esc(e.explanation)}</div>
         <div style="font-size:13.5px;margin-top:4px">✅ <b>正确表达：</b><b style="color:var(--green)">${esc(e.correct)}</b></div>
       </div>`).join('')
-    : '';   // 没错误时的状态行由 stateLine 统一渲染，避免同一句出现两行
+    : (hasTask?`<div style="margin-top:6px;font-size:13.5px;color:var(--muted)">✅ 没有明显语法错误</div>`
+                :`<div style="margin-top:6px;font-size:13.5px;color:var(--muted)">✅ 没有明显错误</div>`);
   const taskHtml = tasks.length
     ? `<div style="margin-top:7px;font-size:13px;font-weight:800;color:#b45309">📋 题目要求（需补齐，不计入语法错误）${a._local?'<span style="font-weight:400;color:var(--muted);font-size:12px"> · 本地补检：语法没问题，但题目没做到</span>':''}</div>`
       + tasks.map((e,j)=>`<div style="background:#fffbeb;border:1px solid #fde68a;border-radius:9px;padding:8px 10px;margin:6px 0">
@@ -1360,32 +1218,25 @@ function attemptCard(a,tk,i,isLast){
     : '';
   const corHtml = (!pass && a.corrected && a.corrected!==a.sentence)
     ? `<div style="margin-top:6px;font-size:13.5px">📗 <b>整句正确写法：</b><b style="color:var(--green)">${esc(a.corrected)}</b></div>`:'';
-  // 可以优化：润色类（原句没错，仅供参考，不扣分），第一条「可以优化：」后续「+可以优化：」
-  const polish=opts.filter(o=>o && o.kind!=='expand' && (o.suggestion||o.reason));
-  const polishHtml = polish.length
+  // 参考建议：合并润色 + 扩写，避免重复大标题，统一用简洁 bullet
+  const tips=[];
+  opts.forEach(o=>{
+    if(!o) return;
+    if(o.kind==='expand'){
+      tips.push(`<span style="color:var(--primary);font-weight:700">扩写：</span>${esc(o.sample)}<span style="color:var(--muted);font-size:12.5px"> — ${esc(o.note||'')}</span>`);
+    }else if(o.suggestion||o.reason){
+      const sug=o.suggestion?`<b style="color:var(--green)">${esc(o.suggestion)}</b>`:'';
+      const rsn=o.reason?`<span style="color:var(--muted);font-size:12.5px">${sug?' — ':''}${esc(o.reason)}</span>`:'';
+      tips.push(sug+rsn);
+    }
+  });
+  const tipsHtml = tips.length
     ? `<div style="margin-top:8px">
-        <div style="font-size:13px;font-weight:700;color:#92400e;margin-bottom:5px">可以优化(原句没错，仅供参考，不扣分)</div>
-        ${polish.map((o,j)=>{
-          const tag=j===0?'可以优化:':'+可以优化:';
-          const sug=o.suggestion?`<b style="color:var(--green)">${esc(o.suggestion)}</b>`:'';
-          const rsn=o.reason?`<div style="color:var(--muted);font-size:12.5px;margin-top:2px">${esc(o.reason)}</div>`:'';
-          return `<div style="font-size:13.5px;line-height:1.55;padding:4px 0">
-            <b style="color:#92400e">${tag}</b>${sug}${rsn}</div>`;
-        }).join('')}
+        <div style="font-size:13px;font-weight:700;color:#92400e;margin-bottom:5px">💡 参考建议（原句没错，仅供参考，不扣分）</div>
+        ${tips.map(t=>`<div style="font-size:13.5px;line-height:1.55;padding:4px 0;padding-left:16px;text-indent:-13px">● ${t}</div>`).join('')}
       </div>`
     : '';
-  // 试着这样扩写：把短句写长，一次练到更多结构
-  const exp=opts.filter(o=>o && o.kind==='expand' && (o.sample||o.note));
-  const expHtml = exp.length
-    ? `<div style="margin-top:8px">
-        <div style="font-size:13px;font-weight:700;color:var(--primary);margin-bottom:5px">试着这样扩写(把短句写长，练到更多结构)</div>
-        ${exp.map(o=>`<div style="font-size:13.5px;line-height:1.55;padding:4px 0">
-          <b style="color:var(--green)">${esc(o.sample||'')}</b>
-          ${o.note?`<div style="color:var(--muted);font-size:12.5px;margin-top:2px">${esc(o.note)}</div>`:''}
-        </div>`).join('')}
-      </div>`
-    : '';
-  return `<div class="res ${pass?'good':''}" style="margin-top:8px">
+  return `<div class="res ${pass?'good':''}" style="margin-top:8px;${isLast?'':'opacity:.72'}">
     <div style="display:flex;justify-content:space-between;align-items:center;gap:8px">
       <div style="min-width:0">
         <div style="font-size:12px;color:var(--muted)">第 ${a.attempt||i+1} 次作答${isLast?' · <b style="color:var(--primary)">最新</b>':''}</div>
@@ -1394,8 +1245,7 @@ function attemptCard(a,tk,i,isLast){
       <button class="btn ghost sm" style="flex-shrink:0" data-act="copyOne" data-val="${tk}" data-val2="${a.attempt}">📋 复制</button>
     </div>
     <div style="margin-top:5px;font-size:14px;line-height:1.6">${esc(a.sentence)}</div>
-    ${errs.length?'':stateLine}
-    ${errHtml}${taskHtml}${corHtml}${polishHtml}${expHtml}
+    ${errHtml}${taskHtml}${corHtml}${tipsHtml}
   </div>`;
 }
 
@@ -1408,49 +1258,45 @@ function copyOne(tk, which){
   copyText(attemptCopyText(tk,a));
 }
 function attemptCopyText(tk,a){
+  const meta=(state.tkMeta||{})[tk]||{};
   const sc=Number(a.score||0);
-  const _errs=a.errors||[], _tasks=a.task_issues||[];
-  const _pass=sc>=85 && !_errs.length && !_tasks.length;
-  const _vd=_verdictOf(a, sc, _errs.length>0, _tasks.length>0, _pass);
-  const _hist=histOf(tk);
-  const _idx=_hist.findIndex(x=>x===a || Number(x.attempt)===Number(a.attempt));
-  const cpKind=_selfCopyKind(a, _hist, _idx<0?0:_idx);
   const L=[];
-  L.push('第'+(a.attempt||1)+'次作答');
-  L.push(_vd.v+'·'+sc+'/100·'+_vd.lv);
-  L.push(a.sentence||'');
-  if(cpKind) L.push('自复制');
-  if(_errs.length){
-    _errs.forEach((e,j)=>{
+  L.push('【造句批改】');
+  L.push('单词：'+(meta.word||'—'));
+  if(meta.task) L.push('题目：'+meta.task);
+  L.push('第 '+(a.attempt||1)+' 次作答');
+  L.push('我的句子：'+(a.sentence||''));
+  L.push('得分：'+sc+'/100');
+  L.push('判定：'+(a.ok?'✅ 正确':'❌ 有错误')+'（≥85 基本掌握，<85 需要改进）');
+  if((a.errors||[]).length){
+    (a.errors||[]).forEach((e,j)=>{
       L.push('错误'+(j+1)+' · 哪里错了：'+e.where);
       L.push('错误'+(j+1)+' · 类型：'+(e.type||'—'));
       L.push('错误'+(j+1)+' · 为什么错：'+e.explanation);
       L.push('错误'+(j+1)+' · 正确表达：'+e.correct);
     });
     if(a.corrected) L.push('整句正确写法：'+a.corrected);
-  }else if(_tasks.length){
-    L.push('没有明显语法错误（题目要求见下）');
-    _tasks.forEach((e,j)=>{
+  }else{
+    L.push('哪里错了：没有明显错误');
+  }
+  if((a.task_issues||[]).length){
+    (a.task_issues||[]).forEach((e,j)=>{
       L.push('题目要求'+(j+1)+' · 未完成：'+e.where);
       L.push('题目要求'+(j+1)+' · 说明：'+e.explanation);
     });
-  }else{
-    L.push('没有明显错误');
   }
-  // 与页面同模板：先「可以优化」，再「试着这样扩写」
   const _opts=(a.optimizations||[]).filter(o=>!_optDropped(o));
-  const _polish=_opts.filter(o=>o && o.kind!=='expand' && (o.suggestion||o.reason));
-  if(_polish.length){
-    L.push('可以优化(原句没错，仅供参考，不扣分)');
-    _polish.forEach((o,j)=>{
-      const body=(o.suggestion||'')+(o.reason?(' '+o.reason):'');
-      L.push((j===0?'可以优化:':'+可以优化:')+body);
+  if(_opts.length){
+    L.push('参考建议：');
+    _opts.forEach((o,j)=>{
+      if(o&&o.kind==='expand'){
+        L.push('● 扩写：'+(o.sample||'')+'（'+(o.note||'')+'）');
+      }else if(o){
+        L.push('● '+(o.suggestion||o.reason||'（见说明）')+(o.reason&&o.suggestion?' — '+o.reason:''));
+      }
     });
-  }
-  const _exp=_opts.filter(o=>o && o.kind==='expand' && (o.sample||o.note));
-  if(_exp.length){
-    L.push('试着这样扩写(把短句写长，练到更多结构)');
-    _exp.forEach(o=>{ if(o.sample) L.push(o.sample); if(o.note) L.push(o.note); });
+  }else{
+    L.push('参考建议：无');
   }
   return L.join('\n');
 }
@@ -2147,52 +1993,19 @@ pages.review=async function(el){
   else renderReviewHome(el);
 };
 
-/* 今日到期明细：词 / 星标 / 已复习次数 / 下次到期。
-   整张卡片可点开，不点也能照常用「开始复习」，不会因为要看明细多一步。 */
-function dueDetailRows(){
-  const list=state.revDue||[];
-  if(!list.length) return `<div class="sub" style="margin-top:8px">今日没有到期单词，明天会自动加入新内容。</div>`;
-  return `<div style="margin-top:6px">
-    ${list.map(w=>{
-      const st=Number(w.stars||0);
-      const stars='★'.repeat(st)+'☆'.repeat(Math.max(0,5-st));
-      return `<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;padding:7px 0;border-bottom:1px dashed var(--line)">
-        <div style="min-width:0">
-          <div style="font-weight:700;font-size:14.5px">${esc(w.word)}
-            <span style="color:var(--muted);font-weight:400;font-size:12px">${esc(w.phonetic||'')}</span></div>
-          <div class="sub" style="font-size:12.5px">${esc((w.meaning||'').slice(0,28))}</div>
-        </div>
-        <div style="text-align:right;flex-shrink:0;font-size:12px;color:var(--muted);line-height:1.5">
-          <div style="color:#f59e0b;font-size:13px">${stars}</div>
-          <div>已复习 ${w.reps||0} 次</div>
-          <div>下次 ${w.next_due?esc(w.next_due):'—'}</div>
-        </div>
-      </div>`;
-    }).join('')}
-  </div>`;
-}
-function toggleDue(){
-  state.revDueOpen=!state.revDueOpen;
-  const box=document.getElementById('dueDetail');
-  if(box) box.style.display=state.revDueOpen?'':'none';
-  const ic=document.getElementById('dueArrow');
-  if(ic) ic.textContent=state.revDueOpen?'▾':'▸';
-}
 function renderReviewHome(el){
   const n=(state.revDue||[]).length;
-  const open=!!state.revDueOpen;
   el.innerHTML=`
     <div class="card" style="margin-top:10px">
-      <div data-act="toggleDue" style="cursor:pointer;display:flex;justify-content:space-between;align-items:center;gap:10px">
-        <div style="min-width:0">
-          <div style="font-weight:700;font-size:15.5px">🗂 今日复习 <span id="dueArrow" style="color:var(--muted);font-size:13px">${open?'▾':'▸'}</span></div>
-          <div class="sub" style="margin-top:2px">单词闪卡 · 英文 → 中文主动回忆 · 点标题看今日明细</div>
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:10px">
+        <div>
+          <div style="font-weight:700;font-size:15.5px">🗂 今日复习</div>
+          <div class="sub" style="margin-top:2px">单词闪卡 · 英文 → 中文主动回忆</div>
         </div>
         <span class="badge" style="background:var(--primary-bg);color:var(--primary);flex-shrink:0">${n} 张到期</span>
       </div>
       ${n?`<button class="btn" style="margin-top:11px" data-act="revFlash">开始复习</button>`
         :`<div class="sub" style="margin-top:9px;color:var(--green)">✅ 今日已无到期单词，明天会自动加入新内容。</div>`}
-      <div id="dueDetail" style="display:${open?'':'none'}">${dueDetailRows()}</div>
     </div>
 
     <div class="card" style="margin-top:10px">
@@ -2322,7 +2135,8 @@ function renderFlashcard(el){
     ${isZh2En
       ? `<div style="font-size:31px;font-weight:800">${esc(c.word)}</div>
          ${c.phonetic?`<div class="sub" style="margin-top:5px">${esc(c.phonetic)}</div>`:''}`
-      : `<div style="font-size:20px;font-weight:700;line-height:1.45">${esc(c.meaning||'（暂无释义）')}</div>`}
+      : `<div style="font-size:20px;font-weight:700;line-height:1.45">${esc(c.meaning||'（暂无释义）')}</div>
+         ${c.pos?`<div class="sub" style="margin-top:5px">${esc(c.pos)}</div>`:''}`}
     ${colsHtml}
     ${exsHtml}
   `;
@@ -2619,97 +2433,6 @@ async function testGrade(){
     </div>`;
   box.scrollIntoView({behavior:'smooth'});
 }
-function _jsonOf(s, dft){
-  try{ const v=JSON.parse(s||''); return (v===null||v===undefined)?dft:v; }catch(e){ return dft; }
-}
-/* 历史成绩：分数列表 + 点开看「原题 / 作答 / 归因」+ 近期错题 + 复制给 AI 分析 */
-function histRowHtml(r, i){
-  const d=_jsonOf(r.detail_json, {});
-  const qs=d.questions||[];
-  const wrong=qs.filter(q=>!q.ok);
-  const answers=_jsonOf(r.answers_json, {});
-  const paper=r.paper_json||'';
-  const qHtml = qs.length
-    ? `<div style="margin-top:6px">
-        <div class="sub" style="font-size:12.5px;font-weight:700">每题归因</div>
-        ${qs.map(q=>`<div style="font-size:12.5px;padding:3px 0;border-bottom:1px dashed var(--line)">
-          ${q.ok?'✅':'❌'} Q${q.no} <span style="color:var(--muted)">${esc(q.section||'')}</span>
-          · 我答「${esc(String(q.got||'空'))}」${q.ok?'':` → 正确「<b style="color:var(--green)">${esc(q.expected||'')}</b>」`}
-        </div>`).join('')}
-      </div>`
-    : `<div class="sub" style="margin-top:6px">这次没有留下每题明细（旧记录）。</div>`;
-  const paperHtml = paper
-    ? `<details style="margin-top:6px"><summary style="font-size:12.5px;cursor:pointer">📄 查看当次试卷原文</summary>
-         <pre style="white-space:pre-wrap;font-size:12px;background:var(--bg);padding:8px;border-radius:8px;margin-top:4px;max-height:260px;overflow:auto">${esc(paper)}</pre></details>`
-    : '';
-  const ansHtml = Object.keys(answers||{}).length
-    ? `<details style="margin-top:6px"><summary style="font-size:12.5px;cursor:pointer">✍️ 查看我的作答</summary>
-         <div style="font-size:12.5px;margin-top:4px">${Object.keys(answers).map(k=>`<span style="display:inline-block;margin-right:10px">Q${esc(k)}: ${esc(String(answers[k]||'空'))}</span>`).join('')}</div></details>`
-    : '';
-  return `<div style="border:1px solid var(--border);border-radius:10px;padding:8px 10px;margin:6px 0">
-    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;font-size:13.5px">
-      <span>${TEST_LABELS[r.kind]||r.kind} · 阶段${r.stage}·W${r.week}</span>
-      <span><b style="color:${r.passed?'var(--green)':'var(--red)'}">${r.score}分</b> ${r.passed?'✅':'❌'} <span style="color:var(--muted)">${String(r.created_at||'').slice(0,10)}</span></span>
-    </div>
-    <div class="sub" style="font-size:12.5px">答对 ${d.correct!=null?d.correct:'—'}/${d.total!=null?d.total:'—'} · 错 ${wrong.length} 题</div>
-    <div style="margin-top:6px;display:flex;gap:6px;flex-wrap:wrap">
-      <button class="btn ghost sm" data-act="toggleHist" data-val="${i}">📄 原题 / 作答 / 归因</button>
-      <button class="btn ghost sm" data-act="copyQuizAnalysis" data-val="${i}">📋 复制给 AI 分析</button>
-    </div>
-    <div id="histBody${i}" style="display:none">${qHtml}${ansHtml}${paperHtml}</div>
-  </div>`;
-}
-function recentWrongHtml(rows){
-  const all=[];
-  rows.slice(0,10).forEach(r=>{
-    const d=_jsonOf(r.detail_json, {});
-    (d.questions||[]).filter(q=>!q.ok).forEach(q=>{
-      all.push({no:q.no, section:q.section||'', got:q.got||'', expected:q.expected||'',
-                kind:r.kind, at:String(r.created_at||'').slice(0,10)});
-    });
-  });
-  if(!all.length) return `<div class="sub" style="margin-top:8px">🎉 近期错题：无。</div>`;
-  const bySec={};
-  all.forEach(q=>{ bySec[q.section||'其他']=(bySec[q.section||'其他']||0)+1; });
-  return `<div style="margin-top:10px;border-top:1px solid var(--border);padding-top:8px">
-    <div class="sub" style="font-weight:700">🧩 近期错题（近 ${Math.min(10,rows.length)} 次共 ${all.length} 题）</div>
-    <div style="font-size:12.5px;color:var(--muted);margin-top:2px">
-      ${Object.keys(bySec).map(k=>`${esc(k)} ${bySec[k]}题`).join(' · ')}</div>
-    <div style="margin-top:6px">${all.slice(0,8).map(q=>`<div style="font-size:12.5px;padding:3px 0">
-      Q${esc(String(q.no))} · ${esc(q.section)} · 我答「${esc(String(q.got||'空'))}」→ 正确「<b style="color:var(--green)">${esc(q.expected)}</b>」</div>`).join('')}</div>
-    <button class="btn ghost sm" style="margin-top:8px" data-act="copyQuizAnalysis" data-val="all">📋 复制全部错题给 AI 分析</button>
-  </div>`;
-}
-function toggleHist(i){
-  const box=document.getElementById('histBody'+i);
-  if(box) box.style.display = (box.style.display==='none') ? '' : 'none';
-}
-function quizAnalysisText(scope){
-  const rows=state.testHistory||[];
-  if(!rows.length) return '';
-  const pick = scope==='all' ? rows.slice(0,10) : [rows[Number(scope)]].filter(Boolean);
-  const L=['【错题分析请求 / 请把练习以下面格式输出】',''];
-  pick.forEach(r=>{
-    const d=_jsonOf(r.detail_json, {});
-    const wrong=(d.questions||[]).filter(q=>!q.ok);
-    L.push(`■ ${TEST_LABELS[r.kind]||r.kind} ${String(r.created_at||'').slice(0,10)} · ${r.score}分 · 对${d.correct!=null?d.correct:'—'}/${d.total!=null?d.total:'—'}`);
-    if(!wrong.length){ L.push('  （本次无错题）'); }
-    wrong.forEach(q=>{
-      L.push(`  · Q${q.no}（${q.section||''}）我答「${q.got||'空'}」，正确答案「${q.expected||''}」`);
-    });
-    L.push('');
-  });
-  L.push('请按下面三步回答：');
-  L.push('1. 归因：这些错属于哪 1–3 个类型（词汇 / 语法 / 听力 / 阅读 / 主动输出），各说一句为什么；');
-  L.push('2. 训练：只针对上述类型，给 8–12 个有效作答任务，不要扩张到其他能力；');
-  L.push('3. 输出：末尾用 <<<TEST>>> … <<<END>>> 给出可直接粘贴回来的试卷文本。');
-  return L.join('\n');
-}
-async function copyQuizAnalysis(scope){
-  const txt=quizAnalysisText(scope);
-  if(!txt){ toast('还没有可分析的测评记录'); return; }
-  await copyText(txt, '没有可分析的内容');
-}
 async function testHistory(){
   const box=document.getElementById('testHistoryBox');
   if(box.style.display!=='none'){ box.style.display='none'; box.innerHTML=''; return; }
@@ -2717,10 +2440,11 @@ async function testHistory(){
   box.innerHTML='<div class="sub">加载中…</div>';
   const rows=await api('/test/history');
   if(!rows||!rows.length){ box.innerHTML='<div class="sub">暂无测评记录。</div>'; return; }
-  state.testHistory=rows;
-  box.innerHTML=`<div class="sub" style="font-weight:700;margin-bottom:4px">历史成绩（最近 ${rows.length} 次，点开看原题与作答）</div>`
-    + rows.map((r,i)=>histRowHtml(r,i)).join('')
-    + recentWrongHtml(rows);
+  box.innerHTML=`<div class="sub" style="font-weight:700;margin-bottom:4px">历史测评（最近 ${rows.length} 次）</div>`+
+    rows.map(r=>`<div style="display:flex;justify-content:space-between;font-size:13px;padding:5px 0;border-bottom:1px solid var(--border)">
+      <span>${TEST_LABELS[r.kind]||r.kind} · 阶段${r.stage}·W${r.week}</span>
+      <span><b style="color:${r.passed?'var(--green)':'var(--red)'}">${r.score}分</b> ${r.passed?'✅':'❌'} <span style="color:var(--muted)">${String(r.created_at||'').slice(0,10)}</span></span>
+    </div>`).join('');
 }
 
 /* ============ 进度弹窗（点顶部徽章调整，去设置页）============ */
@@ -2808,14 +2532,28 @@ pages.errors=async function(el){
   try{
     const r = await Promise.all([api('/errors'), api('/error-bank'), api('/weakness')]);
     errs=r[0]; bank=r[1]; wk=r[2];
-  }catch(e){ /* 后端不可达：留空，页面显示真实空态 */ }
-  state.errs=errs; state.bank=bank; state.weak=wk;
+  }catch(e){ /* 后端不可达：走演示数据 */ }
+  state.errs=errs; state.bank=bank;
+  const capsReal=(wk&&wk.capabilities&&wk.capabilities.categories)||[];
+  const realHas=capsReal.some(c=>c.items&&c.items.length);
+  const force=useWeakDemoForce();
+  const demo=(useWeakDemo() && !realHas) || force;
+  if(demo) seedWeakSnapDemo(force);
+  const wkUsed=demo?MOCK_WEAK:wk;
+  state.weak=wkUsed;
   refreshProg();
   const active=errs.filter(e=>e.count_30d>0).length;
-  const weakHtml=await weakCapHtml(wk);
+  const weakHtml=weakCapHtml(wkUsed);
   const weakN=state._weakTotal||0;
-  const lowN=((wk&&wk.low_star_words)||[]).length;
+  const lowN=((wkUsed&&wkUsed.low_star_words)||[]).length;
   const bankN=(bank&&bank.items)?bank.items.length:((bank&&bank.total!=null)?bank.total:0);
+  const banner=demo
+    ? `<div class="card" style="margin-top:10px;border:1px dashed #f59e0b;background:#fffbeb">
+        ⚠️ 当前为<strong>演示数据</strong>（已注入约 3 周虚拟错误，含 🔴 阻塞 / 🟡 薄弱 + 趋势历史），方便你测试「复制报告 / 补习提示词」与趋势图。
+        <button class="btn ghost sm" data-act="clearWeakDemo" style="margin-left:6px">🧹 清除演示数据</button></div>`
+    : `<div class="card" style="margin-top:10px;border:1px dashed var(--border);background:var(--primary-bg)">
+        当前为真实数据（后端返回项较少）。想看丰富的演示效果？
+        <!-- 演示入口：删除演示时整段移除此按钮 BEGIN --><button class="btn ghost sm" data-act="seedWeakDemo" style="margin-left:6px">🧪 看演示数据（两周）</button><!-- 演示入口 END --></div>`;
   el.innerHTML=`
     <div class="stickybar">
       <button class="topback" data-act="revExit">← 返回复习</button>
@@ -2824,7 +2562,7 @@ pages.errors=async function(el){
     </div>
     <div class="sub" style="margin-top:8px">只列会改变后续学习安排的能力项（近30天有错 ${active} 类）。
       拼错单词不算薄弱项——那只是这个词没记住，交给闪卡星级。</div>
-    ${demoSwitchHtml()}
+    ${banner}
     ${weakHtml}
 
     <div class="card" style="margin-top:12px;background:var(--primary-bg)">
@@ -2880,6 +2618,100 @@ function _weakHit(it, def){
     return (k&&k.indexOf(A)>=0) || (lb&&lb.toLowerCase().indexOf(A)>=0);
   });
 }
+/* ==================================================================
+   演示数据（两周虚拟错误）：后端暂时没返回薄弱项时，用来测试
+   「复制报告 / 补习提示词」与趋势图。默认开启，真实数据回来即让位。
+   ================================================================== */
+const MOCK_WEAK = {
+  capabilities: {
+    categories: [
+      {key:'grammar', label:'语法', items:[
+        {key:'past_tense',   label:'一般过去时反复错', count:12, detail:'近30天 12 次：was/were 混用、规则动词 +ed 漏掉', advice:'集中练 5 个高频不规则动词 + 一般过去时叙述'},
+        {key:'third_person', label:'三单反复错',       count:6,  detail:'近30天 6 次：he/she/it 后动词漏 -s', advice:'造句时刻意点名主语第三人称'},
+        {key:'countable',    label:'可数/不可数反复错',count:0,  detail:'', advice:''},
+        {key:'tense_mix',    label:'时态混用',          count:0,  detail:'', advice:''}
+      ]},
+      {key:'structure', label:'句型 / 结构', items:[
+        {key:'want_to',      label:'不会使用 want to + do', count:9, detail:'近30天 9 次：want 后直接跟动词原形', advice:'用 want to + 动词 造 10 句'},
+        {key:'comparative',  label:'不会使用比较级',        count:4, detail:'近30天 4 次', advice:''},
+        {key:'reason',       label:'不会组织原因表达',      count:3, detail:'近30天 3 次：because 从句缺失', advice:''},
+        {key:'cn_order',     label:'总是把中文语序直接搬到英语', count:0, detail:'', advice:''}
+      ]},
+      {key:'expression', label:'表达', items:[
+        {key:'same_structure', label:'造句反复出现同一种结构错误', count:5, detail:'近30天 5 次', advice:''},
+        {key:'monotonous',     label:'表达过于单一',              count:7, detail:'近30天 7 次：只会用 I think', advice:''},
+        {key:'function',       label:'某种交际功能不会表达',      count:2, detail:'近30天 2 次', advice:''}
+      ]},
+      {key:'listening', label:'听力能力', items:[
+        {key:'liaison',     label:'连读反复听不出来',                count:8, detail:'近30天 8 次', advice:''},
+        {key:'pattern',     label:'特定句型反复听不懂',              count:5, detail:'近30天 5 次', advice:''},
+        {key:'detail_info', label:'数字/时间/地点等信息反复识别错误', count:3, detail:'近30天 3 次', advice:''}
+      ]},
+      {key:'reading', label:'阅读理解', items:[
+        {key:'sentence_type',  label:'某类句型经常理解错',   count:0, detail:'', advice:''},
+        {key:'main_structure', label:'经常抓错主干',         count:6, detail:'近30天 6 次', advice:''},
+        {key:'long_sentence',  label:'长句拆解能力不足',     count:4, detail:'近30天 4 次', advice:''}
+      ]}
+    ],
+    spelling_count: 14,
+    spelling_note: '属「单词没记住」，交给闪卡星级处理。'
+  },
+  low_star_words: [
+    {word:'although', stars:2, total_attempts:5},
+    {word:'nevertheless', stars:1, total_attempts:3},
+    {word:'despite', stars:2, total_attempts:4}
+  ]
+};
+const DEMO_FLAG='eos_weak_demo';
+const DEMO_FORCE='eos_weak_demo_force';
+function useWeakDemo(){ try{ return localStorage.getItem(DEMO_FLAG)!=='0'; }catch(e){ return true; } }
+function setWeakDemo(on){ try{ localStorage.setItem(DEMO_FLAG, on?'1':'0'); }catch(e){} }
+function useWeakDemoForce(){ try{ return localStorage.getItem(DEMO_FORCE)==='1'; }catch(e){ return false; } }
+function setWeakDemoForce(on){ try{ localStorage.setItem(DEMO_FORCE, on?'1':'0'); }catch(e){} }
+/* 注入 3 周虚拟历史，使趋势图立即有折线（本周 < 上周 = 改善）。force=true 时覆盖已有快照 */
+function seedWeakSnapDemo(force){
+  if(!force && _wsnapLoad().length) return;
+  const offs=[21,14,7], fac=[2.0,1.5,1.15];
+  const snaps=offs.map((off,i)=>{
+    const d=new Date(); d.setDate(d.getDate()-off);
+    const ds=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+    const map={};
+    MOCK_WEAK.capabilities.categories.forEach(c=>c.items.forEach(it=>{
+      const v=Math.max(0,Math.round((it.count||0)*fac[i]));
+      map['@'+c.key]=(map['@'+c.key]||0)+v;
+      if((it.count||0)>0) map[c.key+'|'+it.key]=v;
+    }));
+    return {d:ds, map:map};
+  });
+  try{ localStorage.setItem(WSNAP_KEY, JSON.stringify(snaps)); }catch(e){}
+}
+/* 扫描当前薄弱项，返回大类信号色：red=含阻塞 / yellow=含薄弱 / blue=含记忆项 */
+function weakSummaryMark(){
+  const caps=(state.weak&&state.weak.capabilities)||{};
+  let m=null;
+  (caps.categories||[]).forEach(c=>(c.items||[]).forEach(it=>{
+    const s=weakSeverity(c.key, it.key, it.count);
+    if(s.code==='block') m='red';
+    else if(s.code==='weak'){ if(m!=='red') m='yellow'; }
+    else if(s.code==='mem'){ if(!m) m='blue'; }
+  }));
+  return m;
+}
+function clearWeakDemo(){
+  setWeakDemo(false); setWeakDemoForce(false);
+  try{ localStorage.removeItem(WSNAP_KEY); }catch(e){}
+  toast('已清除演示数据，切回真实数据');
+  render('errors');
+}
+/* ===== 演示功能 seedWeakDemo（部署前整段删除 BEGIN） ===== */
+/* 手动「看演示数据」：强制覆盖真实数据，注入两周虚拟错误 + 趋势历史 */
+function seedWeakDemo(){
+  setWeakDemo(true); setWeakDemoForce(true);
+  seedWeakSnapDemo(true);
+  toast('已注入演示数据（两周）');
+  render('errors');
+}
+/* ===== 演示功能 seedWeakDemo（部署前整段删除 END） ===== */
 /* ---------- 薄弱项趋势 ----------
    后端只给「近30天累计次数」，没有按天的时间序列，所以趋势靠本地每日快照比：
    今天之前最后一次快照 vs 当前值 → 改善 / 恶化 / 稳定 / 新出现。
@@ -2889,50 +2721,19 @@ function _todayStr(){
   const d=new Date();
   return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
 }
-/* 快照原先只写 localStorage：换设备 / 清缓存后趋势图直接回到「待观察」。
-   现在改由服务端 weak_snapshots 表存储，localStorage 降级为离线兜底。
-   读走「一次性拉进内存缓存」的路子，后续所有趋势计算仍是同步的 ——
-   否则 pgosDataDump 那些 forEach 里的 await 不会真的等待，会拿到 Promise。 */
-let _wsnapCache=null;
-function _wsnapLoadLocal(){
+function _wsnapLoad(){
   try{ const v=JSON.parse(localStorage.getItem(WSNAP_KEY)||'[]'); return Array.isArray(v)?v:[]; }
   catch(e){ return []; }
 }
-/* 同步读：给趋势计算用。缓存没就绪时退回本机，行为与改造前一致。 */
-function _wsnapAll(){ return _wsnapCache || _wsnapLoadLocal(); }
-/* 进入薄弱项页时调一次：服务端优先，取不到用本机。 */
-async function wsnapEnsure(){
-  if(_wsnapCache) return _wsnapCache;
-  let got=null;
-  try{
-    const r=await api('/weak/snapshots');
-    if(r && Array.isArray(r.snapshots)) got=r.snapshots;
-  }catch(e){ /* 后端不可达 → 用本机 */ }
-  _wsnapCache = (got && got.length) ? got : _wsnapLoadLocal();
-  return _wsnapCache;
-}
 /* 每天只保留一份快照（同一天重复打开覆盖为最新值），基线永远取「今天之前」那份。
    最多留 60 天，超出丢弃最旧的。 */
-async function weakSnapshot(map){
+function weakSnapshot(map){
   if(!map) return;
   const today=_todayStr();
-  let local=[];
-  try{
-    local=_wsnapLoadLocal().filter(s=>s&&s.d&&s.d!==today);
-    local.push({d:today, map:map});
-    while(local.length>60) local.shift();
-    localStorage.setItem(WSNAP_KEY, JSON.stringify(local));
-  }catch(e){}
-  try{
-    await api('/weak/snapshots',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({d:today, map:map})});
-    // 写成功就顺手更新内存缓存，省掉一次回查请求
-    const base=(_wsnapCache||_wsnapLoadLocal()).filter(s=>s&&s.d&&s.d!==today);
-    base.push({d:today, map:map});
-    base.sort((a,b)=>String(a.d)<String(b.d)?-1:(String(a.d)>String(b.d)?1:0));
-    while(base.length>60) base.shift();
-    _wsnapCache=base;
-  }catch(e){ /* 同步失败：本机已有，趋势照算 */ }
-  if(!_wsnapCache) _wsnapCache=local;
+  let all=_wsnapLoad().filter(s=>s&&s.d&&s.d!==today);
+  all.push({d:today, map:map});
+  while(all.length>60) all.shift();
+  try{ localStorage.setItem(WSNAP_KEY, JSON.stringify(all)); }catch(e){}
 }
 /* 错误类型 → 能力大类：后端只给「拼写 / 句型」这类粗标签，只能按关键词归类。
    拼写不进薄弱项（属单词没记住，交给闪卡），这里单独挑出来跳过。 */
@@ -2976,7 +2777,7 @@ function weakSliceTrend(catKey){
 function weakTrend(catKey, itemKey, cur){
   const k = itemKey ? (catKey+'|'+String(itemKey)) : ('@'+catKey);
   const curN=Number(cur||0);
-  const all=_wsnapAll(), today=_todayStr();
+  const all=_wsnapLoad(), today=_todayStr();
   let base=null;
   for(let i=all.length-1;i>=0;i--){ if(all[i].d!==today && all[i].map){ base=all[i]; break; } }
   if(base){
@@ -3004,7 +2805,7 @@ function _isoWeek(dstr){
    首次使用（只有今天一份快照）时上周=0，显示「首次记录」，不编造历史。 */
 function weakWeekStat(catKey, itemKey, liveCount){
   const k=itemKey?(catKey+'|'+String(itemKey)):('@'+catKey);
-  const all=_wsnapAll().filter(s=>s&&s.d&&s.map&&s.map[k]!=null);
+  const all=_wsnapLoad().filter(s=>s&&s.d&&s.map&&s.map[k]!=null);
   const byWeek={};
   all.forEach(s=>{ const w=_isoWeek(s.d); const v=Number(s.map[k])||0; if(!byWeek[w]||s.d>byWeek[w].d) byWeek[w]={d:s.d,v}; });
   const weeks=Object.keys(byWeek).sort();
@@ -3059,8 +2860,7 @@ function weakTrendChart(catKey, itemKey){
   </svg>
   <div class="wkline" style="font-size:11px;margin-top:1px">📈 各周30天错误数：${pts.join(' → ')}　${up?'↑ 增多':down?'↓ 减少':'→ 持平'}</div>`;
 }
-async function weakCapHtml(wk){
-  await wsnapEnsure();   // 趋势基线先从服务端取，取不到自动退到本机
+function weakCapHtml(wk){
   const caps=(wk&&wk.capabilities)||{};
   const apiCats=caps.categories||[];
   // 后端各类里出现过、但没被清单任何一条吃掉的项，兜底挂到对应类末尾，避免漏报
@@ -3089,7 +2889,7 @@ async function weakCapHtml(wk){
     all.forEach(r=>{ snapMap[cat.key+'|'+String(r.def.key||'')] = r.hit.length?Number(r.hit[0].count||0):0; });
     return {cat, all, n, extraMore};
   });
-  await weakSnapshot(snapMap);   // 先把今天的快照落库，趋势图 / 本周 才算得准
+  weakSnapshot(snapMap);   // 先把今天的快照落库，趋势图 / 本周 才算得准
   const html=prepared.map(({cat, all, n, extraMore})=>{
     const ctr=weakTrend(cat.key, null, n);
     let catMark=null;
@@ -3657,34 +3457,11 @@ function _anaMiniLine(arr,title,lowerIsBetter){
   let d=''; let pen=false;
   arr.forEach((x,i)=>{ const px=xc(i), py=yc(x.v); d+=(pen?'L':'M')+px.toFixed(1)+' '+py.toFixed(1)+' '; pen=true; });
   const dots=arr.map((x,i)=>`<circle cx="${xc(i).toFixed(1)}" cy="${yc(x.v).toFixed(1)}" r="3" fill="${lowerIsBetter?'var(--red)':'var(--primary)'}"/>`).join('');
-  const labels=arr.map((x,i)=>`<text x="${xc(i).toFixed(1)}" y="${H-2}" font-size="9" fill="#94a3b8" text-anchor="middle">${esc(x.label!=null?x.label:(i+1))}</text>`).join('');
+  const labels=arr.map((x,i)=>`<text x="${xc(i).toFixed(1)}" y="${H-2}" font-size="9" fill="#94a3b8" text-anchor="middle">${i+1}</text>`).join('');
   const nums=arr.map(x=>x.v).join(' → ');
   return `<div style="margin:8px 0"><div style="font-size:13px;font-weight:700;margin-bottom:4px">${esc(title)}</div><svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto"><line x1="${P}" y1="${H-P}" x2="${W-P}" y2="${H-P}" stroke="#e2e8f0"/><path d="${d.trim()}" fill="none" stroke="var(--primary)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>${dots}${labels}</svg>
     <div class="trendnote">最近四周：${nums}</div>
   </div>`;
-}
-/* 🆚 环比对比块（本周vs上周 / 本月vs上月）：绿=向好 红=向差 灰=持平或无可比数据 */
-function _cmpBlock(cmp){
-  if(!cmp||!cmp.items||!cmp.items.length) return '';
-  const rows=cmp.items.map(it=>{
-    const c=it.cur, p=it.prev;
-    const col=it.better===true?'var(--green)':(it.better===false?'var(--red)':'var(--muted)');
-    const arrow=it.better===true?'↑':(it.better===false?'↓':'→');
-    const pct=(it.pct==null||it.pct===0)?'':(it.pct>0?'+':'')+it.pct+'%';
-    return `<div class="sumrow">
-      <span class="srl">${esc(it.name)}</span>
-      <span class="srr"><b style="color:${col}">${c==null?'—':c+it.unit} ${pct?`<span style="font-weight:800">${arrow} ${pct}</span>`:arrow}</b>
-        <span style="color:var(--muted)">${esc(cmp.prev_label||'上期')} ${p==null?'—':p+it.unit}</span></span>
-    </div>`;
-  }).join('');
-  return `<div class="card" style="border:1.5px solid var(--primary)"><h2>${esc(cmp.title||'环比')}</h2>
-    <div class="sub" style="margin-top:2px">绿=向好，红=向差；错误率越低越好。</div>${rows}</div>`;
-}
-async function clearDemo(){
-  if(!confirm('清空示例数据？只会删除被标记为示例（is_demo=1）的记录，真实学习记录不受影响。')) return;
-  const r=await api('/demo/clear', {method:'POST'});
-  toast((r&&r.total!=null)?`已清空示例数据 ${r.total} 条 ✅`:'没有可清空的示例数据');
-  if(r&&r.ok) { location.reload(); }
 }
 /* 错误趋势折线图：输入 byDay={YYYY-MM-DD:次数}，按自然日画，无记录日不补点 */
 function _errTrendLine(byDay){
@@ -3822,10 +3599,10 @@ function _sumPeriod(){
    其余指标（学习天数 / 新学词汇 / 计划完成率等）后端未提供统计接口，按 docx「不编造」原则显示 —。 */
 pages.sum=async function(el){
   refreshProg();
-  let weakData=null, errData=null, activityData=null, reportData=null;
+  let weakData=null, errData=null;
   try{
-    const r=await Promise.all([api('/weakness'), api('/errors'), api('/activity'), api('/report')]);
-    weakData=r[0]; errData=r[1]; activityData=r[2]; reportData=r[3];
+    const r=await Promise.all([api('/weakness'), api('/errors')]);
+    weakData=r[0]; errData=r[1];
   }catch(e){ /* 不崩：用空数据渲染结构，缺失指标一律 — */ }
   let errTypes=(errData&&errData.error_types)||(weakData&&weakData.error_types)||[];
   const lowWords=(weakData&&weakData.low_star_words)||[];
@@ -3839,72 +3616,103 @@ pages.sum=async function(el){
   const tab=state.sumTab||'week';
   const tabBtn=(k,label)=>`<button class="btn ${tab===k?'':'ghost'} sm" style="flex:1" data-act="sumTab" data-val="${k}">${label}</button>`;
   const dash=`<span style="color:var(--muted)">—</span>`;
-  const noDataNote=`<div class="sub" style="margin-top:6px;color:var(--muted)">注：学习天数 / 计划完成率需要「每周计划总数」，后端暂无该数据，按“不编造”原则显示 —；其余指标（造句、复习、周测、听力、新学词汇、错误）均来自真实记录。</div>`;
+  const noDataNote=`<div class="sub" style="margin-top:6px;color:var(--muted)">注：学习天数 / 新学词汇 / 计划完成率等指标需后端统计接口提供，当前后端未返回，按“不编造”原则显示 —。</div>`;
 
+  /* ---------- 演示数据（周报/月报） ---------- */
+  const DEMO_FLAG_SUM='eos_sum_demo';
+  function useSumDemo(){ try{ return localStorage.getItem(DEMO_FLAG_SUM)!=='0'; }catch(e){ return true; } }
+  function setSumDemo(on){ try{ localStorage.setItem(DEMO_FLAG_SUM, on?'1':'0'); }catch(e){} }
+  const demo=useSumDemo();
+  const demoStudyDays=5;
+  const demoNewWords=42;
+  const demoReviews=63;
+  const demoSentences=12;
+  const demoListeningQ=8;
+  const demoListeningC=6;
+  const demoQuizN=2;
+  const demoQuizAvg=82;
+  const demoPlanRate=78;
+  const demoErrorRate=15;
+  const demoLastStudyDays=4;
+  const demoLastNewWords=28;
+  const demoLastReviews=55;
+  const demoLastErrorRate=22;
+  const demoPlanVocab=80;
+  const demoPlanSent=60;
+  const demoPlanListen=75;
 
-  // 错误概览：顶部图例 + 每条一行「类型 等级 · 近30天N · 累计M」，绿=向好 红=向差
-  const _legend=`<div class="legend"><span>🔴 阻塞</span><span>🟡 薄弱</span><span>🔵 记忆</span></div>`;
-  const errOverview = errTypes.length ? (_legend + errTypes.map(e=>{
-    const lv=(e.level||'🔵').match(/^(\S+)/);
-    const tr=e.trend||'flat';
-    const col=tr==='better'?'var(--green)':(tr==='worse'?'var(--red)':'var(--muted)');
-    const arrow=tr==='better'?'↓':(tr==='worse'?'↑':'→');
-    return `<div class="sumrow"><span class="srl"><b>${esc(e.type)}</b><span class="sdot" style="margin-left:6px">${esc(lv?lv[1]:'🔵')}</span></span><span class="srr" style="font-weight:800;color:${col}">${arrow} 近30天 ${e.count_30d||0} · 累计 ${e.total||0}</span></div>`;
-  }).join(''))
-    : _legend + '<div class="sub" style="margin:6px 0">本周暂无错误记录。</div>';
+  /* 演示数据：错误概览 / 本周需注意 / 错误趋势 也填充，方便先看结构 */
+  if(demo){
+    const _recent=n=>{ const out=[]; const base=new Date(2026,7,23); for(let k=0;k<n;k++){ const dt=new Date(base); dt.setDate(base.getDate()+(k%14)); out.push({created_at: dt.getFullYear()+'-'+('0'+(dt.getMonth()+1)).slice(-2)+'-'+('0'+dt.getDate()).slice(-2)}); } return out; };
+    errTypes=[
+      {type:'时态混乱', level:'🔴 阻塞', count_30d:18, total:42, recent:_recent(18)},
+      {type:'介词搭配错误', level:'🟡 薄弱', count_30d:11, total:23, recent:_recent(11)},
+      {type:'冠词缺失', level:'🟡 薄弱', count_30d:7, total:15, recent:_recent(7)},
+      {type:'拼写错误', level:'🔵 记忆', count_30d:9, total:30, recent:_recent(9)},
+    ];
+    confirmed=errTypes.filter(e=>{const lv=String(e.level||''); return lv.indexOf('🔴')>=0||lv.indexOf('🟡')>=0;});
+    byDay={}; errTypes.forEach(e=>{(e.recent||[]).forEach(r=>{const d=String(r.created_at||'').slice(0,10); if(d) byDay[d]=(byDay[d]||0)+1;});});
+    totalErr=errTypes.reduce((s,e)=>s+(Number(e.count_30d)||0),0);
+  }
+
+  const errOverview = errTypes.length ? errTypes.map(e=>{
+    const lv=(e.level||'').match(/^(\S+)/);
+    return `<div class="sumrow"><span class="srl"><b>${esc(e.type)}</b><span class="sdot" style="margin-left:6px">${esc(lv?lv[1]:'')}</span></span><span class="srr">近30天 ${e.count_30d||0} · 累计 ${e.total||0}</span></div>`;
+  }).join('')
+    : '<div class="sub" style="margin:6px 0">本周暂无错误记录。</div>';
   const errTrend = _errTrendLine(byDay);
   const notice = confirmed.length ? confirmed.map(e=>`<div class="sumrow"><span><b>${esc(e.type)}</b></span><span style="color:var(--muted)">${esc(e.level||'')} · 已确认</span></div>`).join('')
     : '<div class="sub" style="margin:6px 0">本周暂无已确认的重点薄弱项。</div>';
   const monthSummary = `本月共记录 ${totalErr} 条错误，涉及 ${errTypes.length} 类：\n` + (errTypes.length?errTypes.map(e=>e.type+' '+e.count_30d+'次').join('\n'):'（无）') + '\n错误统计用于记录学习表现，不直接代表能力薄弱。';
 
-  // 真实报告数据（来自 /api/report）；无则回退占位
-  const RD = reportData || {};
-  const W = RD.week || {}, M = RD.month || {};
-  const mval = (v)=> (v==null? dash : v);
-
   const weekHtml=`
     <div class="card" style="border:1.5px solid var(--primary)">
       <h2>📚 本周学习</h2>
-      ${_anaMetric('本周主题', mval(W.title||'—'))} ${_anaMetric('语法重点', mval(W.grammar||'—'))}
-      ${_anaMetric('造句', mval((W.sentences&&W.sentences.total)+' 句'))} ${_anaMetric('造句均分', mval((W.sentences&&W.sentences.avg)))}
-      ${_anaMetric('单词复习(SRS)', mval(W.reviews)+' 次')} ${_anaMetric('周测', mval(W.quiz_count)+' 次')} ${_anaMetric('周测均分', mval(W.quiz_avg))}
-      ${_anaMetric('听力', mval((W.listening&&W.listening.answered)+' 题'))} ${_anaMetric('听力正确', mval((W.listening&&W.listening.correct)+' 题'))}
+      ${_anaMetric('本周主题', demo?'Unit 3 - Daily Routine':dash)} ${_anaMetric('学习天数', demo?demoStudyDays+' 天':dash)} ${_anaMetric('计划完成率', demo?demoPlanRate+'%':dash)}
+      ${_anaMetric('新学词汇', demo?demoNewWords+' 个':dash)} ${_anaMetric('单词复习', demo?demoReviews+' 次':dash)} ${_anaMetric('造句', demo?demoSentences+' 句':dash)}
+      ${_anaMetric('听力', demo?demoListeningQ+' 题（对 '+demoListeningC+'）':dash)} ${_anaMetric('周测', demo?demoQuizN+' 次，均分 '+demoQuizAvg:dash)} ${demo?'':noDataNote}
     </div>
     <div class="card"><h2>📈 学习效果</h2>
-      ${_anaMetric('听力正确率', mval((W.listening&&W.listening.answered)?Math.round(W.listening.correct*100/W.listening.answered)+'%':'—'))}
-      ${_anaMetric('周测平均分', mval(W.quiz_avg))}
-      ${_anaMetric('造句正确率', mval((W.sentences&&W.sentences.total)?Math.round(W.sentences.good*100/W.sentences.total)+'%':'—'))}
-      ${_anaMetric('错误率', mval((errTypes.length)?Math.round(errTypes.reduce((s,e)=>s+(Number(e.count_30d)||0),0))+' 条/30天':'—'))}
+      ${_anaMetric('听力正确率', demo?Math.round(demoListeningC/demoListeningQ*100)+'%':dash)} ${_anaMetric('周测平均分', demo?demoQuizAvg+' 分':dash)} ${_anaMetric('造句正确率', demo?'83%':dash)} ${_anaMetric('错误率', demo?demoErrorRate+'%':dash)}
+    </div>
+    <div class="card"><h2>🆚 本周 vs 上周</h2>
+      <div class="sub" style="margin-top:4px">${demo?'对比基于演示数据，仅展示结构。':''}绿色=向好，红色=向差。</div>
+      ${_anaTrend('学习天数', demo?demoStudyDays:null, demo?demoLastStudyDays:null, ' 天')}
+      ${_anaTrend('新学词汇', demo?demoNewWords:null, demo?demoLastNewWords:null, ' 个')}
+      ${_anaTrend('单词复习', demo?demoReviews:null, demo?demoLastReviews:null, ' 次')}
+      ${_anaTrend('错误率', demo?demoErrorRate:null, demo?demoLastErrorRate:null, '%', true)}
     </div>
     <div class="card"><h2>❌ 错误概览</h2>
       <div class="sub" style="margin-top:4px">仅展示错误事实，不代表能力薄弱；错误 ≠ 薄弱项。</div>
+      <div class="legend"><span>🔴 阻塞</span><span>🟡 薄弱</span><span>🔵 记忆</span></div>
       ${errOverview}
     </div>
     <div class="card"><h2>⚠️ 本周需要注意</h2>
       <div class="sub" style="margin-top:4px">只读已确认的薄弱项及其现有状态，不重新诊断。</div>
       ${notice}
     </div>
+    <div class="card"><h2>🎯 计划完成情况</h2>
+      ${_anaMetric('词汇计划完成', demo?demoPlanVocab+'%':dash)} ${_anaMetric('造句计划完成', demo?demoPlanSent+'%':dash)} ${_anaMetric('听力计划完成', demo?demoPlanListen+'%':dash)} ${demo?'':noDataNote}
+    </div>
     <div class="card"><h2>📈 错误率趋势</h2>
       <div class="sub" style="margin-top:4px">按真实错误记录的自然日统计；无记录日不显示、不补 0。</div>
       ${errTrend}
-    </div>
-    ${_cmpBlock(W.compare)}`;
+    </div>`;
 
   const monthHtml=`
-    <div class="card" style="border:1.5px solid var(--primary)"><h2>📚 本月概况（${mval(M.label)}）</h2>
-      ${_anaMetric('造句', mval((M.sentences&&M.sentences.total)+' 句'))} ${_anaMetric('造句均分', mval((M.sentences&&M.sentences.avg)))}
-      ${_anaMetric('听力', mval((M.listening&&M.listening.answered)+' 题'))} ${_anaMetric('听力正确', mval((M.listening&&M.listening.correct)+' 题'))}
-      ${_anaMetric('周测', mval(M.quiz_count)+' 次')} ${_anaMetric('新学词汇', mval(M.words_output)+' 个')}
-      ${_anaMetric('错误新增', mval((M.errors&&M.errors.new)))} ${_anaMetric('错误已修正', mval((M.errors&&M.errors.fixed)))}
+    <div class="card" style="border:1.5px solid var(--primary)"><h2>📚 本月概况</h2>
+      ${_anaMetric('学习天数', demo?'18 天':dash)} ${_anaMetric('已到期计划完成率', demo?'76%':dash)} ${_anaMetric('新学词汇', demo?'156 个':dash)}
+      ${_anaMetric('单词复习', demo?'240 次':dash)} ${_anaMetric('造句', demo?'48 句':dash)} ${_anaMetric('听力', demo?'32 题（对 24）':dash)} ${_anaMetric('周测', demo?'8 次，均分 79':dash)} ${demo?'':noDataNote}
     </div>
     <div class="card"><h2>📈 近四周趋势</h2>
-      ${(()=>{ const wk=(activityData&&activityData.weeks)||[];
-        const line=(key,title)=>{ if(!wk.length) return _anaMetric(title,'—');
-          if(wk.every(w=>w[key]==null)) return _anaMetric(title,'—');
-          const arr=wk.map(w=>({label:w.label, v:(w[key]==null?0:w[key])}));
-          return _anaMiniLine(arr,title); };
-        return line('learning_days','学习天数')+line('listening_acc','听力正确率')+line('quiz_avg','测评平均分')+_anaMetric('词汇完成率','—');
-      })()}
+      ${demo?'<div class="sub" style="margin-top:4px">趋势基于演示数据，仅展示结构。</div>':''}
+      ${_anaMiniLine([{label:'W1',v:4},{label:'W2',v:5},{label:'W3',v:4},{label:'W4',v:5}],'学习天数')}
+      ${_anaMiniLine([{label:'W1',v:72},{label:'W2',v:78},{label:'W3',v:75},{label:'W4',v:80}],'词汇完成率')}
+      ${_anaMiniLine([{label:'W1',v:60},{label:'W2',v:65},{label:'W3',v:70},{label:'W4',v:75}],'听力正确率')}
+      ${_anaMiniLine([{label:'W1',v:22},{label:'W2',v:18},{label:'W3',v:16},{label:'W4',v:14}],'错误率',true)}
+    </div>
+    <div class="card"><h2>📚 本月完成情况</h2>
+      ${_anaProgress('词汇', demo?156:0, demo?200:0)} ${_anaProgress('造句', demo?48:0, demo?60:0)} ${_anaProgress('听力', demo?32:0, demo?40:0)} ${demo?'':noDataNote}
     </div>
     <div class="card"><h2>❌ 本月错误趋势</h2>
       <div class="sub" style="margin-top:4px">仅展示错误事实与趋势，不进行能力诊断。</div>
@@ -3916,87 +3724,77 @@ pages.sum=async function(el){
     </div>
     <div class="card"><h2>📊 本月总结</h2>
       <div class="sub" style="margin-top:4px;white-space:pre-line;font-size:12.5px;line-height:1.8">${monthSummary}</div>
-    </div>
-    ${_cmpBlock(M.compare)}`;
+    </div>`;
 
   let bodyHtml, reportText;
   if(tab==='copy'){
-    reportText=_buildReportText(RD, tab==='week'?'周报':'月报', period);
+    reportText=_buildSumText(tab==='week'?'周报':'月报', period, errTypes, confirmed, byDay, totalErr, monthSummary);
     bodyHtml=`<div class="card" style="border:1.5px solid var(--primary)"><h2>📋 复制报告</h2>
       <div class="sub" style="margin-top:4px">下方为当前「${tab==='week'?'周报':'月报'}」可复制文本，直接整段发给 AI 或保存。</div>
       <textarea class="codebox" id="sumCopyBox" readonly style="margin-top:9px;height:280px">${esc(reportText)}</textarea>
       <button class="btn" style="margin-top:9px" data-act="copySummaryReport">📋 复制这段文本</button>
     </div>`;
   } else if(tab==='month'){
-    reportText=_buildReportText(RD, '月报', period);
+    reportText=_buildSumText('月报', period, errTypes, confirmed, byDay, totalErr, monthSummary);
     bodyHtml=monthHtml;
   } else {
-    reportText=_buildReportText(RD, '周报', period);
+    reportText=_buildSumText('周报', period, errTypes, confirmed, byDay, totalErr, monthSummary);
     bodyHtml=weekHtml;
   }
   state.sumText=reportText;
 
-  /* 最近活动（方案 B 内嵌）—— 真实数据来自 /api/activity */
-  const recentActs=_recentActivityHtml(activityData&&activityData.recent);
+  const demoBanner = demo
+    ? `<div class="card" style="margin-top:10px;border:1.5px dashed #f59e0b;background:#fffbeb"><b>⚠️ 演示数据</b>：当前周报/月报使用虚拟数据展示完整结构（学习天数、词汇、计划完成率、vs上周对比、趋势等）。<button class="btn ghost sm" data-act="clearSumDemo" style="margin-left:6px">🧹 清除演示数据</button></div>`
+    : `<div class="card" style="margin-top:10px;border:1.5px dashed var(--primary);background:var(--primary-bg)">当前后端未返回学习天数/词汇/计划完成率等统计指标，显示 —。<button class="btn ghost sm" data-act="seedSumDemo" style="margin-left:6px">🧪 看演示数据</button></div>`;
+
+  /* 最近活动（方案 B 内嵌） */
+  const recentActs=_recentActivityHtml();
 
   el.innerHTML=`
   <h1>📊 学习总结</h1>
-  ${demoSwitchHtml()}
   <div style="display:flex;gap:7px;margin:6px 0">
     ${tabBtn('week','📅 周报')}
     ${tabBtn('month','🗓 月报')}
     ${tabBtn('copy','📋 复制报告')}
   </div>
   <div class="sub" style="margin-bottom:8px">${tab==='month'?('周期：'+period.month):('周期：'+period.week)}</div>
+  ${demoBanner}
   ${bodyHtml}
   ${recentActs}
   `;
 };
-function _recentActivityHtml(acts){
-  const d = acts || [];
-  if(!d.length) return `<div class="card" style="margin-top:10px"><h2>🕐 最近活动</h2><div class="sub">还没有学习活动记录。去「学习 / 听力 / 复习 / 测评」做几道题，这里就会出现真实的练习记录。</div></div>`;
+function _recentActivityHtml(){
+  const d=historyData();
+  if(!d.length) return '';
   const byType={}; d.forEach(x=>{ byType[x.type]=(byType[x.type]||[]); byType[x.type].push(x); });
   const rows=Object.entries(byType).map(([t,list])=>{
     const last=list[list.length-1];
     let extra='';
-    if(t==='测评'){ const avg=Math.round(list.reduce((s,x)=>s+(x.score||0),0)/list.length); extra=`均分 ${avg}`; }
-    else if(t==='听力'&&last.score!=null){ extra=`正确率 ${last.score}%`; }
-    else if(t==='造句'){ const rate=Math.round(list.filter(x=>x.ok).length/list.length*100); extra=`正确率 ${rate}%`; }
-    return `<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--border);font-size:13px"><span><b>${t}</b> ${list.length} 条</span><span style="color:var(--muted)">最近 ${last.date}${extra?(' · '+extra):''}</span></div>`;
+    if(t==='测评'||t==='听力'){ const avg=Math.round(list.reduce((s,x)=>s+(x.score||0),0)/list.length); extra=`均分 ${avg}`; }
+    else if(t==='造句'||t==='闪卡'){ const rate=Math.round(list.filter(x=>x.ok).length/list.length*100); extra=`正确率 ${rate}%`; }
+    return `<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--border);font-size:13px"><span><b>${t}</b> ${list.length} 条</span><span style="color:var(--muted)">最近 ${last.date} · ${extra}</span></div>`;
   }).join('');
-  return `<div class="card" style="margin-top:10px"><h2>🕐 最近活动</h2><div class="sub">按模块分组，显示最近记录数和表现（数据来自后端真实记录）。</div>${rows}</div>`;
+  return `<div class="card" style="margin-top:10px"><h2>🕐 最近活动</h2><div class="sub">按模块分组，显示最近记录数和表现。</div>${rows}</div>`;
 }
-/* 生成可复制的纯文本总结（周报/月报共用）—— 数据来自 /api/report 真实统计 */
-function _buildReportText(RD, kind, period){
-  const w=RD&&RD.week||{}, m=RD&&RD.month||{}, p=RD&&RD.progress||{};
-  const L=[];
-  L.push('【English OS 学习总结报告 · '+kind+'】');
-  L.push('生成时间：'+new Date().toLocaleString());
-  if(p.week) L.push('当前进度：第'+p.week+'周「'+(w.title||'')+'」'+(w.grammar?(' · 语法：'+w.grammar):''));
-  L.push('');
-  if(kind==='周报'){
-    L.push('=== 本周（第'+(p.week||'?')+'周）===');
-    L.push('造句：'+(w.sentences?w.sentences.total:0)+' 句（正确 '+ (w.sentences?w.sentences.good:0) +'，均分 '+(w.sentences?w.sentences.avg:0)+'）');
-    L.push('单词复习(SRS)：'+(w.reviews||0)+' 次');
-    L.push('周测：'+(w.quiz_count||0)+' 次，均分 '+(w.quiz_avg||0));
-    L.push('听力：'+(w.listening?w.listening.answered:0)+' 题，答对 '+(w.listening?w.listening.correct:0));
-    if(w.err_types&&w.err_types.length){
-      L.push('高频错误类型（本周）：');
-      w.err_types.forEach(e=>L.push('  - '+e.type+'：'+e.current+' 次'));
-    }
-  } else {
-    L.push('=== 本月（'+(m.label||'?')+'）===');
-    L.push('造句：'+(m.sentences?m.sentences.total:0)+' 句（正确 '+ (m.sentences?m.sentences.good:0) +'，均分 '+(m.sentences?m.sentences.avg:0)+'）');
-    L.push('听力：'+(m.listening?m.listening.answered:0)+' 题，答对 '+(m.listening?m.listening.correct:0));
-    L.push('周测：'+(m.quiz_count||0)+' 次');
-    L.push('新学词汇：'+(m.words_output||0)+' 个');
-    L.push('错误：新增 '+(m.errors?m.errors.new:0)+'，已修正 '+(m.errors?m.errors.fixed:0));
-  }
+/* 生成可复制的纯文本总结（周报/月报共用） */
+function _buildSumText(kind, period, errTypes, confirmed, byDay, totalErr, monthSummary){
+  const L=['【English OS 学习总结 · '+kind+'】','周期：'+(kind==='月报'?period.month:period.week),'生成时间：'+new Date().toLocaleString(),''];
+  L.push('—— 错误概览（仅事实，不代表能力薄弱）——');
+  if(errTypes.length){
+    errTypes.forEach(e=>L.push(`· ${e.type}（${e.level||''}）：近30天 ${e.count_30d||0} 次，累计 ${e.total||0}`));
+  } else L.push('· 本周暂无错误记录');
+  L.push('','—— 错误按日分布 ——');
+  const keys=Object.keys(byDay).sort();
+  L.push(keys.length?keys.map(d=>`· ${d.slice(5)}：${byDay[d]} 次`).join('\n'):'· 暂无按日错误记录');
+  L.push('','—— 需要注意（只读已确认薄弱项）——');
+  L.push(confirmed.length?confirmed.map(e=>`· ${e.type}（${e.level||''} · 已确认）`).join('\n'):'· 本周暂无已确认的重点薄弱项');
+  if(kind==='月报'){ L.push('','—— 本月总结 ——', monthSummary); }
+  L.push('','（学习天数 / 新学词汇 / 计划完成率等需后端统计接口；当前未提供，按“不编造”原则未显示。）');
   return L.join('\n');
 }
 
 /* 复制薄弱项页完整报告（给 AI 分析用） */
-async function copyErrorReport(){
+function copyErrorReport(){
   const tplDiag=_tpl('tplPromptDiag'), tplTrain=_tpl('tplPromptTrain');
   if(!tplDiag && !tplTrain){ toast('提示词未加载，刷新页面重试'); return; }
   const data=pgosDataDump();
@@ -4016,7 +3814,7 @@ async function copyErrorReport(){
     tplTrain,
     '','────────────────────────────',
     '【训练项目输入】',
-    await trainProjectsText() || '（当前未导入结构化训练项目。请先运行「一、分析诊断提示词」得到 Next-stage Training Input，再导入「复习 → 🧠 补习」。）',
+    trainProjectsText() || '（当前未导入结构化训练项目。请先运行「一、分析诊断提示词」得到 Next-stage Training Input，再导入「复习 → 🧠 补习」。）',
     '','══════════════════════════════════════',
     '【三、试卷输出格式（让 AI 吐出可导入 PGOS 的 JSON）】',
     trainFormatBlock()
@@ -4123,10 +3921,10 @@ function copyDiagPrompt(){
   copyText(out,'提示词未加载');
   toast('已复制分析提示词 ✅ 粘给 AI 即可');
 }
-async function copyTrainPrompt(){
+function copyTrainPrompt(){
   const tpl=_tpl('tplPromptTrain');
   if(!tpl){ toast('提示词未加载，刷新页面重试'); return; }
-  const pj=await trainProjectsText();
+  const pj=trainProjectsText();
   const out=[
     tpl,'','────────────────────────────',
     pgosDataDump(),'','────────────────────────────',
@@ -4154,51 +3952,13 @@ const TRAIN_KEY='eos_train_v1';
 const ABILITY_CN={GRAMMAR:'语法',VOCABULARY:'词汇',EXPRESSION:'表达',LISTENING:'听力',READING:'阅读',OTHER:'其他'};
 const STATUS_CN={NOT_STARTED:'待开始',CONTINUE:'训练中',REVIEW:'待复核',DONE:'已结束'};
 const ITEM_CN={CHOICE:'选择',FILL:'填空',STRUCTURE:'结构',SENTENCE:'造句',JUDGE:'判断'};
-/* 专项训练数据落库：主存储改到服务端，localStorage 降级为备份。
-   此前四层数据只存在浏览器里，换设备 / 清缓存即全部蒸发，且对错误本、
-   薄弱项、总结页完全不可见。现在统一由服务端存，读不到本机那份。
-   _trainCache 是内存缓存，避免每次 render 都打一次接口。 */
-let _trainCache=null;
-async function trainLoad(){
-  if(_trainCache) return _trainCache;
-  const empty={projects:[],sessions:[],rounds:[],attempts:[]};
-  try{
-    const r=await api('/training/state');
-    if(r && r.projects){
-      _trainCache={projects:r.projects||[], sessions:r.sessions||[], rounds:r.rounds||[], attempts:r.attempts||[]};
-      await _trainMergeLegacy(_trainCache);   // 老本地数据一次性并进来，避免原有记录凭空消失
-      return _trainCache;
-    }
-  }catch(e){ /* 后端不可用 → 降级读本机，行为与改造前一致 */ }
+function trainLoad(){
   try{
     const d=JSON.parse(localStorage.getItem(TRAIN_KEY)||'{}')||{};
-    _trainCache={projects:d.projects||[], sessions:d.sessions||[], rounds:d.rounds||[], attempts:d.attempts||[]};
-  }catch(e){ _trainCache=empty; }
-  return _trainCache;
+    return {projects:d.projects||[], sessions:d.sessions||[], rounds:d.rounds||[], attempts:d.attempts||[]};
+  }catch(e){ return {projects:[],sessions:[],rounds:[],attempts:[]}; }
 }
-/* 把此前存在 localStorage 的训练数据一次性并入服务端。
-   只在落库成功后才清掉旧存储；失败就留着，下次进来再试，绝不静默丢弃。 */
-async function _trainMergeLegacy(d){
-  let old=null;
-  try{ old=JSON.parse(localStorage.getItem(TRAIN_KEY)||'{}')||{}; }catch(e){ return; }
-  const lp=old.projects||[], ls=old.sessions||[], lr=old.rounds||[], la=old.attempts||[];
-  if(!lp.length&&!ls.length&&!lr.length&&!la.length) return;
-  const has=(arr,key,val)=>arr.some(x=>String(x[key])===String(val));
-  let added=0;
-  lp.forEach(x=>{ if(x&&x.project_id&&!has(d.projects,'project_id',x.project_id)){ d.projects.push(x); added++; } });
-  ls.forEach(x=>{ if(x&&x.session_id&&!has(d.sessions,'session_id',x.session_id)){ d.sessions.push(x); added++; } });
-  lr.forEach(x=>{ if(x&&x.round_id&&!has(d.rounds,'round_id',x.round_id)){ d.rounds.push(x); added++; } });
-  la.forEach(x=>{ if(x&&x.attempt_id&&!has(d.attempts,'attempt_id',x.attempt_id)){ d.attempts.push(x); added++; } });
-  if(added && await trainSave(d)){ localStorage.removeItem(TRAIN_KEY); }
-}
-async function trainSave(d){
-  _trainCache=d;   // 先更新内存，界面立刻生效，不等网络往返
-  try{ localStorage.setItem(TRAIN_KEY, JSON.stringify(d)); }catch(e){}
-  try{
-    await api('/training/state',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(d)});
-    return true;
-  }catch(e){ toast('训练记录没能同步到服务器，已先存在本机'); return false; }
-}
+function trainSave(d){ try{ localStorage.setItem(TRAIN_KEY, JSON.stringify(d)); }catch(e){ toast('保存失败：本地存储写入不了'); } }
 function _uid(p){ return (p||'id')+'_'+Date.now().toString(36)+Math.random().toString(36).slice(2,6); }
 function _nowISO(){ return new Date().toISOString(); }
 function _fmtWhen(s){ return s?String(s).slice(0,16).replace('T',' '):'—'; }
@@ -4239,8 +3999,8 @@ function trainJudge(item, ans){
   return {correct:ok, manual:false, why:ok?'✅ 答对了':('❌ 参考答案：'+shown)};
 }
 /* 把已导入的训练项目还原成训练 AI 要的输入格式 */
-async function trainProjectsText(){
-  const ps=await trainLoad().projects;
+function trainProjectsText(){
+  const ps=trainLoad().projects;
   if(!ps.length) return '';
   return ps.map(p=>{
     const L=['【训练项目】',
@@ -4302,7 +4062,7 @@ function trainParse(txt){
   if(!out.length) return {error:'没有解析出任何带 project_id 的训练项目'};
   return {projects:out};
 }
-async function trainImport(){
+function trainImport(){
   const ta=document.getElementById('trainJson');
   if(!ta) return;
   const raw=(ta.value||'').trim();
@@ -4310,7 +4070,7 @@ async function trainImport(){
   if(raw.indexOf('<<<TEST>>>')>=0){ trainImportTest(raw); return; }
   const r=trainParse(raw);
   if(r.error){ toast('导入失败：'+r.error); return; }
-  const d=await trainLoad();
+  const d=trainLoad();
   let added=0, updated=0;
   r.projects.forEach(np=>{
     const idx=d.projects.findIndex(x=>x.project_id===np.project_id);
@@ -4320,7 +4080,7 @@ async function trainImport(){
       updated++;
     } else { d.projects.push(np); added++; }
   });
-  await trainSave(d);
+  trainSave(d);
   ta.value='';
   state.trainMode='list';
   toast(`导入完成：新增 ${added} 个${updated?('，更新 '+updated+' 个'):''}`);
@@ -4340,10 +4100,10 @@ async function trainImportTest(raw){
 pages.train=async function(el){
   refreshProg();
   const mode=state.trainMode||'list';
-  if(mode==='run') return await trainRenderRun(el);
-  if(mode==='history') return await trainRenderHistory(el);
+  if(mode==='run') return trainRenderRun(el);
+  if(mode==='history') return trainRenderHistory(el);
   if(mode==='paper') return trainRenderPaper(el);
-  return await trainRenderList(el);
+  return trainRenderList(el);
 };
 function trainRenderPaper(el){
   const ok=state.testParsed&&state.testParsed.ok;
@@ -4356,8 +4116,8 @@ function trainRenderPaper(el){
   html += ok ? renderTestPaper(state.testParsed) : '<div class="sub">试卷为空，请重新导入。</div>';
   el.innerHTML=html;
 }
-async function trainRenderList(el){
-  const d=await trainLoad(), ps=d.projects;
+function trainRenderList(el){
+  const d=trainLoad(), ps=d.projects;
   const listHtml = ps.length ? ps.map(p=>{
     const its=p.items||[];
     const sess=d.sessions.filter(s=>s.project_id===p.project_id);
@@ -4459,23 +4219,23 @@ function trainCopyFormat(){
   toast('已复制输出格式 ✅ 连同补习提示词一起发 AI');
 }
 /* ---------- 训练执行 ---------- */
-async function trainStart(pid){
-  const d=await trainLoad();
+function trainStart(pid){
+  const d=trainLoad();
   const p=d.projects.find(x=>x.project_id===pid);
   if(!p || !(p.items||[]).length){ toast('这个项目没有题目'); return; }
   const sess={session_id:_uid('sess'), project_id:pid, started_at:_nowISO(), ended_at:null,
     round_count:0, valid_attempts:0, correct_count:0, incorrect_count:0, hint_count:0,
     independent_correct_count:0, consecutive_independent_correct:0, final_status:null, next_step:null};
-  d.sessions.push(sess); await trainSave(d);
+  d.sessions.push(sess); trainSave(d);
   state.tr={pid:pid, session_id:sess.session_id, roundIdx:0, qIdx:0, queue:[], hintLevel:0, usedHint:false,
     judged:null, manual:false, roundStats:null, done:false, consec:0, indep:0, correct:0, valid:0, hints:0};
-  await trainNewRound();
+  trainNewRound();
   state.trainMode='run';
   render('train');
 }
 /* 每回合只取少量题（够判断就停），优先出本 session 还没做过的 */
-async function trainNewRound(){
-  const tr=state.tr, d=await trainLoad();
+function trainNewRound(){
+  const tr=state.tr, d=trainLoad();
   const p=d.projects.find(x=>x.project_id===tr.pid);
   const per=Math.max(1, Math.min(6, Number(((p.exit_rule||{}).per_round)||4)));
   const usedIds=new Set((d.attempts||[]).filter(a=>a.session_id===tr.session_id).map(a=>a.question_id));
@@ -4484,22 +4244,22 @@ async function trainNewRound(){
   tr.queue=pool.slice(0, per);
   tr.qIdx=0; tr.roundIdx=(tr.roundIdx||0)+1; tr.roundStats=null; tr.done=false;
   const r={round_id:_uid('r'), session_id:tr.session_id, project_id:tr.pid, index:tr.roundIdx, started_at:_nowISO()};
-  d.rounds.push(r); await trainSave(d);
+  d.rounds.push(r); trainSave(d);
   tr.roundId=r.round_id;
 }
-async function trainCurItem(){
+function trainCurItem(){
   const tr=state.tr; if(!tr) return null;
-  const d=await trainLoad(), p=d.projects.find(x=>x.project_id===tr.pid);
+  const d=trainLoad(), p=d.projects.find(x=>x.project_id===tr.pid);
   if(!p) return null;
   return (tr.queue||[])[tr.qIdx]||null;
 }
-async function trainRenderRun(el){
+function trainRenderRun(el){
   const tr=state.tr;
-  if(!tr){ state.trainMode='list'; return await trainRenderList(el); }
-  const d=await trainLoad(), p=d.projects.find(x=>x.project_id===tr.pid);
-  if(!p){ state.trainMode='list'; return await trainRenderList(el); }
+  if(!tr){ state.trainMode='list'; return trainRenderList(el); }
+  const d=trainLoad(), p=d.projects.find(x=>x.project_id===tr.pid);
+  if(!p){ state.trainMode='list'; return trainRenderList(el); }
   if(tr.done) return trainRenderRoundEnd(el, p);
-  const item=await trainCurItem();
+  const item=trainCurItem();
   if(!item){ tr.done=true; return trainRenderRoundEnd(el, p); }
 
   const t=String(item.type||'FILL').toUpperCase();
@@ -4564,18 +4324,18 @@ async function trainRenderRun(el){
   }
 }
 function trainPick(key){ const tr=state.tr; if(!tr||tr.judged) return; tr.picked=key; render('train'); }
-async function trainHint(){
+function trainHint(){
   const tr=state.tr; if(!tr) return;
-  const item=await trainCurItem(); if(!item) return;
+  const item=trainCurItem(); if(!item) return;
   const n=(item.hints||[]).length;
   if(!n){ toast('这道题没有预设提示'); return; }
   if(tr.hintLevel>=n){ toast('提示已全部给出'); return; }
   tr.hintLevel=(tr.hintLevel||0)+1; tr.usedHint=true;
   render('train');
 }
-async function trainSubmit(){
+function trainSubmit(){
   const tr=state.tr; if(!tr||tr.judged) return;
-  const item=await trainCurItem(); if(!item) return;
+  const item=trainCurItem(); if(!item) return;
   let ans='';
   if(String(item.type||'').toUpperCase()==='CHOICE'||String(item.type||'').toUpperCase()==='JUDGE'){
     ans=tr.picked||'';
@@ -4589,7 +4349,7 @@ async function trainSubmit(){
   const j=trainJudge(item, ans);
   tr.judged=j;
   // 记录 attempt：有效作答 = 真正回答了（答错也算）
-  const d=await trainLoad();
+  const d=trainLoad();
   const independent = !!j.correct && !tr.usedHint;
   d.attempts.push({attempt_id:_uid('a'), project_id:tr.pid, session_id:tr.session_id, round_id:tr.roundId,
     question_id:item.id, user_answer:ans, is_correct:!!j.correct, manual:!!j.manual,
@@ -4599,33 +4359,33 @@ async function trainSubmit(){
   if(tr.usedHint) tr.hints=(tr.hints||0)+1;
   if(independent){ tr.indep=(tr.indep||0)+1; tr.consec=(tr.consec||0)+1; }
   else tr.consec=0;
-  await trainSave(d);
+  trainSave(d);
   render('train');
 }
-async function trainSelf(ok){
+function trainSelf(ok){
   const tr=state.tr; if(!tr||!tr.judged) return;
   tr.judged.manual=false;
   tr.judged.correct=(String(ok)==='1');
   tr.judged.why=tr.judged.correct?'✅ 你自己确认达标':'❌ 你自己确认还没到位';
-  const d=await trainLoad();
+  const d=trainLoad();
   const last=d.attempts[d.attempts.length-1];
   if(last){ last.is_correct=tr.judged.correct; last.is_independent=tr.judged.correct&&!tr.usedHint; }
   if(tr.judged.correct){ tr.correct=(tr.correct||0)+1; if(!tr.usedHint){ tr.indep=(tr.indep||0)+1; tr.consec=(tr.consec||0)+1; } else tr.consec=0; }
   else tr.consec=0;
-  await trainSave(d);
+  trainSave(d);
   render('train');
 }
-async function trainNext(){
+function trainNext(){
   const tr=state.tr; if(!tr) return;
   tr.qIdx=(tr.qIdx||0)+1;
   tr.judged=null; tr.picked=''; tr.typed=''; tr.hintLevel=0; tr.usedHint=false;
-  const item=await trainCurItem();
-  if(!item){ tr.done=true; await trainFinishRound(); }
+  const item=trainCurItem();
+  if(!item){ tr.done=true; trainFinishRound(); }
   render('train');
 }
 /* 回合结束：先判断是否已经达到项目结束标准，再决定继续还是收工 */
-async function trainFinishRound(){
-  const tr=state.tr, d=await trainLoad();
+function trainFinishRound(){
+  const tr=state.tr, d=trainLoad();
   const p=d.projects.find(x=>x.project_id===tr.pid);
   const rule=Object.assign({independent_correct:2, consecutive_independent:2, max_rounds:6, per_round:4}, (p&&p.exit_rule)||{});
   const needIndep=Number(rule.independent_correct||2), needConsec=Number(rule.consecutive_independent||2);
@@ -4658,7 +4418,7 @@ async function trainFinishRound(){
   }
   const r=d.rounds.find(x=>x.round_id===tr.roundId);
   if(r) r.ended_at=_nowISO();
-  await trainSave(d);
+  trainSave(d);
 }
 function trainRenderRoundEnd(el, p){
   const tr=state.tr;
@@ -4687,20 +4447,20 @@ function trainRenderRoundEnd(el, p){
       <button class="btn" style="margin-top:9px" data-act="trainCopyRecord">📋 复制 PGOS 训练记录</button>
     </div>`;
 }
-async function trainAgain(){
+function trainAgain(){
   const tr=state.tr; if(!tr) return;
-  await trainNewRound();
+  trainNewRound();
   tr.judged=null; tr.picked=''; tr.typed='';
   render('train');
 }
-async function trainQuit(){
+function trainQuit(){
   const tr=state.tr;
-  if(tr && !tr.done) await trainFinishRound();
+  if(tr && !tr.done) trainFinishRound();
   state.tr=null; state.trainMode='list'; render('train');
 }
-async function trainCopyRecord(){
+function trainCopyRecord(){
   const tr=state.tr; if(!tr) return;
-  const d=await trainLoad(), p=d.projects.find(x=>x.project_id===tr.pid);
+  const d=trainLoad(), p=d.projects.find(x=>x.project_id===tr.pid);
   const s=d.sessions.find(x=>x.session_id===tr.session_id);
   const L=['【PGOS训练记录】',
     '项目ID：'+(tr.pid||'—'),
@@ -4719,20 +4479,20 @@ async function trainCopyRecord(){
   copyText(L.join('\n'),'训练记录为空');
   toast('已复制训练记录 ✅');
 }
-async function trainDel(pid){
+function trainDel(pid){
   if(!confirm('删除训练项目「'+pid+'」？它的训练历史也会一起删掉。')) return;
-  const d=await trainLoad();
+  const d=trainLoad();
   d.projects=d.projects.filter(x=>x.project_id!==pid);
   d.sessions=d.sessions.filter(x=>x.project_id!==pid);
   const rids=new Set(d.rounds.filter(r=>r.project_id===pid).map(r=>r.round_id));
   d.rounds=d.rounds.filter(r=>r.project_id!==pid);
   d.attempts=d.attempts.filter(a=>a.project_id!==pid);
-  await trainSave(d);
+  trainSave(d);
   toast('已删除');
   render('train');
 }
-async function trainRenderHistory(el){
-  const d=await trainLoad();
+function trainRenderHistory(el){
+  const d=trainLoad();
   const pid=state.trainHistPid;
   const sess=d.sessions.filter(s=>!pid||s.project_id===pid).slice().reverse();
   const html=sess.length?sess.map(s=>{
@@ -4844,6 +4604,62 @@ async function listenImport(){
   }finally{ if(btn){btn.disabled=false;btn.textContent='🚀 解析并导入';} }
 }
 
+/* ============ 历史页（三种方案预览）============ */
+const HISTORY_KEY='eos_history_v1';
+function historyLoad(){ try{ return JSON.parse(localStorage.getItem(HISTORY_KEY)||'[]'); }catch(e){ return []; } }
+function historySave(arr){ try{ localStorage.setItem(HISTORY_KEY, JSON.stringify(arr)); }catch(e){} }
+function historySeed(){
+  const base=new Date('2026-08-23T08:00:00');
+  const arr=[];
+  for(let d=0;d<14;d++){
+    const dt=new Date(base); dt.setDate(base.getDate()+d);
+    const ds=dt.toISOString().slice(0,10);
+    // 每天听力
+    arr.push({id:'h'+d+'l', type:'听力', title:'听力练习', detail:'Part A 5题 / Part B 3题 / Part C 2题', date:ds, score:Math.floor(60+Math.random()*35)});
+    // 每天造句 10句
+    for(let s=0;s<10;s++) arr.push({id:'h'+d+'s'+s, type:'造句', title:'造句', detail:'目标词 practice', date:ds, ok:Math.random()>0.25});
+    // 每天闪卡 20张
+    for(let f=0;f<20;f++) arr.push({id:'h'+d+'f'+f, type:'闪卡', title:'闪卡复习', detail:'remember / forget', date:ds, ok:Math.random()>0.3});
+    // 每周测评（第0、7天）
+    if(d===0||d===7) arr.push({id:'h'+d+'q', type:'测评', title:'周测', detail:'听力/词汇/语法/阅读/主动输出', date:ds, score:Math.floor(65+Math.random()*25)});
+  }
+  arr.sort((a,b)=>a.date.localeCompare(b.date)||b.type.localeCompare(a.type));
+  historySave(arr);
+  return arr;
+}
+function historyData(){
+  let d=historyLoad();
+  if(!d.length) d=historySeed();
+  return d;
+}
+pages.history=async function(el){
+  refreshProg();
+  const mode=state.historyMode||'A';
+  const data=historyData();
+  const tab=(k,label)=>`<button class="btn ${mode===k?'':'ghost'} sm" style="flex:1" data-act="historyTab" data-val="${k}">${label}</button>`;
+
+  // A: 统一时间线
+  const htmlA=`<div class="card"><h2>📜 统一时间线（方案 A）</h2><div class="sub">所有活动按时间倒序，一条流。</div>
+    ${data.slice().reverse().map(x=>`<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--border);font-size:13px"><span><b>${x.type}</b> ${esc(x.title)} · ${esc(x.detail)}</span><span style="color:var(--muted);white-space:nowrap">${x.date}${x.score!=null?' · '+x.score+'分':x.ok!=null?(x.ok?' ✅':' ❌'):''}</span></div>`).join('')}
+  </div>`;
+
+  // B: 总结页内嵌
+  const byType={}; data.forEach(x=>{ byType[x.type]=(byType[x.type]||[]); byType[x.type].push(x); });
+  const htmlB=`<div class="card"><h2>📊 总结页内嵌（方案 B）</h2><div class="sub">按模块分组，嵌在总结页底部。</div>
+    ${Object.entries(byType).map(([t,list])=>`<div style="margin-top:10px"><b style="font-size:14px">${t}</b> <span class="badge">${list.length} 条</span>
+      <div class="sub">最近：${esc(list[list.length-1].date)} · ${t==='测评'||t==='听力'?'均分 '+Math.round(list.reduce((s,x)=>s+(x.score||0),0)/list.length):'正确率 '+Math.round(list.filter(x=>x.ok).length/list.length*100)+'%'}</div>
+    </div>`).join('')}
+  </div>`;
+
+  // C: 按模块分
+  const htmlC=`<div class="card"><h2>🗂 按模块分（方案 C）</h2><div class="sub">每个模块有自己的时间线，分散在各页。</div>
+    ${Object.entries(byType).map(([t,list])=>`<details class="weakcat" open><summary><span>${t}</span><span class="weakcnt">${list.length}</span></summary>
+      ${list.slice().reverse().map(x=>`<div class="wcitem" style="font-size:12.5px"><div class="wn">${esc(x.title)}${x.score!=null?` <b>${x.score}分</b>`:x.ok!=null?(x.ok?' <span style="color:var(--green)">✓</span>':' <span style="color:var(--red)">✗</span>'):''}</div><div class="wd">${esc(x.detail)} · ${x.date}</div></div>`).join('')}
+    </details>`).join('')}
+  </div>`;
+
+  el.innerHTML=`<h1>📜 历史</h1><div style="display:flex;gap:7px;margin:6px 0">${tab('A','A 统一时间线')}${tab('B','B 总结页内嵌')}${tab('C','C 按模块分')}</div><div class="sub">共 ${data.length} 条记录 · 两周虚拟数据</div>${mode==='A'?htmlA:mode==='B'?htmlB:htmlC}`;
+};
 
 async function render(page){
   const el=document.getElementById('content');
@@ -4877,12 +4693,6 @@ window.addEventListener('unhandledrejection', e => {
     <button class="btn" onclick="location.reload()">重新加载</button>
   </div>`;
 });
-/* 演示模式黄条：DEMO 为真时插到页面最顶上。
-   放在 render('learn') 之前，保证一进页面就能看到，不会误以为是真实数据。 */
-(function(){
-  var host=document.getElementById('demoBannerHost');
-  if(host) host.innerHTML=demoBanner();
-})();
 render('learn');
 </script>
 <script type="text/plain" id="tplPromptDiag">
@@ -5706,27 +5516,27 @@ although 使用错误
 结束项目
 训练 AI 不应一次性生成大量题目然后机械执行。
 专项训练应采用：
-一轮足量任务 → 判断表现 → 调整难度 → 再训练
-十、训练回合题量
-训练回合不是题库，但必须提供足够的有效作答量，才能判断学习者在当前目标上的表现。
-默认每轮提供 8–12 个有效作答任务。
-根据训练类型可动态调整：
-· 选择 / 判断：6–10 题
-· 填空 / 变形：6–10 题
-· 纠错：5–8 题
-· 主动造句 / 主动输出：3–5 个任务
-· 场景迁移：2–3 个任务
-同一轮可以组合不同任务形式，但所有任务必须服务于同一个训练项目及其授权目标。
-不要为了凑数量重复完全相同的题目；应通过不同主语、句型、词汇、场景或任务形式观察同一目标的稳定表现。
-如果在达到最小有效作答量之前已经出现明确结果，不得仅因此提前结束本轮；至少完成该轮的最小任务量。
-如果完成基础任务后仍不足以判断目标表现，可以继续增加任务，但不得无限扩张为题库。
-核心原则：
-不是“少量任务”，而是“足够判断 + 足够训练 + 不形成题海”。
+少量任务 → 判断表现 → 调整难度 → 再训练
+十、回合制训练原则
+每个回合只提供足以判断当前目标表现的少量任务。
+不追求题目数量。
+回合任务数量可以根据：
+能力类型
+训练目标
+当前表现
+任务难度
+是否需要迁移验证
+动态决定。
+不得为了“看起来训练充分”而无限增加题目。
+默认原则：
+够判断，就停止本回合。
+而不是：
+题目越多越好。
 十一、训练过程设计
 训练重点是：
-让学习者产生足够数量、足够多样、能够验证当前目标的有效行为。
+让学习者产生目标行为。
 而不是：
-制造与目标无关的大量题目或无意义重复题。
+制造大量题目。
 通常可以采用：
 理解
 ↓
@@ -6216,11 +6026,11 @@ Q8. (subjective) 用 because 说一句你今天没出门的原因。
    · (fill) 填空题，题干用 6 个下划线 ______ 表示空位，ANSWER 填正确答案（多解用 / 分隔）；
    · (judge) 判断正误，ANSWER 只能填 TRUE 或 FALSE；
    · (subjective) 主动输出（造句 / 情境回答 / 口语），由学习者自评，系统不自动判分。
-3. 仅输出当前训练项目实际授权的 SECTION。SECTION 名称使用中文模块名：听力 / 词汇 / 语法 / 阅读 / 主动输出。未被当前训练项目授权的能力模块不得生成。
+3. 每个 SECTION 用 <<<SECTION 名称>>> 开头，名称用中文模块名：听力 / 词汇 / 语法 / 阅读 / 主动输出。
 4. 听力题：在 <<<SECTION 听力>>> 内，先用一行 <<<PASSAGE>>> 给出英文听力原文，再出 (choice)/(fill) 题，题干开头标注 [听力]；系统显示原文并提供🔊朗读。
 5. 阅读题：在 <<<SECTION 阅读>>> 内，先用一行 <<<PASSAGE>>> 给出短文（下一行起写正文，可多行），再出选择题。
 6. ANSWER 行必须是该大题的最后一行，且一行只有一个答案。
-7. 如果当前训练项目涉及多个已授权 SECTION，则按照：听力 → 词汇 → 语法 → 阅读 → 主动输出的顺序输出；未授权的 SECTION 直接省略，不得为了满足格式而补充其他能力模块。
+7. 各 SECTION 输出顺序必须为：听力 → 词汇 → 语法 → 阅读 → 主动输出（主动输出放最后）。
 8. 不要使用 Markdown 语法（** 、# 、表格、| ），不要加代码块围栏。
 9. 不要在 <<<TEST>>> 与 <<<END>>> 之间输出任何解释性文字。
 </script>
