@@ -42,24 +42,6 @@ def demo_status():
             "routes": sorted(demo.READ_ROUTES)}
 
 
-@app.get("/api/weak/trend8w")
-def weak_trend8w():
-    """薄弱项页「近 8 周」趋势线。
-
-    每周给出：错误次数 / 薄弱项(🟡)类型数 / 相比前一周是向好还是向差。
-    只统计 is_demo=0 的真实数据，示例数据不进来。
-    """
-    try:
-        conn = get_conn()
-        try:
-            data = _report._trend_8w(conn, _report._demo_filter())
-        finally:
-            conn.close()
-    except Exception:
-        data = []
-    return {"ok": True, "weeks": data}
-
-
 @app.post("/api/demo/clear")
 def demo_clear():
     """一键清空示例数据：只删 is_demo=1 的行，真实数据一行不动。

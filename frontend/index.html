@@ -1335,14 +1335,13 @@ function attemptCard(a,tk,i,isLast){
   a._tk=tk;
   // 第 1 行固定：判定 · 分数/100 · 等级
   const vd=_verdictOf(a, sc, hasErr, hasTask, pass);
-  const head=`<div style="font-size:15.5px;font-weight:800;color:${vd.c}">${vd.icon} ${vd.v} · ${sc}/100 · ${vd.lv}</div>`;
+  const head=`<div style="font-size:15.5px;font-weight:800;color:${vd.c}">${vd.v}·${sc}/100·${vd.lv}</div>`;
   // 状态行：自复制（照抄上次/例句）优先，其次才是「没有明显错误」
   const cpKind=_selfCopyKind(a, histOf(tk), i);
-  const stateLine = cpKind
-    ? `<div style="margin-top:6px;font-size:13.5px;color:#b45309">🔁 自复制（和${cpKind==='template'?'例句':'上次'}写得一模一样，换个说法再练一次效果更好）</div>`
-    : (hasTask
-        ? `<div style="margin-top:6px;font-size:13.5px;color:var(--muted)">✅ 没有明显语法错误（题目要求见下）</div>`
-        : `<div style="margin-top:6px;font-size:13.5px;color:var(--muted)">✅ 没有明显错误</div>`);
+  let stateLine='';
+  if(cpKind) stateLine+=`<div style="margin-top:6px;font-size:13.5px;color:#b45309">自复制（和${cpKind==='template'?'例句':'上次'}写得一模一样，换个说法再练一次效果更好）</div>`;
+  if(!hasErr && !hasTask) stateLine+=`<div style="margin-top:4px;font-size:13.5px;color:var(--muted)">没有明显错误</div>`;
+  else if(hasTask) stateLine+=`<div style="margin-top:4px;font-size:13.5px;color:var(--muted)">没有明显语法错误（题目要求见下）</div>`;
   const errHtml = errs.length
     ? `<div style="margin-top:7px;font-size:13px;font-weight:800;color:var(--red)">🔍 哪里错了 / 为什么错</div>`
       + errs.map((e,j)=>`<div style="background:#fff;border:1px solid #fecaca;border-radius:9px;padding:8px 10px;margin:6px 0">
@@ -1365,9 +1364,9 @@ function attemptCard(a,tk,i,isLast){
   const polish=opts.filter(o=>o && o.kind!=='expand' && (o.suggestion||o.reason));
   const polishHtml = polish.length
     ? `<div style="margin-top:8px">
-        <div style="font-size:13px;font-weight:700;color:#92400e;margin-bottom:5px">💡 可以优化（原句没错，仅供参考，不扣分）</div>
+        <div style="font-size:13px;font-weight:700;color:#92400e;margin-bottom:5px">可以优化(原句没错，仅供参考，不扣分)</div>
         ${polish.map((o,j)=>{
-          const tag=j===0?'可以优化：':'+可以优化：';
+          const tag=j===0?'可以优化:':'+可以优化:';
           const sug=o.suggestion?`<b style="color:var(--green)">${esc(o.suggestion)}</b>`:'';
           const rsn=o.reason?`<div style="color:var(--muted);font-size:12.5px;margin-top:2px">${esc(o.reason)}</div>`:'';
           return `<div style="font-size:13.5px;line-height:1.55;padding:4px 0">
@@ -1379,7 +1378,7 @@ function attemptCard(a,tk,i,isLast){
   const exp=opts.filter(o=>o && o.kind==='expand' && (o.sample||o.note));
   const expHtml = exp.length
     ? `<div style="margin-top:8px">
-        <div style="font-size:13px;font-weight:700;color:var(--primary);margin-bottom:5px">✏️ 试着这样扩写（把短句写长，练到更多结构）</div>
+        <div style="font-size:13px;font-weight:700;color:var(--primary);margin-bottom:5px">试着这样扩写(把短句写长，练到更多结构)</div>
         ${exp.map(o=>`<div style="font-size:13.5px;line-height:1.55;padding:4px 0">
           <b style="color:var(--green)">${esc(o.sample||'')}</b>
           ${o.note?`<div style="color:var(--muted);font-size:12.5px;margin-top:2px">${esc(o.note)}</div>`:''}
@@ -1409,51 +1408,49 @@ function copyOne(tk, which){
   copyText(attemptCopyText(tk,a));
 }
 function attemptCopyText(tk,a){
-  const meta=(state.tkMeta||{})[tk]||{};
   const sc=Number(a.score||0);
   const _errs=a.errors||[], _tasks=a.task_issues||[];
   const _pass=sc>=85 && !_errs.length && !_tasks.length;
   const _vd=_verdictOf(a, sc, _errs.length>0, _tasks.length>0, _pass);
+  const _hist=histOf(tk);
+  const _idx=_hist.findIndex(x=>x===a || Number(x.attempt)===Number(a.attempt));
+  const cpKind=_selfCopyKind(a, _hist, _idx<0?0:_idx);
   const L=[];
-  L.push('【造句批改】');
-  L.push('单词：'+(meta.word||'—'));
-  if(meta.task) L.push('题目：'+meta.task);
-  L.push('第 '+(a.attempt||1)+' 次作答');
-  L.push('我的句子：'+(a.sentence||''));
-  L.push('判定：'+_vd.icon+' '+_vd.v+' · '+sc+'/100 · '+_vd.lv+'（≥85 基本掌握，<85 需要改进）');
-  if((a.errors||[]).length){
-    (a.errors||[]).forEach((e,j)=>{
+  L.push('第'+(a.attempt||1)+'次作答');
+  L.push(_vd.v+'·'+sc+'/100·'+_vd.lv);
+  L.push(a.sentence||'');
+  if(cpKind) L.push('自复制');
+  if(_errs.length){
+    _errs.forEach((e,j)=>{
       L.push('错误'+(j+1)+' · 哪里错了：'+e.where);
       L.push('错误'+(j+1)+' · 类型：'+(e.type||'—'));
       L.push('错误'+(j+1)+' · 为什么错：'+e.explanation);
       L.push('错误'+(j+1)+' · 正确表达：'+e.correct);
     });
     if(a.corrected) L.push('整句正确写法：'+a.corrected);
-  }else{
-    L.push('哪里错了：没有明显错误');
-  }
-  if((a.task_issues||[]).length){
-    (a.task_issues||[]).forEach((e,j)=>{
+  }else if(_tasks.length){
+    L.push('没有明显语法错误（题目要求见下）');
+    _tasks.forEach((e,j)=>{
       L.push('题目要求'+(j+1)+' · 未完成：'+e.where);
       L.push('题目要求'+(j+1)+' · 说明：'+e.explanation);
     });
+  }else{
+    L.push('没有明显错误');
   }
   // 与页面同模板：先「可以优化」，再「试着这样扩写」
   const _opts=(a.optimizations||[]).filter(o=>!_optDropped(o));
   const _polish=_opts.filter(o=>o && o.kind!=='expand' && (o.suggestion||o.reason));
   if(_polish.length){
-    L.push('可以优化（原句没错，仅供参考，不扣分）：');
+    L.push('可以优化(原句没错，仅供参考，不扣分)');
     _polish.forEach((o,j)=>{
-      L.push((j===0?'● 可以优化：':'● +可以优化：')+(o.suggestion||o.reason||'')
-             +((o.reason&&o.suggestion)?' — '+o.reason:(o.suggestion?'':' '+o.reason)));
+      const body=(o.suggestion||'')+(o.reason?(' '+o.reason):'');
+      L.push((j===0?'可以优化:':'+可以优化:')+body);
     });
-  }else{
-    L.push('可以优化：无');
   }
   const _exp=_opts.filter(o=>o && o.kind==='expand' && (o.sample||o.note));
   if(_exp.length){
-    L.push('试着这样扩写（把短句写长，练到更多结构）：');
-    _exp.forEach(o=>{ L.push('● '+(o.sample||'')+(o.note?'（'+o.note+'）':'')); });
+    L.push('试着这样扩写(把短句写长，练到更多结构)');
+    _exp.forEach(o=>{ if(o.sample) L.push(o.sample); if(o.note) L.push(o.note); });
   }
   return L.join('\n');
 }
@@ -2819,9 +2816,6 @@ pages.errors=async function(el){
   const weakN=state._weakTotal||0;
   const lowN=((wk&&wk.low_star_words)||[]).length;
   const bankN=(bank&&bank.items)?bank.items.length:((bank&&bank.total!=null)?bank.total:0);
-  // 近 8 周趋势线：服务端按周聚合真实错误（示例数据已排除），取不到就留空态
-  let trend8=[];
-  try{ const t=await api('/weak/trend8w'); trend8=(t&&t.weeks)||[]; }catch(e){ trend8=[]; }
   el.innerHTML=`
     <div class="stickybar">
       <button class="topback" data-act="revExit">← 返回复习</button>
@@ -2840,7 +2834,6 @@ pages.errors=async function(el){
       </div>
       <div class="sub" style="margin-top:4px">明细不在此页展开；点「复制报告」可拿到纯数量汇总。</div>
     </div>
-    ${_trend8wBlock(trend8, '📈 近 8 周趋势', false)}
     <div id="errdetail" class="card" style="display:none"></div>`;
 };
 /* 薄弱项：固定 5 大类清单（能改变后续学习安排的能力项）。
@@ -3687,18 +3680,6 @@ function _cmpBlock(cmp){
   return `<div class="card" style="border:1.5px solid var(--primary)"><h2>${esc(cmp.title||'环比')}</h2>
     <div class="sub" style="margin-top:2px">绿=向好，红=向差；错误率越低越好。</div>${rows}</div>`;
 }
-/* 近 8 周走势：每周错误次数 + 当周薄弱项(🟡)类型数，绿点=比前一周少 */
-function _trend8wBlock(weeks, title, showClear){
-  const arr=weeks||[];
-  if(!arr.length) return '';
-  const nums=arr.map(w=>`${esc(w.label)} ${w.errors}${w.weak?'（🟡'+w.weak+'）':''}${w.better===true?'🟢':(w.better===false?'🔴':'')}`).join(' · ');
-  return `<div class="card"><h2>${esc(title||'📈 近 8 周走势')}</h2>
-    <div class="sub" style="margin-top:2px">只统计真实记录（含示例数据时已在后端排除）；无记录周显示 0，不补数字。</div>
-    ${_anaMiniLine(arr.map(w=>({label:w.label, v:w.errors})), '每周错误次数（越低越好）', true)}
-    <div class="trendnote">${nums}</div>
-    ${showClear?`<button class="btn ghost sm" style="margin-top:8px" data-act="clearDemo">🧹 清空示例数据（只删示例，不动真实记录）</button>`:''}
-  </div>`;
-}
 async function clearDemo(){
   if(!confirm('清空示例数据？只会删除被标记为示例（is_demo=1）的记录，真实学习记录不受影响。')) return;
   const r=await api('/demo/clear', {method:'POST'});
@@ -3907,8 +3888,7 @@ pages.sum=async function(el){
       <div class="sub" style="margin-top:4px">按真实错误记录的自然日统计；无记录日不显示、不补 0。</div>
       ${errTrend}
     </div>
-    ${_cmpBlock(W.compare)}
-    ${_trend8wBlock(W.trend_8w, '📈 近 8 周走势', true)}`;
+    ${_cmpBlock(W.compare)}`;
 
   const monthHtml=`
     <div class="card" style="border:1.5px solid var(--primary)"><h2>📚 本月概况（${mval(M.label)}）</h2>
@@ -3937,8 +3917,7 @@ pages.sum=async function(el){
     <div class="card"><h2>📊 本月总结</h2>
       <div class="sub" style="margin-top:4px;white-space:pre-line;font-size:12.5px;line-height:1.8">${monthSummary}</div>
     </div>
-    ${_cmpBlock(M.compare)}
-    ${_trend8wBlock(M.trend_8w, '📈 近 8 周走势', false)}`;
+    ${_cmpBlock(M.compare)}`;
 
   let bodyHtml, reportText;
   if(tab==='copy'){

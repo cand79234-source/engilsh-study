@@ -169,40 +169,6 @@ def _compare_block(cur_m, prev_m, title, prev_label):
     }
 
 
-def _trend_8w(conn, demo_sql):
-    """近 8 周错误趋势：每周「错误次数 / 薄弱项数」，better=与该周前一周相比。
-
-    绿=比前一周少（向好），红=比前一周多（向差），持平或首周为 null（灰）。
-    """
-    today = date.today()
-    out = []
-    for i in range(7, -1, -1):
-        end = today - timedelta(days=7 * i)
-        start = end - timedelta(days=7)
-        erow = conn.execute(
-            "SELECT COALESCE(SUM(times), 0) AS n FROM errors "
-            "WHERE last_at >= ? AND last_at < ?" + demo_sql,
-            (start.isoformat(), end.isoformat())).fetchone()
-        wrow = conn.execute(
-            "SELECT COUNT(DISTINCT error_type) AS n FROM errors "
-            "WHERE level = '🟡' AND last_at >= ? AND last_at < ?" + demo_sql,
-            (start.isoformat(), end.isoformat())).fetchone()
-        out.append({
-            "label": "本周" if i == 0 else f"{start.month}/{start.day}",
-            "start": start.isoformat(),
-            "end": end.isoformat(),
-            "errors": _i(erow["n"]),
-            "weak": _i(wrow["n"]),
-        })
-    for idx, it in enumerate(out):
-        if idx == 0:
-            it["better"] = None
-        else:
-            prev = out[idx - 1]["errors"]
-            it["better"] = (it["errors"] < prev) if it["errors"] != prev else None
-    return out
-
-
 # ---------------- 主入口 ----------------
 def build_report():
     conn = get_conn()
@@ -269,7 +235,6 @@ def build_report():
             "listening": {"answered": _i(lrow["t"]), "correct": _i(lrow["d"])},
             "err_types": err_types,
             "compare": week_cmp,
-            "trend_8w": _trend_8w(conn, demo_sql),
         }
 
         # ===== 本月（自然月）=====
@@ -312,7 +277,6 @@ def build_report():
             "words_output": _i(mwrow["n"]),
             "errors": {"new": _i(menew["n"]), "fixed": _i(mefix["n"])},
             "compare": month_cmp,
-            "trend_8w": _trend_8w(conn, demo_sql),
         }
 
         return {
@@ -320,7 +284,6 @@ def build_report():
             "progress": {"stage": stage, "week": week},
             "week": week_out,
             "month": month_out,
-            "trend_8w": _trend_8w(conn, demo_sql),
         }
     finally:
         conn.close()
