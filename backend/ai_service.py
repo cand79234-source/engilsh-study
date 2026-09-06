@@ -183,6 +183,22 @@ withdraw wobble work worry wrap wreck write yell yawn
 
 VERBS = set(_REGULAR.split()) | set(_IRREGULAR.keys())
 
+# 以 s 结尾但**不是**动词三单的词。_r_s3_with_i 抓「I/we/you/they + 动词s」
+# 时靠这份白名单排掉副词、名词复数和代词，避免把
+# "I always ..." / "I have two books" 判成主谓一致错误。
+_S_WORDS_NOT_VERBS = {
+    # 副词 / 连词 / 限定词
+    "always", "sometimes", "often", "usually", "perhaps", "maybe", "thus",
+    "yes", "as", "is", "was", "has", "does", "less", "plus", "versus",
+    # 代词 / 指示词
+    "this", "his", "its", "whose", "hers", "ours", "yours", "theirs",
+    "something", "anything", "nothing", "everything",
+    # 常见名词复数（I/we/you/they 后面直接跟名词的场景）
+    "books", "friends", "days", "times", "things", "words", "students",
+    "teachers", "apples", "cars", "games", "songs", "movies", "photos",
+    "hours", "minutes", "weeks", "months", "years", "people", "children",
+}
+
 # 明确的「活动类动词」：用于 like/enjoy/finish + doing 判定。
 # 刻意不含 work / study 这类常作名词的词，避免 "I finish work at 5" 被误判。
 _ACTIVITY = {
@@ -605,6 +621,89 @@ def _r_redundant(s, low):
     return out
 
 
+def _r_modal_to(s, low):
+    """情态动词后多加了 to：I can to swim → I can swim。
+
+    中文没有情态动词，所以「我能去游泳」很容易被直译成 I can to swim。
+    规则：can / must / should / may / might / will / would / shall 后面
+    直接跟动词原形，中间不能有 to。
+    """
+    out = []
+    for m in re.finditer(
+            r"\b(can|could|must|should|shall|may|might|will|would)\s+to\s+([a-z]+)\b",
+            low):
+        modal, verb = m.group(1), m.group(2)
+        out.append(_err(
+            "句型", f"{modal} to {verb}", f"{modal} {verb}",
+            f"{modal} 是情态动词，后面直接跟动词原形，中间不能加 to。"
+            f"应写成 {modal} {verb}。",
+            (m.start(), m.end()), f"{modal} {verb}", "heavy"))
+    return out
+
+
+def _r_to_gerund(s, low):
+    """to 后面接了 doing：like to playing → like to play / like playing。
+
+    不定式 to 后面必须是动词原形。想接 doing 就把 to 去掉
+    （like doing），两种说法都对，但不能混成 to doing。
+    """
+    out = []
+    for m in re.finditer(r"\bto\s+([a-z]+ing)\b", low):
+        ger = m.group(1)
+        base = ger[:-3]
+        if base not in _ACTIVITY:
+            continue
+        # 排除 be used to doing / look forward to doing 这类 to 是介词的固定搭配
+        if re.search(r"\b(used|accustomed|forward|object|opposed|committed)\b",
+                     low[:m.start()]):
+            continue
+        out.append(_err(
+            "固定搭配", f"to {ger}", f"to {base}",
+            f"带 to 的不定式后面要接动词原形，不能接 doing。"
+            f"想说「{ger}」就把 to 去掉，写成 {ger}；想保留 to 就改成 to {base}。",
+            (m.start(), m.end()), base, "heavy"))
+    return out
+
+
+def _r_s3_with_i(s, low):
+    """非三单主语接了三单动词：I likes → I like。
+
+    反向的（he go → he goes）已由 _r_subj_verb 覆盖。
+    这条补的是 I / we / you / they 后面误加 -s 的情况。
+    """
+    out = []
+    if _PAST_MARKER.search(low):
+        return out
+    for m in re.finditer(r"\b(i|we|you|they)\s+([a-z]+s)\b", low):
+        subj, verb = m.group(1), m.group(2)
+        if verb in _AUX_BE or verb in _MODALS:
+            continue
+        # 排除本身就是 -s 结尾的原形（always / sometimes / his / this 等）
+        if verb in _S_WORDS_NOT_VERBS:
+            continue
+        # 三单还原成原形：likes→like / goes→go / studies→study。
+        # 只砍一个 s 是不够的（goes→goe 不在词表里），要按 es / ies 依次试。
+        base = None
+        for cand in (verb[:-1],
+                     verb[:-2] if verb.endswith("es") else None,
+                     verb[:-3] + "y" if verb.endswith("ies") else None):
+            if cand and cand in VERBS:
+                base = cand
+                break
+        if base is None:
+            continue
+        # 排除名词复数：I have two books / they are my friends
+        if re.search(r"\b(two|three|four|five|many|some|my|his|her|their|our)\s+$",
+                     low[:m.start(2)]):
+            continue
+        out.append(_err(
+            "主谓一致", f"{subj} {verb}", f"{subj} {base}",
+            f"{subj} 不是第三人称单数，后面的动词用原形，不能加 -s。"
+            f"应写成 {subj} {base}。只有 he / she / it 后面才加 -s。",
+            (m.start(2), m.end(2)), base, "heavy"))
+    return out
+
+
 def _r_although_but(s, low):
     """Although ..., but ... —— 英文里两者不能同时出现。"""
     out = []
@@ -838,13 +937,35 @@ def _r_i_l(raw, low):
     return out
 
 
+def _looks_like_verb(tok):
+    """这个词看起来像谓语动词吗？原形 / 三单 / 过去式 / ing 都算。
+
+    之前只认原形，导致 "I likes apple." 被判成「缺少谓语动词」
+    （因为 likes 不在原形表里），而这个整句级的大区间错误又会在去重时
+    把「主谓一致」这类更精确的错误吞掉 —— 真正的问题反而看不见。
+    """
+    if tok in VERBS or tok in _AUX_BE or tok in _MODALS:
+        return True
+    if tok.endswith("ing"):
+        return tok[:-3] in VERBS or tok in VERBS
+    if tok.endswith("ed"):
+        return tok[:-2] in VERBS or tok[:-1] in VERBS or tok in _IRREGULAR.values()
+    if tok.endswith("es"):
+        # studies→study（ies 换回 y）也要认，否则整句会被误判成缺谓语
+        return (tok[:-2] in VERBS or tok[:-1] in VERBS
+                or (tok[:-3] + "y") in VERBS)
+    if tok.endswith("s"):
+        return tok[:-1] in VERBS
+    return False
+
+
 def _r_no_verb(raw, low):
     """句法完整性：>=3 个词却没有任何谓语动词 → 不是完整句子。"""
     out = []
     toks = re.findall(r"[a-z']+", low)
     if len(toks) < 3:
         return out
-    has_verb = any(t in VERBS or t in _AUX_BE or t in _MODALS for t in toks)
+    has_verb = any(_looks_like_verb(t) for t in toks)
     if not has_verb:
         out.append(_err(
             "句型", "（缺少谓语动词）", raw,
@@ -953,6 +1074,9 @@ RULES = [
     _r_colloc,           # go work -> go to work
     _r_article,          # a apple -> an apple
     _r_plural,           # two friend -> two friends
+    _r_modal_to,         # I can to swim -> I can swim
+    _r_to_gerund,        # like to playing -> like to play / like playing
+    _r_s3_with_i,        # I likes -> I like
 ]
 
 
@@ -990,8 +1114,41 @@ _CONNECT = ("because", "so", "and", "but", "although", "when", "if", "which",
             "that", "while", "after", "before", "since", "however", "though")
 
 
+def _expand_sample(s, low):
+    """给过短的句子生成一条「扩写」示范。
+
+    只做拼接、不臆造内容：把该补的那一节留成占位（...），
+    让学习者自己填，避免给出一句跟他真实想法无关的假句子。
+    """
+    base = s.rstrip().rstrip(".!?")
+    has_time = bool(re.search(
+        r"\b(every\s*day|every\s*morning|every\s*evening|usually|often|"
+        r"sometimes|always|never|in\s+the\s+\w+|at\s+\w+|on\s+\w+days?|"
+        r"after\s+\w+|before\s+\w+)\b", low))
+    has_place = bool(re.search(r"\b(at|in|on|to)\s+(the\s+)?[a-z]+\b", low))
+    n = len(re.findall(r"[A-Za-z']+", s))
+    goal = f"现在 {n} 个词，补到 10 个词以上就能练到更多结构。"
+    # 优先级：先补原因（信息量最大）；已有连接词就补时间；再补地点
+    if not any(re.search(r"\b" + c + r"\b", low) for c in _CONNECT):
+        return base + " because ...", f"在 because 后面补一句原因，句子立刻多出半句信息。{goal}"
+    if not has_time:
+        return base + " every day.", (
+            f"补一个时间或频率（every day / usually / in the morning），"
+            f"让句子更像真实表达。{goal}")
+    if not has_place:
+        return base + " at ...", (
+            f"补上地点（at home / in the park），句子会更完整。{goal}")
+    return "", ""
+
+
 def _optimizations(s, low):
-    """正确句的可优化表达（仅供参考，不影响判定与分数）。"""
+    """正确句的可优化表达（仅供参考，不影响判定与分数）。
+
+    返回两类：
+      - 润色类：{where, suggestion, reason} —— 前端按「建议」展示
+      - 扩写类：{kind:'expand', sample, note} —— 前端按「扩写：」展示
+    两类都只影响展示，不进错误本、不扣分。
+    """
     opts = []
     if s and s[-1] not in ".!?":
         opts.append({
@@ -1010,14 +1167,19 @@ def _optimizations(s, low):
             "reason": f"原句完全正确。{verb} 前面加 really 只是让语气更强一点，"
                       f"不代表原句有错；也可以说 {verb} ... {more}。",
         })
+    # 扩写线：少于 10 个词就该练长一点。语法没错也要提醒，
+    # 否则学习者会一直停在「主谓宾」三词句上，永远长不出从句。
     words = re.findall(r"[A-Za-z']+", s)
-    if len(words) <= 5 and not any(re.search(r"\b" + c + r"\b", low)
+    if len(words) < 10 and not any(re.search(r"\b" + c + r"\b", low)
                                    for c in _CONNECT):
-        opts.append({
-            "where": "整句", "suggestion": "",
-            "reason": "句子没错，但比较短。加上 because（原因）或时间、地点，"
-                      "一句话就能带出两段信息，练到更多结构。",
-        })
+        sample, note = _expand_sample(s, low)
+        if sample:
+            opts.append({
+                "kind": "expand",
+                "where": "整句",
+                "sample": sample,
+                "note": note or f"现在 {len(words)} 个词，写到 10 个词以上就能练到更多结构。",
+            })
     return opts[:2]
 
 
@@ -1047,10 +1209,14 @@ def analyze(sentence, word="", task_grammar="", task_prompt=""):
             raw_errors.extend(rule(raw, low) or [])
         except Exception as e:  # 单条规则出错不影响整体批改
             print("[ai_service] 规则 %s 执行失败(已跳过): %s" % (rule.__name__, e))
-    # —— 上下文相关的新检查：拼写 / 中文 / I-l / 句法完整性 / 冠词 ——
+    # —— 上下文相关的新检查：拼写 / 中文 / 句法完整性 / 冠词 ——
+    # 注：_r_i_l（句首小写 l 当 I）已按需求停用。
+    # 理由：学习者用手机输入时 l/I 常常只是输入习惯，判成拼写错会让人
+    # 把注意力放在大小写上，而不是真正该练的表达。函数保留不删，
+    # 将来想恢复只要把下面这行注释放开即可。
     try:
         raw_errors.extend(_r_chinese(raw, low) or [])
-        raw_errors.extend(_r_i_l(raw, low) or [])
+        # raw_errors.extend(_r_i_l(raw, low) or [])   # 已停用：不抓 I/l 混淆
         raw_errors.extend(_r_no_verb(raw, low) or [])
         raw_errors.extend(_r_overseas_dept(raw, low) or [])
         raw_errors.extend(_r_target_spelling(raw, low, word) or [])
@@ -1226,8 +1392,10 @@ def correct_sentence(sentence, stage=0, week=3, day=1, word="", task_key="",
         "to_error_bank": hard_review,
         "error_bank_ids": bank_ids,
         "fixed_error_ids": fixed_ids,
-        "expand_hint": (res["optimizations"][0]["reason"]
-                        if res["optimizations"] else ""),
+        # 润色类用 reason，扩写类用 note，两种字段都要能取到
+        "expand_hint": (res["optimizations"][0].get("reason")
+                        or res["optimizations"][0].get("note") or "")
+                       if res["optimizations"] else "",
     })
     return out
 

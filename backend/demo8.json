@@ -1,0 +1,8527 @@
+{
+ "_meta": {
+  "generated_by": "tests/demo8_gen.py",
+  "scale": 1,
+  "seed": 42,
+  "note": "演示模式专用。数据由真实统计代码算出后快照，运行时不查库、不写库。"
+ },
+ "data": {
+  "report": {
+   "ok": true,
+   "progress": {
+    "stage": 1,
+    "week": 8
+   },
+   "week": {
+    "title": "FAKE8-天气环境-W8",
+    "grammar": "比较级",
+    "sentences": {
+     "total": 25,
+     "good": 20,
+     "avg": 82
+    },
+    "reviews": 21,
+    "quiz_count": 1,
+    "quiz_avg": 95,
+    "listening": {
+     "answered": 20,
+     "correct": 17
+    },
+    "err_types": [
+     {
+      "type": "时态",
+      "current": 34
+     },
+     {
+      "type": "冠词",
+      "current": 17
+     },
+     {
+      "type": "介词",
+      "current": 11
+     },
+     {
+      "type": "非谓语",
+      "current": 8
+     },
+     {
+      "type": "三单",
+      "current": 1
+     }
+    ]
+   },
+   "month": {
+    "label": "2026-09",
+    "sentences": {
+     "total": 20,
+     "good": 16,
+     "avg": 84
+    },
+    "listening": {
+     "answered": 20,
+     "correct": 17
+    },
+    "quiz_count": 1,
+    "words_output": 10,
+    "errors": {
+     "new": 16,
+     "fixed": 9
+    }
+   }
+  },
+  "weakness": {
+   "error_types": [
+    {
+     "type": "非谓语",
+     "count_30d": 18,
+     "total": 35,
+     "level": "🔴",
+     "recent": [
+      {
+       "original": "He go to school about 非谓语.",
+       "corrected": "He goes to school about 非谓语.",
+       "explanation": "FAKE8 讲解",
+       "created_at": "2026-09-04T00:00:00"
+      },
+      {
+       "original": "He go to school about 非谓语.",
+       "corrected": "He goes to school about 非谓语.",
+       "explanation": "FAKE8 讲解",
+       "created_at": "2026-09-04T00:00:00"
+      },
+      {
+       "original": "He go to school about 非谓语.",
+       "corrected": "He goes to school about 非谓语.",
+       "explanation": "FAKE8 讲解",
+       "created_at": "2026-09-03T00:00:00"
+      },
+      {
+       "original": "He go to school about 非谓语.",
+       "corrected": "He goes to school about 非谓语.",
+       "explanation": "FAKE8 讲解",
+       "created_at": "2026-08-30T00:00:00"
+      },
+      {
+       "original": "He go to school about 非谓语.",
+       "corrected": "He goes to school about 非谓语.",
+       "explanation": "FAKE8 讲解",
+       "created_at": "2026-08-27T00:00:00"
+      },
+      {
+       "original": "He go to school about 非谓语.",
+       "corrected": "He goes to school about 非谓语.",
+       "explanation": "FAKE8 讲解",
+       "created_at": "2026-08-27T00:00:00"
+      },
+      {
+       "original": "He go to school about 非谓语.",
+       "corrected": "He goes to school about 非谓语.",
+       "explanation": "FAKE8 讲解",
+       "created_at": "2026-08-25T00:00:00"
+      },
+      {
+       "original": "He go to school about 非谓语.",
+       "corrected": "He goes to school about 非谓语.",
+       "explanation": "FAKE8 讲解",
+       "created_at": "2026-08-25T00:00:00"
+      }
+     ],
+     "patterns": [
+      {
+       "wrong": "He go to school about 非谓语.",
+       "times": 35
+      }
+     ],
+     "remedy": ""
+    },
+    {
+     "type": "时态",
+     "count_30d": 20,
+     "total": 33,
+     "level": "🔴",
+     "recent": [
+      {
+       "original": "He go to school about 时态.",
+       "corrected": "He goes to school about 时态.",
+       "explanation": "FAKE8 讲解",
+       "created_at": "2026-09-05T00:00:00"
+      },
+      {
+       "original": "He go to school about 时态.",
+       "corrected": "He goes to school about 时态.",
+       "explanation": "FAKE8 讲解",
+       "created_at": "2026-09-05T00:00:00"
+      },
+      {
+       "original": "He go to school about 时态.",
+       "corrected": "He goes to school about 时态.",
+       "explanation": "FAKE8 讲解",
+       "created_at": "2026-09-04T00:00:00"
+      },
+      {
+       "original": "He go to school about 时态.",
+       "corrected": "He goes to school about 时态.",
+       "explanation": "FAKE8 讲解",
+       "created_at": "2026-09-04T00:00:00"
+      },
+      {
+       "original": "He go to school about 时态.",
+       "corrected": "He goes to school about 时态.",
+       "explanation": "FAKE8 讲解",
+       "created_at": "2026-08-31T00:00:00"
+      },
+      {
+       "original": "He go to school about 时态.",
+       "corrected": "He goes to school about 时态.",
+       "explanation": "FAKE8 讲解",
+       "created_at": "2026-08-31T00:00:00"
+      },
+      {
+       "original": "He go to school about 时态.",
+       "corrected": "He goes to school about 时态.",
+       "explanation": "FAKE8 讲解",
+       "created_at": "2026-08-31T00:00:00"
+      },
+      {
+       "original": "He go to school about 时态.",
+       "corrected": "He goes to school about 时态.",
+       "explanation": "FAKE8 讲解",
+       "created_at": "2026-08-31T00:00:00"
+      }
+     ],
+     "patterns": [
+      {
+       "wrong": "He go to school about 时态.",
+       "times": 33
+      }
+     ],
+     "remedy": "时态容易混。先判断句子的时间词：yesterday/ago 用过去式，tomorrow/will 用将来，now 用进行时，every day 用一般现在。建议复习常用动词的过去式。"
+    },
+    {
+     "type": "介词",
+     "count_30d": 15,
+     "total": 31,
+     "level": "🔴",
+     "recent": [
+      {
+       "original": "He go to school about 介词.",
+       "corrected": "He goes to school about 介词.",
+       "explanation": "FAKE8 讲解",
+       "created_at": "2026-09-05T00:00:00"
+      },
+      {
+       "original": "He go to school about 介词.",
+       "corrected": "He goes to school about 介词.",
+       "explanation": "FAKE8 讲解",
+       "created_at": "2026-09-03T00:00:00"
+      },
+      {
+       "original": "He go to school about 介词.",
+       "corrected": "He goes to school about 介词.",
+       "explanation": "FAKE8 讲解",
+       "created_at": "2026-09-03T00:00:00"
+      },
+      {
+       "original": "He go to school about 介词.",
+       "corrected": "He goes to school about 介词.",
+       "explanation": "FAKE8 讲解",
+       "created_at": "2026-08-30T00:00:00"
+      },
+      {
+       "original": "He go to school about 介词.",
+       "corrected": "He goes to school about 介词.",
+       "explanation": "FAKE8 讲解",
+       "created_at": "2026-08-29T00:00:00"
+      },
+      {
+       "original": "He go to school about 介词.",
+       "corrected": "He goes to school about 介词.",
+       "explanation": "FAKE8 讲解",
+       "created_at": "2026-08-24T00:00:00"
+      },
+      {
+       "original": "He go to school about 介词.",
+       "corrected": "He goes to school about 介词.",
+       "explanation": "FAKE8 讲解",
+       "created_at": "2026-08-22T00:00:00"
+      },
+      {
+       "original": "He go to school about 介词.",
+       "corrected": "He goes to school about 介词.",
+       "explanation": "FAKE8 讲解",
+       "created_at": "2026-08-18T00:00:00"
+      }
+     ],
+     "patterns": [
+      {
+       "wrong": "He go to school about 介词.",
+       "times": 31
+      }
+     ],
+     "remedy": "近期介词出错较多。重点复习常见搭配：go to、arrive at/in、work at、live in、listen to、good at。建议花 5-10 分钟，把上面搭配各造一句正确的句子。"
+    },
+    {
+     "type": "冠词",
+     "count_30d": 20,
+     "total": 30,
+     "level": "🔴",
+     "recent": [
+      {
+       "original": "He go to school about 冠词.",
+       "corrected": "He goes to school about 冠词.",
+       "explanation": "FAKE8 讲解",
+       "created_at": "2026-09-04T00:00:00"
+      },
+      {
+       "original": "He go to school about 冠词.",
+       "corrected": "He goes to school about 冠词.",
+       "explanation": "FAKE8 讲解",
+       "created_at": "2026-09-03T00:00:00"
+      },
+      {
+       "original": "He go to school about 冠词.",
+       "corrected": "He goes to school about 冠词.",
+       "explanation": "FAKE8 讲解",
+       "created_at": "2026-09-03T00:00:00"
+      },
+      {
+       "original": "He go to school about 冠词.",
+       "corrected": "He goes to school about 冠词.",
+       "explanation": "FAKE8 讲解",
+       "created_at": "2026-09-02T00:00:00"
+      },
+      {
+       "original": "He go to school about 冠词.",
+       "corrected": "He goes to school about 冠词.",
+       "explanation": "FAKE8 讲解",
+       "created_at": "2026-09-02T00:00:00"
+      },
+      {
+       "original": "He go to school about 冠词.",
+       "corrected": "He goes to school about 冠词.",
+       "explanation": "FAKE8 讲解",
+       "created_at": "2026-09-02T00:00:00"
+      },
+      {
+       "original": "He go to school about 冠词.",
+       "corrected": "He goes to school about 冠词.",
+       "explanation": "FAKE8 讲解",
+       "created_at": "2026-08-30T00:00:00"
+      },
+      {
+       "original": "He go to school about 冠词.",
+       "corrected": "He goes to school about 冠词.",
+       "explanation": "FAKE8 讲解",
+       "created_at": "2026-08-29T00:00:00"
+      }
+     ],
+     "patterns": [
+      {
+       "wrong": "He go to school about 冠词.",
+       "times": 30
+      }
+     ],
+     "remedy": "冠词薄弱。重点看名词前是否需要 a/an/the：可数单数前要用 a/an，特指用 the，泛指复数不加。建议口头把错误句的正确版本读 3 遍。"
+    },
+    {
+     "type": "三单",
+     "count_30d": 12,
+     "total": 26,
+     "level": "🔴",
+     "recent": [
+      {
+       "original": "He go to school about 三单.",
+       "corrected": "He goes to school about 三单.",
+       "explanation": "FAKE8 讲解",
+       "created_at": "2026-08-30T00:00:00"
+      },
+      {
+       "original": "He go to school about 三单.",
+       "corrected": "He goes to school about 三单.",
+       "explanation": "FAKE8 讲解",
+       "created_at": "2026-08-25T00:00:00"
+      },
+      {
+       "original": "He go to school about 三单.",
+       "corrected": "He goes to school about 三单.",
+       "explanation": "FAKE8 讲解",
+       "created_at": "2026-08-22T00:00:00"
+      },
+      {
+       "original": "He go to school about 三单.",
+       "corrected": "He goes to school about 三单.",
+       "explanation": "FAKE8 讲解",
+       "created_at": "2026-08-22T00:00:00"
+      },
+      {
+       "original": "He go to school about 三单.",
+       "corrected": "He goes to school about 三单.",
+       "explanation": "FAKE8 讲解",
+       "created_at": "2026-08-20T00:00:00"
+      },
+      {
+       "original": "He go to school about 三单.",
+       "corrected": "He goes to school about 三单.",
+       "explanation": "FAKE8 讲解",
+       "created_at": "2026-08-19T00:00:00"
+      },
+      {
+       "original": "He go to school about 三单.",
+       "corrected": "He goes to school about 三单.",
+       "explanation": "FAKE8 讲解",
+       "created_at": "2026-08-16T00:00:00"
+      },
+      {
+       "original": "He go to school about 三单.",
+       "corrected": "He goes to school about 三单.",
+       "explanation": "FAKE8 讲解",
+       "created_at": "2026-08-14T00:00:00"
+      }
+     ],
+     "patterns": [
+      {
+       "wrong": "He go to school about 三单.",
+       "times": 26
+      }
+     ],
+     "remedy": ""
+    }
+   ],
+   "low_star_words": [
+    {
+     "word": "fk81",
+     "stars": 1,
+     "total_attempts": 3,
+     "last_result": "weak",
+     "last_at": "2026-09-06T00:00:00",
+     "updated_at": "2026-09-06T00:00:00",
+     "meaning": null,
+     "pos": null,
+     "phonetic": null
+    },
+    {
+     "word": "fk70",
+     "stars": 1,
+     "total_attempts": 5,
+     "last_result": "weak",
+     "last_at": "2026-08-30T00:00:00",
+     "updated_at": "2026-08-30T00:00:00",
+     "meaning": null,
+     "pos": null,
+     "phonetic": null
+    },
+    {
+     "word": "fk60",
+     "stars": 1,
+     "total_attempts": 5,
+     "last_result": "weak",
+     "last_at": "2026-08-23T00:00:00",
+     "updated_at": "2026-08-23T00:00:00",
+     "meaning": null,
+     "pos": null,
+     "phonetic": null
+    },
+    {
+     "word": "fk61",
+     "stars": 1,
+     "total_attempts": 7,
+     "last_result": "weak",
+     "last_at": "2026-08-23T00:00:00",
+     "updated_at": "2026-08-23T00:00:00",
+     "meaning": null,
+     "pos": null,
+     "phonetic": null
+    },
+    {
+     "word": "fk50",
+     "stars": 1,
+     "total_attempts": 12,
+     "last_result": "weak",
+     "last_at": "2026-08-16T00:00:00",
+     "updated_at": "2026-08-16T00:00:00",
+     "meaning": null,
+     "pos": null,
+     "phonetic": null
+    },
+    {
+     "word": "fk51",
+     "stars": 1,
+     "total_attempts": 9,
+     "last_result": "weak",
+     "last_at": "2026-08-16T00:00:00",
+     "updated_at": "2026-08-16T00:00:00",
+     "meaning": null,
+     "pos": null,
+     "phonetic": null
+    },
+    {
+     "word": "fk54",
+     "stars": 1,
+     "total_attempts": 7,
+     "last_result": "weak",
+     "last_at": "2026-08-16T00:00:00",
+     "updated_at": "2026-08-16T00:00:00",
+     "meaning": null,
+     "pos": null,
+     "phonetic": null
+    },
+    {
+     "word": "fk56",
+     "stars": 1,
+     "total_attempts": 10,
+     "last_result": "weak",
+     "last_at": "2026-08-16T00:00:00",
+     "updated_at": "2026-08-16T00:00:00",
+     "meaning": null,
+     "pos": null,
+     "phonetic": null
+    },
+    {
+     "word": "fk59",
+     "stars": 1,
+     "total_attempts": 6,
+     "last_result": "weak",
+     "last_at": "2026-08-16T00:00:00",
+     "updated_at": "2026-08-16T00:00:00",
+     "meaning": null,
+     "pos": null,
+     "phonetic": null
+    },
+    {
+     "word": "fk41",
+     "stars": 1,
+     "total_attempts": 3,
+     "last_result": "weak",
+     "last_at": "2026-08-09T00:00:00",
+     "updated_at": "2026-08-09T00:00:00",
+     "meaning": null,
+     "pos": null,
+     "phonetic": null
+    },
+    {
+     "word": "fk30",
+     "stars": 1,
+     "total_attempts": 7,
+     "last_result": "weak",
+     "last_at": "2026-08-02T00:00:00",
+     "updated_at": "2026-08-02T00:00:00",
+     "meaning": null,
+     "pos": null,
+     "phonetic": null
+    },
+    {
+     "word": "fk33",
+     "stars": 1,
+     "total_attempts": 7,
+     "last_result": "weak",
+     "last_at": "2026-08-02T00:00:00",
+     "updated_at": "2026-08-02T00:00:00",
+     "meaning": null,
+     "pos": null,
+     "phonetic": null
+    },
+    {
+     "word": "fk36",
+     "stars": 1,
+     "total_attempts": 11,
+     "last_result": "weak",
+     "last_at": "2026-08-02T00:00:00",
+     "updated_at": "2026-08-02T00:00:00",
+     "meaning": null,
+     "pos": null,
+     "phonetic": null
+    },
+    {
+     "word": "fk37",
+     "stars": 1,
+     "total_attempts": 11,
+     "last_result": "weak",
+     "last_at": "2026-08-02T00:00:00",
+     "updated_at": "2026-08-02T00:00:00",
+     "meaning": null,
+     "pos": null,
+     "phonetic": null
+    },
+    {
+     "word": "fk24",
+     "stars": 1,
+     "total_attempts": 11,
+     "last_result": "weak",
+     "last_at": "2026-07-26T00:00:00",
+     "updated_at": "2026-07-26T00:00:00",
+     "meaning": null,
+     "pos": null,
+     "phonetic": null
+    },
+    {
+     "word": "fk27",
+     "stars": 1,
+     "total_attempts": 11,
+     "last_result": "weak",
+     "last_at": "2026-07-26T00:00:00",
+     "updated_at": "2026-07-26T00:00:00",
+     "meaning": null,
+     "pos": null,
+     "phonetic": null
+    },
+    {
+     "word": "fk28",
+     "stars": 1,
+     "total_attempts": 9,
+     "last_result": "weak",
+     "last_at": "2026-07-26T00:00:00",
+     "updated_at": "2026-07-26T00:00:00",
+     "meaning": null,
+     "pos": null,
+     "phonetic": null
+    },
+    {
+     "word": "fk10",
+     "stars": 1,
+     "total_attempts": 9,
+     "last_result": "weak",
+     "last_at": "2026-07-19T00:00:00",
+     "updated_at": "2026-07-19T00:00:00",
+     "meaning": null,
+     "pos": null,
+     "phonetic": null
+    },
+    {
+     "word": "fk11",
+     "stars": 1,
+     "total_attempts": 6,
+     "last_result": "weak",
+     "last_at": "2026-07-19T00:00:00",
+     "updated_at": "2026-07-19T00:00:00",
+     "meaning": null,
+     "pos": null,
+     "phonetic": null
+    },
+    {
+     "word": "fk14",
+     "stars": 1,
+     "total_attempts": 3,
+     "last_result": "weak",
+     "last_at": "2026-07-19T00:00:00",
+     "updated_at": "2026-07-19T00:00:00",
+     "meaning": null,
+     "pos": null,
+     "phonetic": null
+    }
+   ],
+   "recommendations": [
+    {
+     "kind": "error",
+     "label": "错误类型 · 非谓语",
+     "detail": "近30天 18 次，累计 35 次",
+     "advice": ""
+    },
+    {
+     "kind": "error",
+     "label": "错误类型 · 时态",
+     "detail": "近30天 20 次，累计 33 次",
+     "advice": "时态容易混。先判断句子的时间词：yesterday/ago 用过去式，tomorrow/will 用将来，now 用进行时，every day 用一般现在。建议复习常用动词的过去式。"
+    },
+    {
+     "kind": "error",
+     "label": "错误类型 · 介词",
+     "detail": "近30天 15 次，累计 31 次",
+     "advice": "近期介词出错较多。重点复习常见搭配：go to、arrive at/in、work at、live in、listen to、good at。建议花 5-10 分钟，把上面搭配各造一句正确的句子。"
+    },
+    {
+     "kind": "output",
+     "label": "主动输出 · fk81",
+     "detail": "五星 1/5，最近表现 weak",
+     "advice": "建议用该词再造一句关于你自己的话，把熟练度拉到 3 星以上。"
+    },
+    {
+     "kind": "output",
+     "label": "主动输出 · fk70",
+     "detail": "五星 1/5，最近表现 weak",
+     "advice": "建议用该词再造一句关于你自己的话，把熟练度拉到 3 星以上。"
+    },
+    {
+     "kind": "output",
+     "label": "主动输出 · fk60",
+     "detail": "五星 1/5，最近表现 weak",
+     "advice": "建议用该词再造一句关于你自己的话，把熟练度拉到 3 星以上。"
+    },
+    {
+     "kind": "sentence",
+     "label": "造句均分偏低 · fk11",
+     "detail": "造了 6 句，均分 56.7",
+     "advice": "回看这几句的批改说明，重点注意反复被指出的问题。"
+    },
+    {
+     "kind": "sentence",
+     "label": "造句均分偏低 · fk43",
+     "detail": "造了 6 句，均分 59.7",
+     "advice": "回看这几句的批改说明，重点注意反复被指出的问题。"
+    },
+    {
+     "kind": "sentence",
+     "label": "造句均分偏低 · fk32",
+     "detail": "造了 7 句，均分 60.4",
+     "advice": "回看这几句的批改说明，重点注意反复被指出的问题。"
+    },
+    {
+     "kind": "review",
+     "label": "复习反复出错 · fk20",
+     "detail": "对 5 次、错 7 次（错 58%）",
+     "advice": "这张卡总是记不住，建议用它在句子里再造一次。"
+    },
+    {
+     "kind": "review",
+     "label": "复习反复出错 · fk42",
+     "detail": "对 5 次、错 6 次（错 55%）",
+     "advice": "这张卡总是记不住，建议用它在句子里再造一次。"
+    },
+    {
+     "kind": "review",
+     "label": "复习反复出错 · fk50",
+     "detail": "对 5 次、错 6 次（错 55%）",
+     "advice": "这张卡总是记不住，建议用它在句子里再造一次。"
+    },
+    {
+     "kind": "expression",
+     "label": "表达过于单一 · fk74",
+     "detail": "7 句里有 7 句不到 10 个词、7 句用 I 开头",
+     "advice": "这个词的句子又短又全是 I 开头。试着换个主语（My team / The work），再加个 because 说清原因，写到 10 个词以上。"
+    },
+    {
+     "kind": "expression",
+     "label": "表达过于单一 · fk73",
+     "detail": "7 句里有 7 句不到 10 个词、7 句用 I 开头",
+     "advice": "这个词的句子又短又全是 I 开头。试着换个主语（My team / The work），再加个 because 说清原因，写到 10 个词以上。"
+    },
+    {
+     "kind": "expression",
+     "label": "表达过于单一 · fk72",
+     "detail": "7 句里有 7 句不到 10 个词、7 句用 I 开头",
+     "advice": "这个词的句子又短又全是 I 开头。试着换个主语（My team / The work），再加个 because 说清原因，写到 10 个词以上。"
+    }
+   ],
+   "sources": {
+    "sentences": [
+     {
+      "word": "fk11",
+      "count": 6,
+      "avg": 56.7,
+      "last_at": "2026-07-19T09:03:00"
+     },
+     {
+      "word": "fk43",
+      "count": 6,
+      "avg": 59.7,
+      "last_at": "2026-08-08T09:09:00"
+     },
+     {
+      "word": "fk32",
+      "count": 7,
+      "avg": 60.4,
+      "last_at": "2026-08-02T09:06:00"
+     },
+     {
+      "word": "fk20",
+      "count": 7,
+      "avg": 60.9,
+      "last_at": "2026-07-26T09:00:00"
+     },
+     {
+      "word": "fk22",
+      "count": 7,
+      "avg": 61.0,
+      "last_at": "2026-07-26T09:06:00"
+     }
+    ],
+    "reviews": [
+     {
+      "kind": "vocab",
+      "ref_key": "fk20",
+      "prompt": "fk20 的中文",
+      "correct": 5,
+      "wrong": 7,
+      "wrong_rate": 58
+     },
+     {
+      "kind": "vocab",
+      "ref_key": "fk42",
+      "prompt": "fk42 的中文",
+      "correct": 5,
+      "wrong": 6,
+      "wrong_rate": 55
+     },
+     {
+      "kind": "vocab",
+      "ref_key": "fk50",
+      "prompt": "fk50 的中文",
+      "correct": 5,
+      "wrong": 6,
+      "wrong_rate": 55
+     },
+     {
+      "kind": "vocab",
+      "ref_key": "fk32",
+      "prompt": "fk32 的中文",
+      "correct": 6,
+      "wrong": 7,
+      "wrong_rate": 54
+     },
+     {
+      "kind": "vocab",
+      "ref_key": "fk12",
+      "prompt": "fk12 的中文",
+      "correct": 3,
+      "wrong": 3,
+      "wrong_rate": 50
+     }
+    ],
+    "quizzes": {
+     "failed": [],
+     "tags": []
+    },
+    "listening": {
+     "answered": 89,
+     "total": 160,
+     "rate": 56
+    },
+    "training": [],
+    "expression": [
+     {
+      "word": "fk74",
+      "count": 7,
+      "kind": "both",
+      "short_rate": 100,
+      "i_head_rate": 100,
+      "detail": "7 句里有 7 句不到 10 个词、7 句用 I 开头"
+     },
+     {
+      "word": "fk73",
+      "count": 7,
+      "kind": "both",
+      "short_rate": 100,
+      "i_head_rate": 100,
+      "detail": "7 句里有 7 句不到 10 个词、7 句用 I 开头"
+     },
+     {
+      "word": "fk72",
+      "count": 7,
+      "kind": "both",
+      "short_rate": 100,
+      "i_head_rate": 100,
+      "detail": "7 句里有 7 句不到 10 个词、7 句用 I 开头"
+     },
+     {
+      "word": "fk71",
+      "count": 7,
+      "kind": "both",
+      "short_rate": 100,
+      "i_head_rate": 100,
+      "detail": "7 句里有 7 句不到 10 个词、7 句用 I 开头"
+     },
+     {
+      "word": "fk70",
+      "count": 7,
+      "kind": "both",
+      "short_rate": 100,
+      "i_head_rate": 100,
+      "detail": "7 句里有 7 句不到 10 个词、7 句用 I 开头"
+     }
+    ]
+   }
+  },
+  "errors": [
+   {
+    "type": "非谓语",
+    "count_30d": 18,
+    "total": 35,
+    "level": "🔴",
+    "recent": [
+     {
+      "original": "He go to school about 非谓语.",
+      "corrected": "He goes to school about 非谓语.",
+      "explanation": "FAKE8 讲解",
+      "created_at": "2026-09-04T00:00:00"
+     },
+     {
+      "original": "He go to school about 非谓语.",
+      "corrected": "He goes to school about 非谓语.",
+      "explanation": "FAKE8 讲解",
+      "created_at": "2026-09-04T00:00:00"
+     },
+     {
+      "original": "He go to school about 非谓语.",
+      "corrected": "He goes to school about 非谓语.",
+      "explanation": "FAKE8 讲解",
+      "created_at": "2026-09-03T00:00:00"
+     },
+     {
+      "original": "He go to school about 非谓语.",
+      "corrected": "He goes to school about 非谓语.",
+      "explanation": "FAKE8 讲解",
+      "created_at": "2026-08-30T00:00:00"
+     },
+     {
+      "original": "He go to school about 非谓语.",
+      "corrected": "He goes to school about 非谓语.",
+      "explanation": "FAKE8 讲解",
+      "created_at": "2026-08-27T00:00:00"
+     },
+     {
+      "original": "He go to school about 非谓语.",
+      "corrected": "He goes to school about 非谓语.",
+      "explanation": "FAKE8 讲解",
+      "created_at": "2026-08-27T00:00:00"
+     },
+     {
+      "original": "He go to school about 非谓语.",
+      "corrected": "He goes to school about 非谓语.",
+      "explanation": "FAKE8 讲解",
+      "created_at": "2026-08-25T00:00:00"
+     },
+     {
+      "original": "He go to school about 非谓语.",
+      "corrected": "He goes to school about 非谓语.",
+      "explanation": "FAKE8 讲解",
+      "created_at": "2026-08-25T00:00:00"
+     }
+    ],
+    "patterns": [
+     {
+      "wrong": "He go to school about 非谓语.",
+      "times": 35
+     }
+    ],
+    "remedy": ""
+   },
+   {
+    "type": "时态",
+    "count_30d": 20,
+    "total": 33,
+    "level": "🔴",
+    "recent": [
+     {
+      "original": "He go to school about 时态.",
+      "corrected": "He goes to school about 时态.",
+      "explanation": "FAKE8 讲解",
+      "created_at": "2026-09-05T00:00:00"
+     },
+     {
+      "original": "He go to school about 时态.",
+      "corrected": "He goes to school about 时态.",
+      "explanation": "FAKE8 讲解",
+      "created_at": "2026-09-05T00:00:00"
+     },
+     {
+      "original": "He go to school about 时态.",
+      "corrected": "He goes to school about 时态.",
+      "explanation": "FAKE8 讲解",
+      "created_at": "2026-09-04T00:00:00"
+     },
+     {
+      "original": "He go to school about 时态.",
+      "corrected": "He goes to school about 时态.",
+      "explanation": "FAKE8 讲解",
+      "created_at": "2026-09-04T00:00:00"
+     },
+     {
+      "original": "He go to school about 时态.",
+      "corrected": "He goes to school about 时态.",
+      "explanation": "FAKE8 讲解",
+      "created_at": "2026-08-31T00:00:00"
+     },
+     {
+      "original": "He go to school about 时态.",
+      "corrected": "He goes to school about 时态.",
+      "explanation": "FAKE8 讲解",
+      "created_at": "2026-08-31T00:00:00"
+     },
+     {
+      "original": "He go to school about 时态.",
+      "corrected": "He goes to school about 时态.",
+      "explanation": "FAKE8 讲解",
+      "created_at": "2026-08-31T00:00:00"
+     },
+     {
+      "original": "He go to school about 时态.",
+      "corrected": "He goes to school about 时态.",
+      "explanation": "FAKE8 讲解",
+      "created_at": "2026-08-31T00:00:00"
+     }
+    ],
+    "patterns": [
+     {
+      "wrong": "He go to school about 时态.",
+      "times": 33
+     }
+    ],
+    "remedy": "时态容易混。先判断句子的时间词：yesterday/ago 用过去式，tomorrow/will 用将来，now 用进行时，every day 用一般现在。建议复习常用动词的过去式。"
+   },
+   {
+    "type": "介词",
+    "count_30d": 15,
+    "total": 31,
+    "level": "🔴",
+    "recent": [
+     {
+      "original": "He go to school about 介词.",
+      "corrected": "He goes to school about 介词.",
+      "explanation": "FAKE8 讲解",
+      "created_at": "2026-09-05T00:00:00"
+     },
+     {
+      "original": "He go to school about 介词.",
+      "corrected": "He goes to school about 介词.",
+      "explanation": "FAKE8 讲解",
+      "created_at": "2026-09-03T00:00:00"
+     },
+     {
+      "original": "He go to school about 介词.",
+      "corrected": "He goes to school about 介词.",
+      "explanation": "FAKE8 讲解",
+      "created_at": "2026-09-03T00:00:00"
+     },
+     {
+      "original": "He go to school about 介词.",
+      "corrected": "He goes to school about 介词.",
+      "explanation": "FAKE8 讲解",
+      "created_at": "2026-08-30T00:00:00"
+     },
+     {
+      "original": "He go to school about 介词.",
+      "corrected": "He goes to school about 介词.",
+      "explanation": "FAKE8 讲解",
+      "created_at": "2026-08-29T00:00:00"
+     },
+     {
+      "original": "He go to school about 介词.",
+      "corrected": "He goes to school about 介词.",
+      "explanation": "FAKE8 讲解",
+      "created_at": "2026-08-24T00:00:00"
+     },
+     {
+      "original": "He go to school about 介词.",
+      "corrected": "He goes to school about 介词.",
+      "explanation": "FAKE8 讲解",
+      "created_at": "2026-08-22T00:00:00"
+     },
+     {
+      "original": "He go to school about 介词.",
+      "corrected": "He goes to school about 介词.",
+      "explanation": "FAKE8 讲解",
+      "created_at": "2026-08-18T00:00:00"
+     }
+    ],
+    "patterns": [
+     {
+      "wrong": "He go to school about 介词.",
+      "times": 31
+     }
+    ],
+    "remedy": "近期介词出错较多。重点复习常见搭配：go to、arrive at/in、work at、live in、listen to、good at。建议花 5-10 分钟，把上面搭配各造一句正确的句子。"
+   },
+   {
+    "type": "冠词",
+    "count_30d": 20,
+    "total": 30,
+    "level": "🔴",
+    "recent": [
+     {
+      "original": "He go to school about 冠词.",
+      "corrected": "He goes to school about 冠词.",
+      "explanation": "FAKE8 讲解",
+      "created_at": "2026-09-04T00:00:00"
+     },
+     {
+      "original": "He go to school about 冠词.",
+      "corrected": "He goes to school about 冠词.",
+      "explanation": "FAKE8 讲解",
+      "created_at": "2026-09-03T00:00:00"
+     },
+     {
+      "original": "He go to school about 冠词.",
+      "corrected": "He goes to school about 冠词.",
+      "explanation": "FAKE8 讲解",
+      "created_at": "2026-09-03T00:00:00"
+     },
+     {
+      "original": "He go to school about 冠词.",
+      "corrected": "He goes to school about 冠词.",
+      "explanation": "FAKE8 讲解",
+      "created_at": "2026-09-02T00:00:00"
+     },
+     {
+      "original": "He go to school about 冠词.",
+      "corrected": "He goes to school about 冠词.",
+      "explanation": "FAKE8 讲解",
+      "created_at": "2026-09-02T00:00:00"
+     },
+     {
+      "original": "He go to school about 冠词.",
+      "corrected": "He goes to school about 冠词.",
+      "explanation": "FAKE8 讲解",
+      "created_at": "2026-09-02T00:00:00"
+     },
+     {
+      "original": "He go to school about 冠词.",
+      "corrected": "He goes to school about 冠词.",
+      "explanation": "FAKE8 讲解",
+      "created_at": "2026-08-30T00:00:00"
+     },
+     {
+      "original": "He go to school about 冠词.",
+      "corrected": "He goes to school about 冠词.",
+      "explanation": "FAKE8 讲解",
+      "created_at": "2026-08-29T00:00:00"
+     }
+    ],
+    "patterns": [
+     {
+      "wrong": "He go to school about 冠词.",
+      "times": 30
+     }
+    ],
+    "remedy": "冠词薄弱。重点看名词前是否需要 a/an/the：可数单数前要用 a/an，特指用 the，泛指复数不加。建议口头把错误句的正确版本读 3 遍。"
+   },
+   {
+    "type": "三单",
+    "count_30d": 12,
+    "total": 26,
+    "level": "🔴",
+    "recent": [
+     {
+      "original": "He go to school about 三单.",
+      "corrected": "He goes to school about 三单.",
+      "explanation": "FAKE8 讲解",
+      "created_at": "2026-08-30T00:00:00"
+     },
+     {
+      "original": "He go to school about 三单.",
+      "corrected": "He goes to school about 三单.",
+      "explanation": "FAKE8 讲解",
+      "created_at": "2026-08-25T00:00:00"
+     },
+     {
+      "original": "He go to school about 三单.",
+      "corrected": "He goes to school about 三单.",
+      "explanation": "FAKE8 讲解",
+      "created_at": "2026-08-22T00:00:00"
+     },
+     {
+      "original": "He go to school about 三单.",
+      "corrected": "He goes to school about 三单.",
+      "explanation": "FAKE8 讲解",
+      "created_at": "2026-08-22T00:00:00"
+     },
+     {
+      "original": "He go to school about 三单.",
+      "corrected": "He goes to school about 三单.",
+      "explanation": "FAKE8 讲解",
+      "created_at": "2026-08-20T00:00:00"
+     },
+     {
+      "original": "He go to school about 三单.",
+      "corrected": "He goes to school about 三单.",
+      "explanation": "FAKE8 讲解",
+      "created_at": "2026-08-19T00:00:00"
+     },
+     {
+      "original": "He go to school about 三单.",
+      "corrected": "He goes to school about 三单.",
+      "explanation": "FAKE8 讲解",
+      "created_at": "2026-08-16T00:00:00"
+     },
+     {
+      "original": "He go to school about 三单.",
+      "corrected": "He goes to school about 三单.",
+      "explanation": "FAKE8 讲解",
+      "created_at": "2026-08-14T00:00:00"
+     }
+    ],
+    "patterns": [
+     {
+      "wrong": "He go to school about 三单.",
+      "times": 26
+     }
+    ],
+    "remedy": ""
+   }
+  ],
+  "error_bank": {
+   "items": [],
+   "total": 0,
+   "unfixed": 0
+  },
+  "errors_trend": {
+   "bucket": "week",
+   "weeks": [
+    {
+     "week": "2026-W28",
+     "count": 19
+    },
+    {
+     "week": "2026-W29",
+     "count": 23
+    },
+    {
+     "week": "2026-W30",
+     "count": 20
+    },
+    {
+     "week": "2026-W31",
+     "count": 16
+    },
+    {
+     "week": "2026-W32",
+     "count": 24
+    },
+    {
+     "week": "2026-W33",
+     "count": 14
+    },
+    {
+     "week": "2026-W34",
+     "count": 18
+    },
+    {
+     "week": "2026-W35",
+     "count": 21
+    }
+   ]
+  },
+  "flashcards": {
+   "items": [
+    {
+     "id": 79,
+     "word": "fk50",
+     "phonetic": "",
+     "pos": "",
+     "meaning": "",
+     "direction": "en2zh",
+     "reps": 7,
+     "interval": 7.0,
+     "collocations": [],
+     "examples": []
+    },
+    {
+     "id": 80,
+     "word": "fk51",
+     "phonetic": "",
+     "pos": "",
+     "meaning": "",
+     "direction": "zh2en",
+     "reps": 7,
+     "interval": 7.0,
+     "collocations": [],
+     "examples": []
+    },
+    {
+     "id": 81,
+     "word": "fk52",
+     "phonetic": "",
+     "pos": "",
+     "meaning": "",
+     "direction": "en2zh",
+     "reps": 7,
+     "interval": 7.0,
+     "collocations": [],
+     "examples": []
+    },
+    {
+     "id": 100,
+     "word": "fk60",
+     "phonetic": "",
+     "pos": "",
+     "meaning": "",
+     "direction": "zh2en",
+     "reps": 5,
+     "interval": 5.0,
+     "collocations": [],
+     "examples": []
+    },
+    {
+     "id": 101,
+     "word": "fk61",
+     "phonetic": "",
+     "pos": "",
+     "meaning": "",
+     "direction": "en2zh",
+     "reps": 5,
+     "interval": 5.0,
+     "collocations": [],
+     "examples": []
+    },
+    {
+     "id": 102,
+     "word": "fk62",
+     "phonetic": "",
+     "pos": "",
+     "meaning": "",
+     "direction": "en2zh",
+     "reps": 5,
+     "interval": 5.0,
+     "collocations": [],
+     "examples": []
+    },
+    {
+     "id": 115,
+     "word": "fk70",
+     "phonetic": "",
+     "pos": "",
+     "meaning": "",
+     "direction": "en2zh",
+     "reps": 7,
+     "interval": 7.0,
+     "collocations": [],
+     "examples": []
+    },
+    {
+     "id": 116,
+     "word": "fk71",
+     "phonetic": "",
+     "pos": "",
+     "meaning": "",
+     "direction": "zh2en",
+     "reps": 7,
+     "interval": 7.0,
+     "collocations": [],
+     "examples": []
+    },
+    {
+     "id": 117,
+     "word": "fk72",
+     "phonetic": "",
+     "pos": "",
+     "meaning": "",
+     "direction": "en2zh",
+     "reps": 7,
+     "interval": 7.0,
+     "collocations": [],
+     "examples": []
+    },
+    {
+     "id": 136,
+     "word": "fk80",
+     "phonetic": "",
+     "pos": "",
+     "meaning": "",
+     "direction": "zh2en",
+     "reps": 5,
+     "interval": 5.0,
+     "collocations": [],
+     "examples": []
+    },
+    {
+     "id": 137,
+     "word": "fk81",
+     "phonetic": "",
+     "pos": "",
+     "meaning": "",
+     "direction": "en2zh",
+     "reps": 5,
+     "interval": 5.0,
+     "collocations": [],
+     "examples": []
+    },
+    {
+     "id": 138,
+     "word": "fk82",
+     "phonetic": "",
+     "pos": "",
+     "meaning": "",
+     "direction": "en2zh",
+     "reps": 5,
+     "interval": 5.0,
+     "collocations": [],
+     "examples": []
+    },
+    {
+     "id": 1,
+     "word": "fk10",
+     "phonetic": "",
+     "pos": "",
+     "meaning": "",
+     "direction": "en2zh",
+     "reps": 6,
+     "interval": 6.0,
+     "collocations": [],
+     "examples": []
+    },
+    {
+     "id": 2,
+     "word": "fk11",
+     "phonetic": "",
+     "pos": "",
+     "meaning": "",
+     "direction": "en2zh",
+     "reps": 6,
+     "interval": 6.0,
+     "collocations": [],
+     "examples": []
+    },
+    {
+     "id": 3,
+     "word": "fk12",
+     "phonetic": "",
+     "pos": "",
+     "meaning": "",
+     "direction": "en2zh",
+     "reps": 6,
+     "interval": 6.0,
+     "collocations": [],
+     "examples": []
+    },
+    {
+     "id": 19,
+     "word": "fk20",
+     "phonetic": "",
+     "pos": "",
+     "meaning": "",
+     "direction": "en2zh",
+     "reps": 7,
+     "interval": 7.0,
+     "collocations": [],
+     "examples": []
+    },
+    {
+     "id": 20,
+     "word": "fk21",
+     "phonetic": "",
+     "pos": "",
+     "meaning": "",
+     "direction": "zh2en",
+     "reps": 7,
+     "interval": 7.0,
+     "collocations": [],
+     "examples": []
+    },
+    {
+     "id": 21,
+     "word": "fk22",
+     "phonetic": "",
+     "pos": "",
+     "meaning": "",
+     "direction": "en2zh",
+     "reps": 7,
+     "interval": 7.0,
+     "collocations": [],
+     "examples": []
+    },
+    {
+     "id": 40,
+     "word": "fk30",
+     "phonetic": "",
+     "pos": "",
+     "meaning": "",
+     "direction": "zh2en",
+     "reps": 7,
+     "interval": 7.0,
+     "collocations": [],
+     "examples": []
+    },
+    {
+     "id": 41,
+     "word": "fk31",
+     "phonetic": "",
+     "pos": "",
+     "meaning": "",
+     "direction": "en2zh",
+     "reps": 7,
+     "interval": 7.0,
+     "collocations": [],
+     "examples": []
+    },
+    {
+     "id": 42,
+     "word": "fk32",
+     "phonetic": "",
+     "pos": "",
+     "meaning": "",
+     "direction": "en2zh",
+     "reps": 7,
+     "interval": 7.0,
+     "collocations": [],
+     "examples": []
+    },
+    {
+     "id": 61,
+     "word": "fk40",
+     "phonetic": "",
+     "pos": "",
+     "meaning": "",
+     "direction": "en2zh",
+     "reps": 6,
+     "interval": 6.0,
+     "collocations": [],
+     "examples": []
+    },
+    {
+     "id": 62,
+     "word": "fk41",
+     "phonetic": "",
+     "pos": "",
+     "meaning": "",
+     "direction": "en2zh",
+     "reps": 6,
+     "interval": 6.0,
+     "collocations": [],
+     "examples": []
+    },
+    {
+     "id": 63,
+     "word": "fk42",
+     "phonetic": "",
+     "pos": "",
+     "meaning": "",
+     "direction": "en2zh",
+     "reps": 6,
+     "interval": 6.0,
+     "collocations": [],
+     "examples": []
+    }
+   ]
+  },
+  "today": {
+   "progress": {
+    "stage": 1,
+    "week": 8,
+    "day": 7,
+    "last_activity": "vocab"
+   },
+   "week_title": "FAKE8-天气环境-W8",
+   "grammar": "比较级",
+   "theme": "爱好",
+   "words": [],
+   "day_group": {
+    "index": 7,
+    "name": ""
+   },
+   "week_total_words": 10,
+   "is_rest_day": true,
+   "sentence_prompts": [],
+   "sentence_plan": {
+    "basic": [],
+    "upgrade": [],
+    "combo": [],
+    "meta": {
+     "basic_count": 0,
+     "upgrade_count": 0,
+     "combo_count": 0,
+     "review_count": 24,
+     "grammar": "比较级",
+     "note": "Day7 休息日"
+    }
+   },
+   "review_pool": [
+    {
+     "word": "fk20",
+     "meaning": "模拟释义",
+     "pos": "",
+     "error_rate": 0.583,
+     "total_wrong": 7,
+     "total_correct": 5,
+     "last_reviewed": "2026-07-26",
+     "priority": 2.167
+    },
+    {
+     "word": "fk32",
+     "meaning": "模拟释义",
+     "pos": "",
+     "error_rate": 0.538,
+     "total_wrong": 7,
+     "total_correct": 6,
+     "last_reviewed": "2026-08-02",
+     "priority": 2.077
+    },
+    {
+     "word": "fk42",
+     "meaning": "模拟释义",
+     "pos": "",
+     "error_rate": 0.545,
+     "total_wrong": 6,
+     "total_correct": 5,
+     "last_reviewed": "2026-08-08",
+     "priority": 2.058
+    },
+    {
+     "word": "fk12",
+     "meaning": "模拟释义",
+     "pos": "",
+     "error_rate": 0.5,
+     "total_wrong": 3,
+     "total_correct": 3,
+     "last_reviewed": "2026-07-19",
+     "priority": 2.0
+    },
+    {
+     "word": "fk21",
+     "meaning": "模拟释义",
+     "pos": "",
+     "error_rate": 0.455,
+     "total_wrong": 5,
+     "total_correct": 6,
+     "last_reviewed": "2026-07-26",
+     "priority": 1.909
+    },
+    {
+     "word": "fk40",
+     "meaning": "模拟释义",
+     "pos": "",
+     "error_rate": 0.455,
+     "total_wrong": 5,
+     "total_correct": 6,
+     "last_reviewed": "2026-08-08",
+     "priority": 1.876
+    },
+    {
+     "word": "fk10",
+     "meaning": "模拟释义",
+     "pos": "",
+     "error_rate": 0.4,
+     "total_wrong": 4,
+     "total_correct": 6,
+     "last_reviewed": "2026-07-19",
+     "priority": 1.8
+    },
+    {
+     "word": "fk50",
+     "meaning": "模拟释义",
+     "pos": "",
+     "error_rate": 0.545,
+     "total_wrong": 6,
+     "total_correct": 5,
+     "last_reviewed": "2026-08-16",
+     "priority": 1.791
+    },
+    {
+     "word": "fk11",
+     "meaning": "模拟释义",
+     "pos": "",
+     "error_rate": 0.333,
+     "total_wrong": 4,
+     "total_correct": 8,
+     "last_reviewed": "2026-07-19",
+     "priority": 1.667
+    },
+    {
+     "word": "fk31",
+     "meaning": "模拟释义",
+     "pos": "",
+     "error_rate": 0.308,
+     "total_wrong": 4,
+     "total_correct": 9,
+     "last_reviewed": "2026-08-02",
+     "priority": 1.615
+    },
+    {
+     "word": "fk22",
+     "meaning": "模拟释义",
+     "pos": "",
+     "error_rate": 0.286,
+     "total_wrong": 2,
+     "total_correct": 5,
+     "last_reviewed": "2026-07-26",
+     "priority": 1.571
+    },
+    {
+     "word": "fk30",
+     "meaning": "模拟释义",
+     "pos": "",
+     "error_rate": 0.222,
+     "total_wrong": 2,
+     "total_correct": 7,
+     "last_reviewed": "2026-08-02",
+     "priority": 1.444
+    },
+    {
+     "word": "fk51",
+     "meaning": "模拟释义",
+     "pos": "",
+     "error_rate": 0.3,
+     "total_wrong": 3,
+     "total_correct": 7,
+     "last_reviewed": "2026-08-16",
+     "priority": 1.3
+    },
+    {
+     "word": "fk41",
+     "meaning": "模拟释义",
+     "pos": "",
+     "error_rate": 0.167,
+     "total_wrong": 1,
+     "total_correct": 5,
+     "last_reviewed": "2026-08-08",
+     "priority": 1.3
+    },
+    {
+     "word": "fk52",
+     "meaning": "模拟释义",
+     "pos": "",
+     "error_rate": 0.2,
+     "total_wrong": 2,
+     "total_correct": 8,
+     "last_reviewed": "2026-08-16",
+     "priority": 1.1
+    },
+    {
+     "word": "fk60",
+     "meaning": "模拟释义",
+     "pos": "",
+     "error_rate": 0.2,
+     "total_wrong": 1,
+     "total_correct": 4,
+     "last_reviewed": "2026-08-22",
+     "priority": 0.9
+    },
+    {
+     "word": "fk61",
+     "meaning": "模拟释义",
+     "pos": "",
+     "error_rate": 0.2,
+     "total_wrong": 1,
+     "total_correct": 4,
+     "last_reviewed": "2026-08-22",
+     "priority": 0.9
+    },
+    {
+     "word": "fk70",
+     "meaning": "模拟释义",
+     "pos": "",
+     "error_rate": 0.286,
+     "total_wrong": 2,
+     "total_correct": 5,
+     "last_reviewed": "2026-08-30",
+     "priority": 0.805
+    },
+    {
+     "word": "fk72",
+     "meaning": "模拟释义",
+     "pos": "",
+     "error_rate": 0.273,
+     "total_wrong": 3,
+     "total_correct": 8,
+     "last_reviewed": "2026-08-30",
+     "priority": 0.779
+    },
+    {
+     "word": "fk81",
+     "meaning": "模拟释义",
+     "pos": "",
+     "error_rate": 0.286,
+     "total_wrong": 2,
+     "total_correct": 5,
+     "last_reviewed": "2026-09-05",
+     "priority": 0.605
+    },
+    {
+     "word": "fk62",
+     "meaning": "模拟释义",
+     "pos": "",
+     "error_rate": 0.0,
+     "total_wrong": 0,
+     "total_correct": 8,
+     "last_reviewed": "2026-08-22",
+     "priority": 0.5
+    },
+    {
+     "word": "fk71",
+     "meaning": "模拟释义",
+     "pos": "",
+     "error_rate": 0.111,
+     "total_wrong": 1,
+     "total_correct": 8,
+     "last_reviewed": "2026-08-30",
+     "priority": 0.456
+    },
+    {
+     "word": "fk82",
+     "meaning": "模拟释义",
+     "pos": "",
+     "error_rate": 0.143,
+     "total_wrong": 1,
+     "total_correct": 6,
+     "last_reviewed": "2026-09-05",
+     "priority": 0.319
+    },
+    {
+     "word": "fk80",
+     "meaning": "模拟释义",
+     "pos": "",
+     "error_rate": 0.0,
+     "total_wrong": 0,
+     "total_correct": 7,
+     "last_reviewed": "2026-09-05",
+     "priority": 0.033
+    }
+   ],
+   "sentence_meta": {
+    "count": 0,
+    "grammar": "比较级"
+   },
+   "speaking_topic": "用英语连续说 2 分钟：介绍你的FAKE8-天气环境-W8（用上本周语法：比较级）"
+  },
+  "progress": {
+   "stage": 1,
+   "week": 8,
+   "day": 7,
+   "last_activity": "vocab"
+  },
+  "home": {
+   "progress": {
+    "stage": 1,
+    "week": 8,
+    "day": 7,
+    "last_activity": "vocab"
+   },
+   "week_title": "FAKE8-天气环境-W8",
+   "week_grammar": "比较级",
+   "week_vocab_count": 10,
+   "today": {
+    "vocab_done": 0,
+    "vocab_total": 20,
+    "sentence_done": 0,
+    "sentence_total": 10
+   },
+   "due_reviews": [
+    {
+     "id": 79,
+     "kind": "vocab",
+     "ref_key": "fk50",
+     "prompt": "fk50 的中文",
+     "answer": "模拟释义",
+     "interval": 7.0,
+     "day": 1
+    },
+    {
+     "id": 80,
+     "kind": "vocab",
+     "ref_key": "fk51",
+     "prompt": "fk51 的中文",
+     "answer": "模拟释义",
+     "interval": 7.0,
+     "day": 1
+    },
+    {
+     "id": 81,
+     "kind": "vocab",
+     "ref_key": "fk52",
+     "prompt": "fk52 的中文",
+     "answer": "模拟释义",
+     "interval": 7.0,
+     "day": 1
+    },
+    {
+     "id": 100,
+     "kind": "vocab",
+     "ref_key": "fk60",
+     "prompt": "fk60 的中文",
+     "answer": "模拟释义",
+     "interval": 5.0,
+     "day": 2
+    },
+    {
+     "id": 101,
+     "kind": "vocab",
+     "ref_key": "fk61",
+     "prompt": "fk61 的中文",
+     "answer": "模拟释义",
+     "interval": 5.0,
+     "day": 2
+    },
+    {
+     "id": 102,
+     "kind": "vocab",
+     "ref_key": "fk62",
+     "prompt": "fk62 的中文",
+     "answer": "模拟释义",
+     "interval": 5.0,
+     "day": 2
+    },
+    {
+     "id": 115,
+     "kind": "vocab",
+     "ref_key": "fk70",
+     "prompt": "fk70 的中文",
+     "answer": "模拟释义",
+     "interval": 7.0,
+     "day": 1
+    },
+    {
+     "id": 116,
+     "kind": "vocab",
+     "ref_key": "fk71",
+     "prompt": "fk71 的中文",
+     "answer": "模拟释义",
+     "interval": 7.0,
+     "day": 1
+    },
+    {
+     "id": 117,
+     "kind": "vocab",
+     "ref_key": "fk72",
+     "prompt": "fk72 的中文",
+     "answer": "模拟释义",
+     "interval": 7.0,
+     "day": 1
+    },
+    {
+     "id": 136,
+     "kind": "vocab",
+     "ref_key": "fk80",
+     "prompt": "fk80 的中文",
+     "answer": "模拟释义",
+     "interval": 5.0,
+     "day": 1
+    },
+    {
+     "id": 137,
+     "kind": "vocab",
+     "ref_key": "fk81",
+     "prompt": "fk81 的中文",
+     "answer": "模拟释义",
+     "interval": 5.0,
+     "day": 1
+    },
+    {
+     "id": 138,
+     "kind": "vocab",
+     "ref_key": "fk82",
+     "prompt": "fk82 的中文",
+     "answer": "模拟释义",
+     "interval": 5.0,
+     "day": 1
+    },
+    {
+     "id": 1,
+     "kind": "vocab",
+     "ref_key": "fk10",
+     "prompt": "fk10 的中文",
+     "answer": "模拟释义",
+     "interval": 6.0,
+     "day": 1
+    },
+    {
+     "id": 2,
+     "kind": "vocab",
+     "ref_key": "fk11",
+     "prompt": "fk11 的中文",
+     "answer": "模拟释义",
+     "interval": 6.0,
+     "day": 1
+    },
+    {
+     "id": 3,
+     "kind": "vocab",
+     "ref_key": "fk12",
+     "prompt": "fk12 的中文",
+     "answer": "模拟释义",
+     "interval": 6.0,
+     "day": 1
+    },
+    {
+     "id": 19,
+     "kind": "vocab",
+     "ref_key": "fk20",
+     "prompt": "fk20 的中文",
+     "answer": "模拟释义",
+     "interval": 7.0,
+     "day": 1
+    },
+    {
+     "id": 20,
+     "kind": "vocab",
+     "ref_key": "fk21",
+     "prompt": "fk21 的中文",
+     "answer": "模拟释义",
+     "interval": 7.0,
+     "day": 1
+    },
+    {
+     "id": 21,
+     "kind": "vocab",
+     "ref_key": "fk22",
+     "prompt": "fk22 的中文",
+     "answer": "模拟释义",
+     "interval": 7.0,
+     "day": 1
+    },
+    {
+     "id": 40,
+     "kind": "vocab",
+     "ref_key": "fk30",
+     "prompt": "fk30 的中文",
+     "answer": "模拟释义",
+     "interval": 7.0,
+     "day": 1
+    },
+    {
+     "id": 41,
+     "kind": "vocab",
+     "ref_key": "fk31",
+     "prompt": "fk31 的中文",
+     "answer": "模拟释义",
+     "interval": 7.0,
+     "day": 1
+    },
+    {
+     "id": 42,
+     "kind": "vocab",
+     "ref_key": "fk32",
+     "prompt": "fk32 的中文",
+     "answer": "模拟释义",
+     "interval": 7.0,
+     "day": 1
+    },
+    {
+     "id": 61,
+     "kind": "vocab",
+     "ref_key": "fk40",
+     "prompt": "fk40 的中文",
+     "answer": "模拟释义",
+     "interval": 6.0,
+     "day": 1
+    },
+    {
+     "id": 62,
+     "kind": "vocab",
+     "ref_key": "fk41",
+     "prompt": "fk41 的中文",
+     "answer": "模拟释义",
+     "interval": 6.0,
+     "day": 1
+    },
+    {
+     "id": 63,
+     "kind": "vocab",
+     "ref_key": "fk42",
+     "prompt": "fk42 的中文",
+     "answer": "模拟释义",
+     "interval": 6.0,
+     "day": 1
+    }
+   ],
+   "weaknesses": [
+    {
+     "type": "非谓语",
+     "count_30d": 18,
+     "total": 35,
+     "level": "🔴",
+     "recent": [
+      {
+       "original": "He go to school about 非谓语.",
+       "corrected": "He goes to school about 非谓语.",
+       "explanation": "FAKE8 讲解",
+       "created_at": "2026-09-04T00:00:00"
+      },
+      {
+       "original": "He go to school about 非谓语.",
+       "corrected": "He goes to school about 非谓语.",
+       "explanation": "FAKE8 讲解",
+       "created_at": "2026-09-04T00:00:00"
+      },
+      {
+       "original": "He go to school about 非谓语.",
+       "corrected": "He goes to school about 非谓语.",
+       "explanation": "FAKE8 讲解",
+       "created_at": "2026-09-03T00:00:00"
+      },
+      {
+       "original": "He go to school about 非谓语.",
+       "corrected": "He goes to school about 非谓语.",
+       "explanation": "FAKE8 讲解",
+       "created_at": "2026-08-30T00:00:00"
+      },
+      {
+       "original": "He go to school about 非谓语.",
+       "corrected": "He goes to school about 非谓语.",
+       "explanation": "FAKE8 讲解",
+       "created_at": "2026-08-27T00:00:00"
+      },
+      {
+       "original": "He go to school about 非谓语.",
+       "corrected": "He goes to school about 非谓语.",
+       "explanation": "FAKE8 讲解",
+       "created_at": "2026-08-27T00:00:00"
+      },
+      {
+       "original": "He go to school about 非谓语.",
+       "corrected": "He goes to school about 非谓语.",
+       "explanation": "FAKE8 讲解",
+       "created_at": "2026-08-25T00:00:00"
+      },
+      {
+       "original": "He go to school about 非谓语.",
+       "corrected": "He goes to school about 非谓语.",
+       "explanation": "FAKE8 讲解",
+       "created_at": "2026-08-25T00:00:00"
+      }
+     ],
+     "patterns": [
+      {
+       "wrong": "He go to school about 非谓语.",
+       "times": 35
+      }
+     ],
+     "remedy": ""
+    },
+    {
+     "type": "时态",
+     "count_30d": 20,
+     "total": 33,
+     "level": "🔴",
+     "recent": [
+      {
+       "original": "He go to school about 时态.",
+       "corrected": "He goes to school about 时态.",
+       "explanation": "FAKE8 讲解",
+       "created_at": "2026-09-05T00:00:00"
+      },
+      {
+       "original": "He go to school about 时态.",
+       "corrected": "He goes to school about 时态.",
+       "explanation": "FAKE8 讲解",
+       "created_at": "2026-09-05T00:00:00"
+      },
+      {
+       "original": "He go to school about 时态.",
+       "corrected": "He goes to school about 时态.",
+       "explanation": "FAKE8 讲解",
+       "created_at": "2026-09-04T00:00:00"
+      },
+      {
+       "original": "He go to school about 时态.",
+       "corrected": "He goes to school about 时态.",
+       "explanation": "FAKE8 讲解",
+       "created_at": "2026-09-04T00:00:00"
+      },
+      {
+       "original": "He go to school about 时态.",
+       "corrected": "He goes to school about 时态.",
+       "explanation": "FAKE8 讲解",
+       "created_at": "2026-08-31T00:00:00"
+      },
+      {
+       "original": "He go to school about 时态.",
+       "corrected": "He goes to school about 时态.",
+       "explanation": "FAKE8 讲解",
+       "created_at": "2026-08-31T00:00:00"
+      },
+      {
+       "original": "He go to school about 时态.",
+       "corrected": "He goes to school about 时态.",
+       "explanation": "FAKE8 讲解",
+       "created_at": "2026-08-31T00:00:00"
+      },
+      {
+       "original": "He go to school about 时态.",
+       "corrected": "He goes to school about 时态.",
+       "explanation": "FAKE8 讲解",
+       "created_at": "2026-08-31T00:00:00"
+      }
+     ],
+     "patterns": [
+      {
+       "wrong": "He go to school about 时态.",
+       "times": 33
+      }
+     ],
+     "remedy": "时态容易混。先判断句子的时间词：yesterday/ago 用过去式，tomorrow/will 用将来，now 用进行时，every day 用一般现在。建议复习常用动词的过去式。"
+    },
+    {
+     "type": "介词",
+     "count_30d": 15,
+     "total": 31,
+     "level": "🔴",
+     "recent": [
+      {
+       "original": "He go to school about 介词.",
+       "corrected": "He goes to school about 介词.",
+       "explanation": "FAKE8 讲解",
+       "created_at": "2026-09-05T00:00:00"
+      },
+      {
+       "original": "He go to school about 介词.",
+       "corrected": "He goes to school about 介词.",
+       "explanation": "FAKE8 讲解",
+       "created_at": "2026-09-03T00:00:00"
+      },
+      {
+       "original": "He go to school about 介词.",
+       "corrected": "He goes to school about 介词.",
+       "explanation": "FAKE8 讲解",
+       "created_at": "2026-09-03T00:00:00"
+      },
+      {
+       "original": "He go to school about 介词.",
+       "corrected": "He goes to school about 介词.",
+       "explanation": "FAKE8 讲解",
+       "created_at": "2026-08-30T00:00:00"
+      },
+      {
+       "original": "He go to school about 介词.",
+       "corrected": "He goes to school about 介词.",
+       "explanation": "FAKE8 讲解",
+       "created_at": "2026-08-29T00:00:00"
+      },
+      {
+       "original": "He go to school about 介词.",
+       "corrected": "He goes to school about 介词.",
+       "explanation": "FAKE8 讲解",
+       "created_at": "2026-08-24T00:00:00"
+      },
+      {
+       "original": "He go to school about 介词.",
+       "corrected": "He goes to school about 介词.",
+       "explanation": "FAKE8 讲解",
+       "created_at": "2026-08-22T00:00:00"
+      },
+      {
+       "original": "He go to school about 介词.",
+       "corrected": "He goes to school about 介词.",
+       "explanation": "FAKE8 讲解",
+       "created_at": "2026-08-18T00:00:00"
+      }
+     ],
+     "patterns": [
+      {
+       "wrong": "He go to school about 介词.",
+       "times": 31
+      }
+     ],
+     "remedy": "近期介词出错较多。重点复习常见搭配：go to、arrive at/in、work at、live in、listen to、good at。建议花 5-10 分钟，把上面搭配各造一句正确的句子。"
+    }
+   ],
+   "is_sunday": true
+  },
+  "activity": {
+   "recent": [
+    {
+     "type": "听力",
+     "title": "听力练习",
+     "detail": "S1W8D2",
+     "date": "2026-09-05",
+     "score": 90,
+     "ok": null
+    },
+    {
+     "type": "造句",
+     "title": "造句",
+     "detail": "目标词 fk84",
+     "date": "2026-09-05",
+     "score": 78,
+     "ok": 0
+    },
+    {
+     "type": "造句",
+     "title": "造句",
+     "detail": "目标词 fk83",
+     "date": "2026-09-05",
+     "score": 66,
+     "ok": 0
+    },
+    {
+     "type": "造句",
+     "title": "造句",
+     "detail": "目标词 fk82",
+     "date": "2026-09-05",
+     "score": 100,
+     "ok": 1
+    },
+    {
+     "type": "造句",
+     "title": "造句",
+     "detail": "目标词 fk81",
+     "date": "2026-09-05",
+     "score": 62,
+     "ok": 1
+    },
+    {
+     "type": "造句",
+     "title": "造句",
+     "detail": "目标词 fk80",
+     "date": "2026-09-05",
+     "score": 70,
+     "ok": 0
+    },
+    {
+     "type": "背词",
+     "title": "学习单词",
+     "detail": "FAKE8 学习 6 个词",
+     "date": "2026-09-05",
+     "score": null,
+     "ok": null
+    },
+    {
+     "type": "测评",
+     "title": "测评",
+     "detail": "weekly · S1W8",
+     "date": "2026-09-04",
+     "score": 95,
+     "ok": null
+    },
+    {
+     "type": "听力",
+     "title": "听力练习",
+     "detail": "S1W8D1",
+     "date": "2026-09-04",
+     "score": 80,
+     "ok": null
+    },
+    {
+     "type": "造句",
+     "title": "造句",
+     "detail": "目标词 fk84",
+     "date": "2026-09-04",
+     "score": 100,
+     "ok": 1
+    },
+    {
+     "type": "造句",
+     "title": "造句",
+     "detail": "目标词 fk83",
+     "date": "2026-09-04",
+     "score": 89,
+     "ok": 1
+    },
+    {
+     "type": "造句",
+     "title": "造句",
+     "detail": "目标词 fk82",
+     "date": "2026-09-04",
+     "score": 81,
+     "ok": 1
+    },
+    {
+     "type": "造句",
+     "title": "造句",
+     "detail": "目标词 fk81",
+     "date": "2026-09-04",
+     "score": 84,
+     "ok": 1
+    },
+    {
+     "type": "造句",
+     "title": "造句",
+     "detail": "目标词 fk80",
+     "date": "2026-09-04",
+     "score": 68,
+     "ok": 1
+    },
+    {
+     "type": "背词",
+     "title": "学习单词",
+     "detail": "FAKE8 学习 6 个词",
+     "date": "2026-09-04",
+     "score": null,
+     "ok": null
+    },
+    {
+     "type": "造句",
+     "title": "造句",
+     "detail": "目标词 fk84",
+     "date": "2026-09-03",
+     "score": 90,
+     "ok": 1
+    },
+    {
+     "type": "造句",
+     "title": "造句",
+     "detail": "目标词 fk83",
+     "date": "2026-09-03",
+     "score": 96,
+     "ok": 1
+    },
+    {
+     "type": "造句",
+     "title": "造句",
+     "detail": "目标词 fk82",
+     "date": "2026-09-03",
+     "score": 93,
+     "ok": 1
+    },
+    {
+     "type": "造句",
+     "title": "造句",
+     "detail": "目标词 fk81",
+     "date": "2026-09-03",
+     "score": 71,
+     "ok": 1
+    },
+    {
+     "type": "造句",
+     "title": "造句",
+     "detail": "目标词 fk80",
+     "date": "2026-09-03",
+     "score": 70,
+     "ok": 1
+    },
+    {
+     "type": "背词",
+     "title": "学习单词",
+     "detail": "FAKE8 学习 6 个词",
+     "date": "2026-09-03",
+     "score": null,
+     "ok": null
+    },
+    {
+     "type": "造句",
+     "title": "造句",
+     "detail": "目标词 fk84",
+     "date": "2026-09-02",
+     "score": 94,
+     "ok": 1
+    },
+    {
+     "type": "造句",
+     "title": "造句",
+     "detail": "目标词 fk83",
+     "date": "2026-09-02",
+     "score": 75,
+     "ok": 0
+    },
+    {
+     "type": "造句",
+     "title": "造句",
+     "detail": "目标词 fk82",
+     "date": "2026-09-02",
+     "score": 100,
+     "ok": 1
+    },
+    {
+     "type": "造句",
+     "title": "造句",
+     "detail": "目标词 fk81",
+     "date": "2026-09-02",
+     "score": 93,
+     "ok": 1
+    },
+    {
+     "type": "造句",
+     "title": "造句",
+     "detail": "目标词 fk80",
+     "date": "2026-09-02",
+     "score": 93,
+     "ok": 1
+    },
+    {
+     "type": "背词",
+     "title": "学习单词",
+     "detail": "FAKE8 学习 6 个词",
+     "date": "2026-09-02",
+     "score": null,
+     "ok": null
+    },
+    {
+     "type": "造句",
+     "title": "造句",
+     "detail": "目标词 fk84",
+     "date": "2026-08-31",
+     "score": 81,
+     "ok": 1
+    },
+    {
+     "type": "造句",
+     "title": "造句",
+     "detail": "目标词 fk83",
+     "date": "2026-08-31",
+     "score": 85,
+     "ok": 1
+    },
+    {
+     "type": "造句",
+     "title": "造句",
+     "detail": "目标词 fk82",
+     "date": "2026-08-31",
+     "score": 67,
+     "ok": 0
+    },
+    {
+     "type": "造句",
+     "title": "造句",
+     "detail": "目标词 fk81",
+     "date": "2026-08-31",
+     "score": 73,
+     "ok": 1
+    },
+    {
+     "type": "造句",
+     "title": "造句",
+     "detail": "目标词 fk80",
+     "date": "2026-08-31",
+     "score": 83,
+     "ok": 1
+    },
+    {
+     "type": "背词",
+     "title": "学习单词",
+     "detail": "FAKE8 学习 6 个词",
+     "date": "2026-08-31",
+     "score": null,
+     "ok": null
+    },
+    {
+     "type": "造句",
+     "title": "造句",
+     "detail": "目标词 fk74",
+     "date": "2026-08-30",
+     "score": 75,
+     "ok": 1
+    },
+    {
+     "type": "造句",
+     "title": "造句",
+     "detail": "目标词 fk73",
+     "date": "2026-08-30",
+     "score": 67,
+     "ok": 1
+    },
+    {
+     "type": "造句",
+     "title": "造句",
+     "detail": "目标词 fk72",
+     "date": "2026-08-30",
+     "score": 78,
+     "ok": 1
+    },
+    {
+     "type": "造句",
+     "title": "造句",
+     "detail": "目标词 fk71",
+     "date": "2026-08-30",
+     "score": 98,
+     "ok": 1
+    },
+    {
+     "type": "造句",
+     "title": "造句",
+     "detail": "目标词 fk70",
+     "date": "2026-08-30",
+     "score": 97,
+     "ok": 1
+    },
+    {
+     "type": "背词",
+     "title": "学习单词",
+     "detail": "FAKE8 学习 6 个词",
+     "date": "2026-08-30",
+     "score": null,
+     "ok": null
+    },
+    {
+     "type": "听力",
+     "title": "听力练习",
+     "detail": "S1W7D2",
+     "date": "2026-08-29",
+     "score": 40,
+     "ok": null
+    },
+    {
+     "type": "造句",
+     "title": "造句",
+     "detail": "目标词 fk74",
+     "date": "2026-08-29",
+     "score": 84,
+     "ok": 0
+    },
+    {
+     "type": "造句",
+     "title": "造句",
+     "detail": "目标词 fk73",
+     "date": "2026-08-29",
+     "score": 87,
+     "ok": 1
+    },
+    {
+     "type": "造句",
+     "title": "造句",
+     "detail": "目标词 fk72",
+     "date": "2026-08-29",
+     "score": 68,
+     "ok": 1
+    },
+    {
+     "type": "造句",
+     "title": "造句",
+     "detail": "目标词 fk71",
+     "date": "2026-08-29",
+     "score": 66,
+     "ok": 0
+    },
+    {
+     "type": "造句",
+     "title": "造句",
+     "detail": "目标词 fk70",
+     "date": "2026-08-29",
+     "score": 94,
+     "ok": 1
+    },
+    {
+     "type": "背词",
+     "title": "学习单词",
+     "detail": "FAKE8 学习 6 个词",
+     "date": "2026-08-29",
+     "score": null,
+     "ok": null
+    },
+    {
+     "type": "测评",
+     "title": "测评",
+     "detail": "weekly · S1W7",
+     "date": "2026-08-28",
+     "score": 79,
+     "ok": null
+    },
+    {
+     "type": "听力",
+     "title": "听力练习",
+     "detail": "S1W7D1",
+     "date": "2026-08-28",
+     "score": 60,
+     "ok": null
+    },
+    {
+     "type": "造句",
+     "title": "造句",
+     "detail": "目标词 fk74",
+     "date": "2026-08-28",
+     "score": 61,
+     "ok": 1
+    },
+    {
+     "type": "造句",
+     "title": "造句",
+     "detail": "目标词 fk73",
+     "date": "2026-08-28",
+     "score": 83,
+     "ok": 1
+    }
+   ],
+   "weeks": [
+    {
+     "label": "W1",
+     "learning_days": 7,
+     "listening_acc": 60,
+     "quiz_avg": 82,
+     "vocab_rate": null
+    },
+    {
+     "label": "W2",
+     "learning_days": 5,
+     "listening_acc": 55,
+     "quiz_avg": 68,
+     "vocab_rate": null
+    },
+    {
+     "label": "W3",
+     "learning_days": 7,
+     "listening_acc": 50,
+     "quiz_avg": 79,
+     "vocab_rate": null
+    },
+    {
+     "label": "W4",
+     "learning_days": 5,
+     "listening_acc": 85,
+     "quiz_avg": 95,
+     "vocab_rate": null
+    }
+   ]
+  },
+  "history": [
+   {
+    "id": 50,
+    "date": "2026-09-05",
+    "stage": 1,
+    "week": 8,
+    "day": 6,
+    "action": "learn_vocab",
+    "detail": "FAKE8 学习 6 个词",
+    "created_at": "2026-09-05T00:00:00"
+   },
+   {
+    "id": 49,
+    "date": "2026-09-04",
+    "stage": 1,
+    "week": 8,
+    "day": 5,
+    "action": "learn_vocab",
+    "detail": "FAKE8 学习 6 个词",
+    "created_at": "2026-09-04T00:00:00"
+   },
+   {
+    "id": 48,
+    "date": "2026-09-03",
+    "stage": 1,
+    "week": 8,
+    "day": 4,
+    "action": "learn_vocab",
+    "detail": "FAKE8 学习 6 个词",
+    "created_at": "2026-09-03T00:00:00"
+   },
+   {
+    "id": 47,
+    "date": "2026-09-02",
+    "stage": 1,
+    "week": 8,
+    "day": 3,
+    "action": "learn_vocab",
+    "detail": "FAKE8 学习 6 个词",
+    "created_at": "2026-09-02T00:00:00"
+   },
+   {
+    "id": 46,
+    "date": "2026-08-31",
+    "stage": 1,
+    "week": 8,
+    "day": 1,
+    "action": "learn_vocab",
+    "detail": "FAKE8 学习 6 个词",
+    "created_at": "2026-08-31T00:00:00"
+   },
+   {
+    "id": 45,
+    "date": "2026-08-30",
+    "stage": 1,
+    "week": 7,
+    "day": 7,
+    "action": "learn_vocab",
+    "detail": "FAKE8 学习 6 个词",
+    "created_at": "2026-08-30T00:00:00"
+   },
+   {
+    "id": 44,
+    "date": "2026-08-29",
+    "stage": 1,
+    "week": 7,
+    "day": 6,
+    "action": "learn_vocab",
+    "detail": "FAKE8 学习 6 个词",
+    "created_at": "2026-08-29T00:00:00"
+   },
+   {
+    "id": 43,
+    "date": "2026-08-28",
+    "stage": 1,
+    "week": 7,
+    "day": 5,
+    "action": "learn_vocab",
+    "detail": "FAKE8 学习 6 个词",
+    "created_at": "2026-08-28T00:00:00"
+   },
+   {
+    "id": 42,
+    "date": "2026-08-27",
+    "stage": 1,
+    "week": 7,
+    "day": 4,
+    "action": "learn_vocab",
+    "detail": "FAKE8 学习 6 个词",
+    "created_at": "2026-08-27T00:00:00"
+   },
+   {
+    "id": 41,
+    "date": "2026-08-26",
+    "stage": 1,
+    "week": 7,
+    "day": 3,
+    "action": "learn_vocab",
+    "detail": "FAKE8 学习 6 个词",
+    "created_at": "2026-08-26T00:00:00"
+   },
+   {
+    "id": 40,
+    "date": "2026-08-25",
+    "stage": 1,
+    "week": 7,
+    "day": 2,
+    "action": "learn_vocab",
+    "detail": "FAKE8 学习 6 个词",
+    "created_at": "2026-08-25T00:00:00"
+   },
+   {
+    "id": 39,
+    "date": "2026-08-24",
+    "stage": 1,
+    "week": 7,
+    "day": 1,
+    "action": "learn_vocab",
+    "detail": "FAKE8 学习 6 个词",
+    "created_at": "2026-08-24T00:00:00"
+   },
+   {
+    "id": 38,
+    "date": "2026-08-22",
+    "stage": 1,
+    "week": 6,
+    "day": 6,
+    "action": "learn_vocab",
+    "detail": "FAKE8 学习 6 个词",
+    "created_at": "2026-08-22T00:00:00"
+   },
+   {
+    "id": 37,
+    "date": "2026-08-21",
+    "stage": 1,
+    "week": 6,
+    "day": 5,
+    "action": "learn_vocab",
+    "detail": "FAKE8 学习 6 个词",
+    "created_at": "2026-08-21T00:00:00"
+   },
+   {
+    "id": 36,
+    "date": "2026-08-20",
+    "stage": 1,
+    "week": 6,
+    "day": 4,
+    "action": "learn_vocab",
+    "detail": "FAKE8 学习 6 个词",
+    "created_at": "2026-08-20T00:00:00"
+   },
+   {
+    "id": 35,
+    "date": "2026-08-19",
+    "stage": 1,
+    "week": 6,
+    "day": 3,
+    "action": "learn_vocab",
+    "detail": "FAKE8 学习 6 个词",
+    "created_at": "2026-08-19T00:00:00"
+   },
+   {
+    "id": 34,
+    "date": "2026-08-18",
+    "stage": 1,
+    "week": 6,
+    "day": 2,
+    "action": "learn_vocab",
+    "detail": "FAKE8 学习 6 个词",
+    "created_at": "2026-08-18T00:00:00"
+   },
+   {
+    "id": 33,
+    "date": "2026-08-16",
+    "stage": 1,
+    "week": 5,
+    "day": 7,
+    "action": "learn_vocab",
+    "detail": "FAKE8 学习 6 个词",
+    "created_at": "2026-08-16T00:00:00"
+   },
+   {
+    "id": 32,
+    "date": "2026-08-15",
+    "stage": 1,
+    "week": 5,
+    "day": 6,
+    "action": "learn_vocab",
+    "detail": "FAKE8 学习 6 个词",
+    "created_at": "2026-08-15T00:00:00"
+   },
+   {
+    "id": 31,
+    "date": "2026-08-14",
+    "stage": 1,
+    "week": 5,
+    "day": 5,
+    "action": "learn_vocab",
+    "detail": "FAKE8 学习 6 个词",
+    "created_at": "2026-08-14T00:00:00"
+   },
+   {
+    "id": 30,
+    "date": "2026-08-13",
+    "stage": 1,
+    "week": 5,
+    "day": 4,
+    "action": "learn_vocab",
+    "detail": "FAKE8 学习 6 个词",
+    "created_at": "2026-08-13T00:00:00"
+   },
+   {
+    "id": 29,
+    "date": "2026-08-12",
+    "stage": 1,
+    "week": 5,
+    "day": 3,
+    "action": "learn_vocab",
+    "detail": "FAKE8 学习 6 个词",
+    "created_at": "2026-08-12T00:00:00"
+   },
+   {
+    "id": 28,
+    "date": "2026-08-11",
+    "stage": 1,
+    "week": 5,
+    "day": 2,
+    "action": "learn_vocab",
+    "detail": "FAKE8 学习 6 个词",
+    "created_at": "2026-08-11T00:00:00"
+   },
+   {
+    "id": 27,
+    "date": "2026-08-10",
+    "stage": 1,
+    "week": 5,
+    "day": 1,
+    "action": "learn_vocab",
+    "detail": "FAKE8 学习 6 个词",
+    "created_at": "2026-08-10T00:00:00"
+   },
+   {
+    "id": 26,
+    "date": "2026-08-08",
+    "stage": 1,
+    "week": 4,
+    "day": 6,
+    "action": "learn_vocab",
+    "detail": "FAKE8 学习 6 个词",
+    "created_at": "2026-08-08T00:00:00"
+   },
+   {
+    "id": 25,
+    "date": "2026-08-07",
+    "stage": 1,
+    "week": 4,
+    "day": 5,
+    "action": "learn_vocab",
+    "detail": "FAKE8 学习 6 个词",
+    "created_at": "2026-08-07T00:00:00"
+   },
+   {
+    "id": 24,
+    "date": "2026-08-06",
+    "stage": 1,
+    "week": 4,
+    "day": 4,
+    "action": "learn_vocab",
+    "detail": "FAKE8 学习 6 个词",
+    "created_at": "2026-08-06T00:00:00"
+   },
+   {
+    "id": 23,
+    "date": "2026-08-05",
+    "stage": 1,
+    "week": 4,
+    "day": 3,
+    "action": "learn_vocab",
+    "detail": "FAKE8 学习 6 个词",
+    "created_at": "2026-08-05T00:00:00"
+   },
+   {
+    "id": 22,
+    "date": "2026-08-04",
+    "stage": 1,
+    "week": 4,
+    "day": 2,
+    "action": "learn_vocab",
+    "detail": "FAKE8 学习 6 个词",
+    "created_at": "2026-08-04T00:00:00"
+   },
+   {
+    "id": 21,
+    "date": "2026-08-03",
+    "stage": 1,
+    "week": 4,
+    "day": 1,
+    "action": "learn_vocab",
+    "detail": "FAKE8 学习 6 个词",
+    "created_at": "2026-08-03T00:00:00"
+   },
+   {
+    "id": 20,
+    "date": "2026-08-02",
+    "stage": 1,
+    "week": 3,
+    "day": 7,
+    "action": "learn_vocab",
+    "detail": "FAKE8 学习 6 个词",
+    "created_at": "2026-08-02T00:00:00"
+   },
+   {
+    "id": 19,
+    "date": "2026-08-01",
+    "stage": 1,
+    "week": 3,
+    "day": 6,
+    "action": "learn_vocab",
+    "detail": "FAKE8 学习 6 个词",
+    "created_at": "2026-08-01T00:00:00"
+   },
+   {
+    "id": 18,
+    "date": "2026-07-31",
+    "stage": 1,
+    "week": 3,
+    "day": 5,
+    "action": "learn_vocab",
+    "detail": "FAKE8 学习 6 个词",
+    "created_at": "2026-07-31T00:00:00"
+   },
+   {
+    "id": 17,
+    "date": "2026-07-30",
+    "stage": 1,
+    "week": 3,
+    "day": 4,
+    "action": "learn_vocab",
+    "detail": "FAKE8 学习 6 个词",
+    "created_at": "2026-07-30T00:00:00"
+   },
+   {
+    "id": 16,
+    "date": "2026-07-29",
+    "stage": 1,
+    "week": 3,
+    "day": 3,
+    "action": "learn_vocab",
+    "detail": "FAKE8 学习 6 个词",
+    "created_at": "2026-07-29T00:00:00"
+   },
+   {
+    "id": 15,
+    "date": "2026-07-28",
+    "stage": 1,
+    "week": 3,
+    "day": 2,
+    "action": "learn_vocab",
+    "detail": "FAKE8 学习 6 个词",
+    "created_at": "2026-07-28T00:00:00"
+   },
+   {
+    "id": 14,
+    "date": "2026-07-27",
+    "stage": 1,
+    "week": 3,
+    "day": 1,
+    "action": "learn_vocab",
+    "detail": "FAKE8 学习 6 个词",
+    "created_at": "2026-07-27T00:00:00"
+   },
+   {
+    "id": 13,
+    "date": "2026-07-26",
+    "stage": 1,
+    "week": 2,
+    "day": 7,
+    "action": "learn_vocab",
+    "detail": "FAKE8 学习 6 个词",
+    "created_at": "2026-07-26T00:00:00"
+   },
+   {
+    "id": 12,
+    "date": "2026-07-25",
+    "stage": 1,
+    "week": 2,
+    "day": 6,
+    "action": "learn_vocab",
+    "detail": "FAKE8 学习 6 个词",
+    "created_at": "2026-07-25T00:00:00"
+   },
+   {
+    "id": 11,
+    "date": "2026-07-24",
+    "stage": 1,
+    "week": 2,
+    "day": 5,
+    "action": "learn_vocab",
+    "detail": "FAKE8 学习 6 个词",
+    "created_at": "2026-07-24T00:00:00"
+   },
+   {
+    "id": 10,
+    "date": "2026-07-23",
+    "stage": 1,
+    "week": 2,
+    "day": 4,
+    "action": "learn_vocab",
+    "detail": "FAKE8 学习 6 个词",
+    "created_at": "2026-07-23T00:00:00"
+   },
+   {
+    "id": 9,
+    "date": "2026-07-22",
+    "stage": 1,
+    "week": 2,
+    "day": 3,
+    "action": "learn_vocab",
+    "detail": "FAKE8 学习 6 个词",
+    "created_at": "2026-07-22T00:00:00"
+   },
+   {
+    "id": 8,
+    "date": "2026-07-21",
+    "stage": 1,
+    "week": 2,
+    "day": 2,
+    "action": "learn_vocab",
+    "detail": "FAKE8 学习 6 个词",
+    "created_at": "2026-07-21T00:00:00"
+   },
+   {
+    "id": 7,
+    "date": "2026-07-20",
+    "stage": 1,
+    "week": 2,
+    "day": 1,
+    "action": "learn_vocab",
+    "detail": "FAKE8 学习 6 个词",
+    "created_at": "2026-07-20T00:00:00"
+   },
+   {
+    "id": 6,
+    "date": "2026-07-19",
+    "stage": 1,
+    "week": 1,
+    "day": 7,
+    "action": "learn_vocab",
+    "detail": "FAKE8 学习 6 个词",
+    "created_at": "2026-07-19T00:00:00"
+   },
+   {
+    "id": 5,
+    "date": "2026-07-17",
+    "stage": 1,
+    "week": 1,
+    "day": 5,
+    "action": "learn_vocab",
+    "detail": "FAKE8 学习 6 个词",
+    "created_at": "2026-07-17T00:00:00"
+   },
+   {
+    "id": 4,
+    "date": "2026-07-16",
+    "stage": 1,
+    "week": 1,
+    "day": 4,
+    "action": "learn_vocab",
+    "detail": "FAKE8 学习 6 个词",
+    "created_at": "2026-07-16T00:00:00"
+   },
+   {
+    "id": 3,
+    "date": "2026-07-15",
+    "stage": 1,
+    "week": 1,
+    "day": 3,
+    "action": "learn_vocab",
+    "detail": "FAKE8 学习 6 个词",
+    "created_at": "2026-07-15T00:00:00"
+   },
+   {
+    "id": 2,
+    "date": "2026-07-14",
+    "stage": 1,
+    "week": 1,
+    "day": 2,
+    "action": "learn_vocab",
+    "detail": "FAKE8 学习 6 个词",
+    "created_at": "2026-07-14T00:00:00"
+   },
+   {
+    "id": 1,
+    "date": "2026-07-13",
+    "stage": 1,
+    "week": 1,
+    "day": 1,
+    "action": "learn_vocab",
+    "detail": "FAKE8 学习 6 个词",
+    "created_at": "2026-07-13T00:00:00"
+   }
+  ],
+  "vocab_all": {
+   "words": [
+    {
+     "word": "fk10",
+     "phonetic": "",
+     "pos": "",
+     "meaning": ""
+    },
+    {
+     "word": "fk11",
+     "phonetic": "",
+     "pos": "",
+     "meaning": ""
+    },
+    {
+     "word": "fk12",
+     "phonetic": "",
+     "pos": "",
+     "meaning": ""
+    },
+    {
+     "word": "fk13",
+     "phonetic": "",
+     "pos": "",
+     "meaning": ""
+    },
+    {
+     "word": "fk14",
+     "phonetic": "",
+     "pos": "",
+     "meaning": ""
+    },
+    {
+     "word": "fk20",
+     "phonetic": "",
+     "pos": "",
+     "meaning": ""
+    },
+    {
+     "word": "fk21",
+     "phonetic": "",
+     "pos": "",
+     "meaning": ""
+    },
+    {
+     "word": "fk22",
+     "phonetic": "",
+     "pos": "",
+     "meaning": ""
+    },
+    {
+     "word": "fk23",
+     "phonetic": "",
+     "pos": "",
+     "meaning": ""
+    },
+    {
+     "word": "fk24",
+     "phonetic": "",
+     "pos": "",
+     "meaning": ""
+    },
+    {
+     "word": "fk30",
+     "phonetic": "",
+     "pos": "",
+     "meaning": ""
+    },
+    {
+     "word": "fk31",
+     "phonetic": "",
+     "pos": "",
+     "meaning": ""
+    },
+    {
+     "word": "fk32",
+     "phonetic": "",
+     "pos": "",
+     "meaning": ""
+    },
+    {
+     "word": "fk33",
+     "phonetic": "",
+     "pos": "",
+     "meaning": ""
+    },
+    {
+     "word": "fk34",
+     "phonetic": "",
+     "pos": "",
+     "meaning": ""
+    },
+    {
+     "word": "fk40",
+     "phonetic": "",
+     "pos": "",
+     "meaning": ""
+    },
+    {
+     "word": "fk41",
+     "phonetic": "",
+     "pos": "",
+     "meaning": ""
+    },
+    {
+     "word": "fk42",
+     "phonetic": "",
+     "pos": "",
+     "meaning": ""
+    },
+    {
+     "word": "fk43",
+     "phonetic": "",
+     "pos": "",
+     "meaning": ""
+    },
+    {
+     "word": "fk44",
+     "phonetic": "",
+     "pos": "",
+     "meaning": ""
+    },
+    {
+     "word": "fk50",
+     "phonetic": "",
+     "pos": "",
+     "meaning": ""
+    },
+    {
+     "word": "fk51",
+     "phonetic": "",
+     "pos": "",
+     "meaning": ""
+    },
+    {
+     "word": "fk52",
+     "phonetic": "",
+     "pos": "",
+     "meaning": ""
+    },
+    {
+     "word": "fk53",
+     "phonetic": "",
+     "pos": "",
+     "meaning": ""
+    },
+    {
+     "word": "fk54",
+     "phonetic": "",
+     "pos": "",
+     "meaning": ""
+    },
+    {
+     "word": "fk60",
+     "phonetic": "",
+     "pos": "",
+     "meaning": ""
+    },
+    {
+     "word": "fk61",
+     "phonetic": "",
+     "pos": "",
+     "meaning": ""
+    },
+    {
+     "word": "fk62",
+     "phonetic": "",
+     "pos": "",
+     "meaning": ""
+    },
+    {
+     "word": "fk63",
+     "phonetic": "",
+     "pos": "",
+     "meaning": ""
+    },
+    {
+     "word": "fk64",
+     "phonetic": "",
+     "pos": "",
+     "meaning": ""
+    },
+    {
+     "word": "fk70",
+     "phonetic": "",
+     "pos": "",
+     "meaning": ""
+    },
+    {
+     "word": "fk71",
+     "phonetic": "",
+     "pos": "",
+     "meaning": ""
+    },
+    {
+     "word": "fk72",
+     "phonetic": "",
+     "pos": "",
+     "meaning": ""
+    },
+    {
+     "word": "fk73",
+     "phonetic": "",
+     "pos": "",
+     "meaning": ""
+    },
+    {
+     "word": "fk74",
+     "phonetic": "",
+     "pos": "",
+     "meaning": ""
+    },
+    {
+     "word": "fk80",
+     "phonetic": "",
+     "pos": "",
+     "meaning": ""
+    },
+    {
+     "word": "fk81",
+     "phonetic": "",
+     "pos": "",
+     "meaning": ""
+    },
+    {
+     "word": "fk82",
+     "phonetic": "",
+     "pos": "",
+     "meaning": ""
+    },
+    {
+     "word": "fk83",
+     "phonetic": "",
+     "pos": "",
+     "meaning": ""
+    },
+    {
+     "word": "fk84",
+     "phonetic": "",
+     "pos": "",
+     "meaning": ""
+    }
+   ],
+   "total": 40
+  },
+  "weak_snapshots": {
+   "ok": true,
+   "snapshots": [
+    {
+     "d": "2026-07-13",
+     "map": {
+      "@非谓语": 8.0,
+      "@时态": 6.0,
+      "@三单": 10.0,
+      "@冠词": 8.0,
+      "@介词": 5.0
+     }
+    },
+    {
+     "d": "2026-07-14",
+     "map": {
+      "@非谓语": 6.0,
+      "@时态": 7.0,
+      "@三单": 7.0,
+      "@冠词": 7.0,
+      "@介词": 5.0
+     }
+    },
+    {
+     "d": "2026-07-15",
+     "map": {
+      "@非谓语": 7.0,
+      "@时态": 9.0,
+      "@三单": 4.0,
+      "@冠词": 7.0,
+      "@介词": 8.0
+     }
+    },
+    {
+     "d": "2026-07-16",
+     "map": {
+      "@非谓语": 11.0,
+      "@时态": 6.0,
+      "@三单": 5.0,
+      "@冠词": 10.0,
+      "@介词": 10.0
+     }
+    },
+    {
+     "d": "2026-07-17",
+     "map": {
+      "@非谓语": 8.0,
+      "@时态": 5.0,
+      "@三单": 7.0,
+      "@冠词": 8.0,
+      "@介词": 7.0
+     }
+    },
+    {
+     "d": "2026-07-19",
+     "map": {
+      "@非谓语": 13.0,
+      "@时态": 10.0,
+      "@三单": 9.0,
+      "@冠词": 11.0,
+      "@介词": 7.0
+     }
+    },
+    {
+     "d": "2026-07-20",
+     "map": {
+      "@非谓语": 7.0,
+      "@时态": 7.0,
+      "@三单": 10.0,
+      "@冠词": 9.0,
+      "@介词": 6.0
+     }
+    },
+    {
+     "d": "2026-07-21",
+     "map": {
+      "@非谓语": 9.0,
+      "@时态": 4.0,
+      "@三单": 8.0,
+      "@冠词": 8.0,
+      "@介词": 7.0
+     }
+    },
+    {
+     "d": "2026-07-22",
+     "map": {
+      "@非谓语": 8.0,
+      "@时态": 9.0,
+      "@三单": 8.0,
+      "@冠词": 6.0,
+      "@介词": 7.0
+     }
+    },
+    {
+     "d": "2026-07-23",
+     "map": {
+      "@非谓语": 10.0,
+      "@时态": 8.0,
+      "@三单": 6.0,
+      "@冠词": 8.0,
+      "@介词": 7.0
+     }
+    },
+    {
+     "d": "2026-07-24",
+     "map": {
+      "@非谓语": 6.0,
+      "@时态": 6.0,
+      "@三单": 6.0,
+      "@冠词": 8.0,
+      "@介词": 4.0
+     }
+    },
+    {
+     "d": "2026-07-25",
+     "map": {
+      "@非谓语": 9.0,
+      "@时态": 8.0,
+      "@三单": 6.0,
+      "@冠词": 8.0,
+      "@介词": 5.0
+     }
+    },
+    {
+     "d": "2026-07-26",
+     "map": {
+      "@非谓语": 7.0,
+      "@时态": 7.0,
+      "@三单": 6.0,
+      "@冠词": 9.0,
+      "@介词": 6.0
+     }
+    },
+    {
+     "d": "2026-07-27",
+     "map": {
+      "@非谓语": 8.0,
+      "@时态": 9.0,
+      "@三单": 6.0,
+      "@冠词": 9.0,
+      "@介词": 5.0
+     }
+    },
+    {
+     "d": "2026-07-28",
+     "map": {
+      "@非谓语": 7.0,
+      "@时态": 7.0,
+      "@三单": 5.0,
+      "@冠词": 4.0,
+      "@介词": 7.0
+     }
+    },
+    {
+     "d": "2026-07-29",
+     "map": {
+      "@非谓语": 5.0,
+      "@时态": 5.0,
+      "@三单": 8.0,
+      "@冠词": 5.0,
+      "@介词": 7.0
+     }
+    },
+    {
+     "d": "2026-07-30",
+     "map": {
+      "@非谓语": 7.0,
+      "@时态": 4.0,
+      "@三单": 5.0,
+      "@冠词": 5.0,
+      "@介词": 7.0
+     }
+    },
+    {
+     "d": "2026-07-31",
+     "map": {
+      "@非谓语": 6.0,
+      "@时态": 5.0,
+      "@三单": 6.0,
+      "@冠词": 9.0,
+      "@介词": 6.0
+     }
+    },
+    {
+     "d": "2026-08-01",
+     "map": {
+      "@非谓语": 6.0,
+      "@时态": 6.0,
+      "@三单": 7.0,
+      "@冠词": 7.0,
+      "@介词": 8.0
+     }
+    },
+    {
+     "d": "2026-08-02",
+     "map": {
+      "@非谓语": 7.0,
+      "@时态": 6.0,
+      "@三单": 4.0,
+      "@冠词": 8.0,
+      "@介词": 7.0
+     }
+    },
+    {
+     "d": "2026-08-03",
+     "map": {
+      "@非谓语": 4.0,
+      "@时态": 5.0,
+      "@三单": 5.0,
+      "@冠词": 7.0,
+      "@介词": 7.0
+     }
+    },
+    {
+     "d": "2026-08-04",
+     "map": {
+      "@非谓语": 5.0,
+      "@时态": 3.0,
+      "@三单": 6.0,
+      "@冠词": 4.0,
+      "@介词": 5.0
+     }
+    },
+    {
+     "d": "2026-08-05",
+     "map": {
+      "@非谓语": 5.0,
+      "@时态": 3.0,
+      "@三单": 6.0,
+      "@冠词": 4.0,
+      "@介词": 4.0
+     }
+    },
+    {
+     "d": "2026-08-06",
+     "map": {
+      "@非谓语": 4.0,
+      "@时态": 3.0,
+      "@三单": 6.0,
+      "@冠词": 5.0,
+      "@介词": 5.0
+     }
+    },
+    {
+     "d": "2026-08-07",
+     "map": {
+      "@非谓语": 4.0,
+      "@时态": 6.0,
+      "@三单": 3.0,
+      "@冠词": 4.0,
+      "@介词": 4.0
+     }
+    },
+    {
+     "d": "2026-08-08",
+     "map": {
+      "@非谓语": 4.0,
+      "@时态": 5.0,
+      "@三单": 7.0,
+      "@冠词": 3.0,
+      "@介词": 4.0
+     }
+    },
+    {
+     "d": "2026-08-10",
+     "map": {
+      "@非谓语": 6.0,
+      "@时态": 3.0,
+      "@三单": 6.0,
+      "@冠词": 4.0,
+      "@介词": 8.0
+     }
+    },
+    {
+     "d": "2026-08-11",
+     "map": {
+      "@非谓语": 3.0,
+      "@时态": 4.0,
+      "@三单": 5.0,
+      "@冠词": 7.0,
+      "@介词": 7.0
+     }
+    },
+    {
+     "d": "2026-08-12",
+     "map": {
+      "@非谓语": 5.0,
+      "@时态": 4.0,
+      "@三单": 3.0,
+      "@冠词": 7.0,
+      "@介词": 4.0
+     }
+    },
+    {
+     "d": "2026-08-13",
+     "map": {
+      "@非谓语": 7.0,
+      "@时态": 1.0,
+      "@三单": 6.0,
+      "@冠词": 4.0,
+      "@介词": 5.0
+     }
+    },
+    {
+     "d": "2026-08-14",
+     "map": {
+      "@非谓语": 5.0,
+      "@时态": 5.0,
+      "@三单": 7.0,
+      "@冠词": 4.0,
+      "@介词": 4.0
+     }
+    },
+    {
+     "d": "2026-08-15",
+     "map": {
+      "@非谓语": 3.0,
+      "@时态": 6.0,
+      "@三单": 6.0,
+      "@冠词": 3.0,
+      "@介词": 6.0
+     }
+    },
+    {
+     "d": "2026-08-16",
+     "map": {
+      "@非谓语": 1.0,
+      "@时态": 4.0,
+      "@三单": 5.0,
+      "@冠词": 4.0,
+      "@介词": 5.0
+     }
+    },
+    {
+     "d": "2026-08-18",
+     "map": {
+      "@非谓语": 4.0,
+      "@时态": 1.0,
+      "@三单": 2.0,
+      "@冠词": 3.0,
+      "@介词": 3.0
+     }
+    },
+    {
+     "d": "2026-08-19",
+     "map": {
+      "@非谓语": 3.0,
+      "@时态": 5.0,
+      "@三单": 4.0,
+      "@冠词": 4.0,
+      "@介词": 7.0
+     }
+    },
+    {
+     "d": "2026-08-20",
+     "map": {
+      "@非谓语": 3.0,
+      "@时态": 5.0,
+      "@三单": 2.0,
+      "@冠词": 3.0,
+      "@介词": 3.0
+     }
+    },
+    {
+     "d": "2026-08-21",
+     "map": {
+      "@非谓语": 5.0,
+      "@时态": 3.0,
+      "@三单": 3.0,
+      "@冠词": 7.0,
+      "@介词": 1.0
+     }
+    },
+    {
+     "d": "2026-08-22",
+     "map": {
+      "@非谓语": 0.0,
+      "@时态": 3.0,
+      "@三单": 6.0,
+      "@冠词": 5.0,
+      "@介词": 2.0
+     }
+    },
+    {
+     "d": "2026-08-24",
+     "map": {
+      "@非谓语": 3.0,
+      "@时态": 0.0,
+      "@三单": 0.0,
+      "@冠词": 0.0,
+      "@介词": 4.0
+     }
+    },
+    {
+     "d": "2026-08-25",
+     "map": {
+      "@非谓语": 4.0,
+      "@时态": 3.0,
+      "@三单": 1.0,
+      "@冠词": 2.0,
+      "@介词": 0.0
+     }
+    },
+    {
+     "d": "2026-08-26",
+     "map": {
+      "@非谓语": 3.0,
+      "@时态": 1.0,
+      "@三单": 1.0,
+      "@冠词": 5.0,
+      "@介词": 4.0
+     }
+    },
+    {
+     "d": "2026-08-27",
+     "map": {
+      "@非谓语": 3.0,
+      "@时态": 3.0,
+      "@三单": 2.0,
+      "@冠词": 2.0,
+      "@介词": 1.0
+     }
+    },
+    {
+     "d": "2026-08-28",
+     "map": {
+      "@非谓语": 4.0,
+      "@时态": 3.0,
+      "@三单": 0.0,
+      "@冠词": 2.0,
+      "@介词": 5.0
+     }
+    },
+    {
+     "d": "2026-08-29",
+     "map": {
+      "@非谓语": 4.0,
+      "@时态": 1.0,
+      "@三单": 3.0,
+      "@冠词": 1.0,
+      "@介词": 2.0
+     }
+    },
+    {
+     "d": "2026-08-30",
+     "map": {
+      "@非谓语": 2.0,
+      "@时态": 2.0,
+      "@三单": 2.0,
+      "@冠词": 5.0,
+      "@介词": 1.0
+     }
+    },
+    {
+     "d": "2026-08-31",
+     "map": {
+      "@非谓语": 1.0,
+      "@时态": 0.0,
+      "@三单": 3.0,
+      "@冠词": 2.0,
+      "@介词": 0.0
+     }
+    },
+    {
+     "d": "2026-09-02",
+     "map": {
+      "@非谓语": 0.0,
+      "@时态": 2.0,
+      "@三单": 3.0,
+      "@冠词": 0.0,
+      "@介词": 4.0
+     }
+    },
+    {
+     "d": "2026-09-03",
+     "map": {
+      "@非谓语": 5.0,
+      "@时态": 0.0,
+      "@三单": 0.0,
+      "@冠词": 0.0,
+      "@介词": 0.0
+     }
+    },
+    {
+     "d": "2026-09-04",
+     "map": {
+      "@非谓语": 0.0,
+      "@时态": 0.0,
+      "@三单": 3.0,
+      "@冠词": 0.0,
+      "@介词": 1.0
+     }
+    },
+    {
+     "d": "2026-09-05",
+     "map": {
+      "@非谓语": 6.0,
+      "@时态": 2.0,
+      "@三单": 0.0,
+      "@冠词": 6.0,
+      "@介词": 3.0
+     }
+    }
+   ]
+  },
+  "sentence_history": {
+   "items": [
+    {
+     "id": 250,
+     "stage": 1,
+     "week": 8,
+     "day": 6,
+     "word": "fk84",
+     "task_key": "basic:4",
+     "attempt": 1,
+     "sentence": "I am go to school about fk84.",
+     "corrected": "I go to school about fk84.",
+     "score": 78,
+     "verdict": "有错误",
+     "ok": false,
+     "error_type": "时态",
+     "created_at": "2026-09-05T09:12:00"
+    },
+    {
+     "id": 249,
+     "stage": 1,
+     "week": 8,
+     "day": 6,
+     "word": "fk83",
+     "task_key": "basic:3",
+     "attempt": 1,
+     "sentence": "I am go to school about fk83.",
+     "corrected": "I go to school about fk83.",
+     "score": 66,
+     "verdict": "有错误",
+     "ok": false,
+     "error_type": "冠词",
+     "created_at": "2026-09-05T09:09:00"
+    },
+    {
+     "id": 248,
+     "stage": 1,
+     "week": 8,
+     "day": 6,
+     "word": "fk82",
+     "task_key": "basic:2",
+     "attempt": 1,
+     "sentence": "I am go to school about fk82.",
+     "corrected": "I go to school about fk82.",
+     "score": 100,
+     "verdict": "正确",
+     "ok": true,
+     "error_type": "",
+     "created_at": "2026-09-05T09:06:00"
+    },
+    {
+     "id": 247,
+     "stage": 1,
+     "week": 8,
+     "day": 6,
+     "word": "fk81",
+     "task_key": "basic:1",
+     "attempt": 1,
+     "sentence": "I am go to school about fk81.",
+     "corrected": "I go to school about fk81.",
+     "score": 62,
+     "verdict": "正确",
+     "ok": true,
+     "error_type": "",
+     "created_at": "2026-09-05T09:03:00"
+    },
+    {
+     "id": 246,
+     "stage": 1,
+     "week": 8,
+     "day": 6,
+     "word": "fk80",
+     "task_key": "basic:0",
+     "attempt": 1,
+     "sentence": "I am go to school about fk80.",
+     "corrected": "I go to school about fk80.",
+     "score": 70,
+     "verdict": "有错误",
+     "ok": false,
+     "error_type": "三单",
+     "created_at": "2026-09-05T09:00:00"
+    },
+    {
+     "id": 245,
+     "stage": 1,
+     "week": 8,
+     "day": 5,
+     "word": "fk84",
+     "task_key": "basic:4",
+     "attempt": 1,
+     "sentence": "I am go to school about fk84.",
+     "corrected": "I go to school about fk84.",
+     "score": 100,
+     "verdict": "正确",
+     "ok": true,
+     "error_type": "",
+     "created_at": "2026-09-04T09:12:00"
+    },
+    {
+     "id": 244,
+     "stage": 1,
+     "week": 8,
+     "day": 5,
+     "word": "fk83",
+     "task_key": "basic:3",
+     "attempt": 1,
+     "sentence": "I am go to school about fk83.",
+     "corrected": "I go to school about fk83.",
+     "score": 89,
+     "verdict": "正确",
+     "ok": true,
+     "error_type": "",
+     "created_at": "2026-09-04T09:09:00"
+    },
+    {
+     "id": 243,
+     "stage": 1,
+     "week": 8,
+     "day": 5,
+     "word": "fk82",
+     "task_key": "basic:2",
+     "attempt": 1,
+     "sentence": "I am go to school about fk82.",
+     "corrected": "I go to school about fk82.",
+     "score": 81,
+     "verdict": "正确",
+     "ok": true,
+     "error_type": "",
+     "created_at": "2026-09-04T09:06:00"
+    },
+    {
+     "id": 242,
+     "stage": 1,
+     "week": 8,
+     "day": 5,
+     "word": "fk81",
+     "task_key": "basic:1",
+     "attempt": 1,
+     "sentence": "I am go to school about fk81.",
+     "corrected": "I go to school about fk81.",
+     "score": 84,
+     "verdict": "正确",
+     "ok": true,
+     "error_type": "",
+     "created_at": "2026-09-04T09:03:00"
+    },
+    {
+     "id": 241,
+     "stage": 1,
+     "week": 8,
+     "day": 5,
+     "word": "fk80",
+     "task_key": "basic:0",
+     "attempt": 1,
+     "sentence": "I am go to school about fk80.",
+     "corrected": "I go to school about fk80.",
+     "score": 68,
+     "verdict": "正确",
+     "ok": true,
+     "error_type": "",
+     "created_at": "2026-09-04T09:00:00"
+    },
+    {
+     "id": 240,
+     "stage": 1,
+     "week": 8,
+     "day": 4,
+     "word": "fk84",
+     "task_key": "basic:4",
+     "attempt": 1,
+     "sentence": "I am go to school about fk84.",
+     "corrected": "I go to school about fk84.",
+     "score": 90,
+     "verdict": "正确",
+     "ok": true,
+     "error_type": "",
+     "created_at": "2026-09-03T09:12:00"
+    },
+    {
+     "id": 239,
+     "stage": 1,
+     "week": 8,
+     "day": 4,
+     "word": "fk83",
+     "task_key": "basic:3",
+     "attempt": 1,
+     "sentence": "I am go to school about fk83.",
+     "corrected": "I go to school about fk83.",
+     "score": 96,
+     "verdict": "正确",
+     "ok": true,
+     "error_type": "",
+     "created_at": "2026-09-03T09:09:00"
+    },
+    {
+     "id": 238,
+     "stage": 1,
+     "week": 8,
+     "day": 4,
+     "word": "fk82",
+     "task_key": "basic:2",
+     "attempt": 1,
+     "sentence": "I am go to school about fk82.",
+     "corrected": "I go to school about fk82.",
+     "score": 93,
+     "verdict": "正确",
+     "ok": true,
+     "error_type": "",
+     "created_at": "2026-09-03T09:06:00"
+    },
+    {
+     "id": 237,
+     "stage": 1,
+     "week": 8,
+     "day": 4,
+     "word": "fk81",
+     "task_key": "basic:1",
+     "attempt": 1,
+     "sentence": "I am go to school about fk81.",
+     "corrected": "I go to school about fk81.",
+     "score": 71,
+     "verdict": "正确",
+     "ok": true,
+     "error_type": "",
+     "created_at": "2026-09-03T09:03:00"
+    },
+    {
+     "id": 236,
+     "stage": 1,
+     "week": 8,
+     "day": 4,
+     "word": "fk80",
+     "task_key": "basic:0",
+     "attempt": 1,
+     "sentence": "I am go to school about fk80.",
+     "corrected": "I go to school about fk80.",
+     "score": 70,
+     "verdict": "正确",
+     "ok": true,
+     "error_type": "",
+     "created_at": "2026-09-03T09:00:00"
+    },
+    {
+     "id": 235,
+     "stage": 1,
+     "week": 8,
+     "day": 3,
+     "word": "fk84",
+     "task_key": "basic:4",
+     "attempt": 1,
+     "sentence": "I am go to school about fk84.",
+     "corrected": "I go to school about fk84.",
+     "score": 94,
+     "verdict": "正确",
+     "ok": true,
+     "error_type": "",
+     "created_at": "2026-09-02T09:12:00"
+    },
+    {
+     "id": 234,
+     "stage": 1,
+     "week": 8,
+     "day": 3,
+     "word": "fk83",
+     "task_key": "basic:3",
+     "attempt": 1,
+     "sentence": "I am go to school about fk83.",
+     "corrected": "I go to school about fk83.",
+     "score": 75,
+     "verdict": "有错误",
+     "ok": false,
+     "error_type": "介词",
+     "created_at": "2026-09-02T09:09:00"
+    },
+    {
+     "id": 233,
+     "stage": 1,
+     "week": 8,
+     "day": 3,
+     "word": "fk82",
+     "task_key": "basic:2",
+     "attempt": 1,
+     "sentence": "I am go to school about fk82.",
+     "corrected": "I go to school about fk82.",
+     "score": 100,
+     "verdict": "正确",
+     "ok": true,
+     "error_type": "",
+     "created_at": "2026-09-02T09:06:00"
+    },
+    {
+     "id": 232,
+     "stage": 1,
+     "week": 8,
+     "day": 3,
+     "word": "fk81",
+     "task_key": "basic:1",
+     "attempt": 1,
+     "sentence": "I am go to school about fk81.",
+     "corrected": "I go to school about fk81.",
+     "score": 93,
+     "verdict": "正确",
+     "ok": true,
+     "error_type": "",
+     "created_at": "2026-09-02T09:03:00"
+    },
+    {
+     "id": 231,
+     "stage": 1,
+     "week": 8,
+     "day": 3,
+     "word": "fk80",
+     "task_key": "basic:0",
+     "attempt": 1,
+     "sentence": "I am go to school about fk80.",
+     "corrected": "I go to school about fk80.",
+     "score": 93,
+     "verdict": "正确",
+     "ok": true,
+     "error_type": "",
+     "created_at": "2026-09-02T09:00:00"
+    },
+    {
+     "id": 230,
+     "stage": 1,
+     "week": 8,
+     "day": 1,
+     "word": "fk84",
+     "task_key": "basic:4",
+     "attempt": 1,
+     "sentence": "I am go to school about fk84.",
+     "corrected": "I go to school about fk84.",
+     "score": 81,
+     "verdict": "正确",
+     "ok": true,
+     "error_type": "",
+     "created_at": "2026-08-31T09:12:00"
+    },
+    {
+     "id": 229,
+     "stage": 1,
+     "week": 8,
+     "day": 1,
+     "word": "fk83",
+     "task_key": "basic:3",
+     "attempt": 1,
+     "sentence": "I am go to school about fk83.",
+     "corrected": "I go to school about fk83.",
+     "score": 85,
+     "verdict": "正确",
+     "ok": true,
+     "error_type": "",
+     "created_at": "2026-08-31T09:09:00"
+    },
+    {
+     "id": 228,
+     "stage": 1,
+     "week": 8,
+     "day": 1,
+     "word": "fk82",
+     "task_key": "basic:2",
+     "attempt": 1,
+     "sentence": "I am go to school about fk82.",
+     "corrected": "I go to school about fk82.",
+     "score": 67,
+     "verdict": "有错误",
+     "ok": false,
+     "error_type": "冠词",
+     "created_at": "2026-08-31T09:06:00"
+    },
+    {
+     "id": 227,
+     "stage": 1,
+     "week": 8,
+     "day": 1,
+     "word": "fk81",
+     "task_key": "basic:1",
+     "attempt": 1,
+     "sentence": "I am go to school about fk81.",
+     "corrected": "I go to school about fk81.",
+     "score": 73,
+     "verdict": "正确",
+     "ok": true,
+     "error_type": "",
+     "created_at": "2026-08-31T09:03:00"
+    },
+    {
+     "id": 226,
+     "stage": 1,
+     "week": 8,
+     "day": 1,
+     "word": "fk80",
+     "task_key": "basic:0",
+     "attempt": 1,
+     "sentence": "I am go to school about fk80.",
+     "corrected": "I go to school about fk80.",
+     "score": 83,
+     "verdict": "正确",
+     "ok": true,
+     "error_type": "",
+     "created_at": "2026-08-31T09:00:00"
+    },
+    {
+     "id": 225,
+     "stage": 1,
+     "week": 7,
+     "day": 7,
+     "word": "fk74",
+     "task_key": "basic:4",
+     "attempt": 1,
+     "sentence": "I am go to school about fk74.",
+     "corrected": "I go to school about fk74.",
+     "score": 75,
+     "verdict": "正确",
+     "ok": true,
+     "error_type": "",
+     "created_at": "2026-08-30T09:12:00"
+    },
+    {
+     "id": 224,
+     "stage": 1,
+     "week": 7,
+     "day": 7,
+     "word": "fk73",
+     "task_key": "basic:3",
+     "attempt": 1,
+     "sentence": "I am go to school about fk73.",
+     "corrected": "I go to school about fk73.",
+     "score": 67,
+     "verdict": "正确",
+     "ok": true,
+     "error_type": "",
+     "created_at": "2026-08-30T09:09:00"
+    },
+    {
+     "id": 223,
+     "stage": 1,
+     "week": 7,
+     "day": 7,
+     "word": "fk72",
+     "task_key": "basic:2",
+     "attempt": 1,
+     "sentence": "I am go to school about fk72.",
+     "corrected": "I go to school about fk72.",
+     "score": 78,
+     "verdict": "正确",
+     "ok": true,
+     "error_type": "",
+     "created_at": "2026-08-30T09:06:00"
+    },
+    {
+     "id": 222,
+     "stage": 1,
+     "week": 7,
+     "day": 7,
+     "word": "fk71",
+     "task_key": "basic:1",
+     "attempt": 1,
+     "sentence": "I am go to school about fk71.",
+     "corrected": "I go to school about fk71.",
+     "score": 98,
+     "verdict": "正确",
+     "ok": true,
+     "error_type": "",
+     "created_at": "2026-08-30T09:03:00"
+    },
+    {
+     "id": 221,
+     "stage": 1,
+     "week": 7,
+     "day": 7,
+     "word": "fk70",
+     "task_key": "basic:0",
+     "attempt": 1,
+     "sentence": "I am go to school about fk70.",
+     "corrected": "I go to school about fk70.",
+     "score": 97,
+     "verdict": "正确",
+     "ok": true,
+     "error_type": "",
+     "created_at": "2026-08-30T09:00:00"
+    },
+    {
+     "id": 220,
+     "stage": 1,
+     "week": 7,
+     "day": 6,
+     "word": "fk74",
+     "task_key": "basic:4",
+     "attempt": 1,
+     "sentence": "I am go to school about fk74.",
+     "corrected": "I go to school about fk74.",
+     "score": 84,
+     "verdict": "有错误",
+     "ok": false,
+     "error_type": "介词",
+     "created_at": "2026-08-29T09:12:00"
+    },
+    {
+     "id": 219,
+     "stage": 1,
+     "week": 7,
+     "day": 6,
+     "word": "fk73",
+     "task_key": "basic:3",
+     "attempt": 1,
+     "sentence": "I am go to school about fk73.",
+     "corrected": "I go to school about fk73.",
+     "score": 87,
+     "verdict": "正确",
+     "ok": true,
+     "error_type": "",
+     "created_at": "2026-08-29T09:09:00"
+    },
+    {
+     "id": 218,
+     "stage": 1,
+     "week": 7,
+     "day": 6,
+     "word": "fk72",
+     "task_key": "basic:2",
+     "attempt": 1,
+     "sentence": "I am go to school about fk72.",
+     "corrected": "I go to school about fk72.",
+     "score": 68,
+     "verdict": "正确",
+     "ok": true,
+     "error_type": "",
+     "created_at": "2026-08-29T09:06:00"
+    },
+    {
+     "id": 217,
+     "stage": 1,
+     "week": 7,
+     "day": 6,
+     "word": "fk71",
+     "task_key": "basic:1",
+     "attempt": 1,
+     "sentence": "I am go to school about fk71.",
+     "corrected": "I go to school about fk71.",
+     "score": 66,
+     "verdict": "有错误",
+     "ok": false,
+     "error_type": "时态",
+     "created_at": "2026-08-29T09:03:00"
+    },
+    {
+     "id": 216,
+     "stage": 1,
+     "week": 7,
+     "day": 6,
+     "word": "fk70",
+     "task_key": "basic:0",
+     "attempt": 1,
+     "sentence": "I am go to school about fk70.",
+     "corrected": "I go to school about fk70.",
+     "score": 94,
+     "verdict": "正确",
+     "ok": true,
+     "error_type": "",
+     "created_at": "2026-08-29T09:00:00"
+    },
+    {
+     "id": 215,
+     "stage": 1,
+     "week": 7,
+     "day": 5,
+     "word": "fk74",
+     "task_key": "basic:4",
+     "attempt": 1,
+     "sentence": "I am go to school about fk74.",
+     "corrected": "I go to school about fk74.",
+     "score": 61,
+     "verdict": "正确",
+     "ok": true,
+     "error_type": "",
+     "created_at": "2026-08-28T09:12:00"
+    },
+    {
+     "id": 214,
+     "stage": 1,
+     "week": 7,
+     "day": 5,
+     "word": "fk73",
+     "task_key": "basic:3",
+     "attempt": 1,
+     "sentence": "I am go to school about fk73.",
+     "corrected": "I go to school about fk73.",
+     "score": 83,
+     "verdict": "正确",
+     "ok": true,
+     "error_type": "",
+     "created_at": "2026-08-28T09:09:00"
+    },
+    {
+     "id": 213,
+     "stage": 1,
+     "week": 7,
+     "day": 5,
+     "word": "fk72",
+     "task_key": "basic:2",
+     "attempt": 1,
+     "sentence": "I am go to school about fk72.",
+     "corrected": "I go to school about fk72.",
+     "score": 75,
+     "verdict": "正确",
+     "ok": true,
+     "error_type": "",
+     "created_at": "2026-08-28T09:06:00"
+    },
+    {
+     "id": 212,
+     "stage": 1,
+     "week": 7,
+     "day": 5,
+     "word": "fk71",
+     "task_key": "basic:1",
+     "attempt": 1,
+     "sentence": "I am go to school about fk71.",
+     "corrected": "I go to school about fk71.",
+     "score": 73,
+     "verdict": "有错误",
+     "ok": false,
+     "error_type": "冠词",
+     "created_at": "2026-08-28T09:03:00"
+    },
+    {
+     "id": 211,
+     "stage": 1,
+     "week": 7,
+     "day": 5,
+     "word": "fk70",
+     "task_key": "basic:0",
+     "attempt": 1,
+     "sentence": "I am go to school about fk70.",
+     "corrected": "I go to school about fk70.",
+     "score": 80,
+     "verdict": "正确",
+     "ok": true,
+     "error_type": "",
+     "created_at": "2026-08-28T09:00:00"
+    },
+    {
+     "id": 210,
+     "stage": 1,
+     "week": 7,
+     "day": 4,
+     "word": "fk74",
+     "task_key": "basic:4",
+     "attempt": 1,
+     "sentence": "I am go to school about fk74.",
+     "corrected": "I go to school about fk74.",
+     "score": 81,
+     "verdict": "有错误",
+     "ok": false,
+     "error_type": "冠词",
+     "created_at": "2026-08-27T09:12:00"
+    },
+    {
+     "id": 209,
+     "stage": 1,
+     "week": 7,
+     "day": 4,
+     "word": "fk73",
+     "task_key": "basic:3",
+     "attempt": 1,
+     "sentence": "I am go to school about fk73.",
+     "corrected": "I go to school about fk73.",
+     "score": 53,
+     "verdict": "正确",
+     "ok": true,
+     "error_type": "",
+     "created_at": "2026-08-27T09:09:00"
+    },
+    {
+     "id": 208,
+     "stage": 1,
+     "week": 7,
+     "day": 4,
+     "word": "fk72",
+     "task_key": "basic:2",
+     "attempt": 1,
+     "sentence": "I am go to school about fk72.",
+     "corrected": "I go to school about fk72.",
+     "score": 68,
+     "verdict": "有错误",
+     "ok": false,
+     "error_type": "三单",
+     "created_at": "2026-08-27T09:06:00"
+    },
+    {
+     "id": 207,
+     "stage": 1,
+     "week": 7,
+     "day": 4,
+     "word": "fk71",
+     "task_key": "basic:1",
+     "attempt": 1,
+     "sentence": "I am go to school about fk71.",
+     "corrected": "I go to school about fk71.",
+     "score": 96,
+     "verdict": "有错误",
+     "ok": false,
+     "error_type": "三单",
+     "created_at": "2026-08-27T09:03:00"
+    },
+    {
+     "id": 206,
+     "stage": 1,
+     "week": 7,
+     "day": 4,
+     "word": "fk70",
+     "task_key": "basic:0",
+     "attempt": 1,
+     "sentence": "I am go to school about fk70.",
+     "corrected": "I go to school about fk70.",
+     "score": 72,
+     "verdict": "正确",
+     "ok": true,
+     "error_type": "",
+     "created_at": "2026-08-27T09:00:00"
+    },
+    {
+     "id": 205,
+     "stage": 1,
+     "week": 7,
+     "day": 3,
+     "word": "fk74",
+     "task_key": "basic:4",
+     "attempt": 1,
+     "sentence": "I am go to school about fk74.",
+     "corrected": "I go to school about fk74.",
+     "score": 66,
+     "verdict": "正确",
+     "ok": true,
+     "error_type": "",
+     "created_at": "2026-08-26T09:12:00"
+    },
+    {
+     "id": 204,
+     "stage": 1,
+     "week": 7,
+     "day": 3,
+     "word": "fk73",
+     "task_key": "basic:3",
+     "attempt": 1,
+     "sentence": "I am go to school about fk73.",
+     "corrected": "I go to school about fk73.",
+     "score": 73,
+     "verdict": "正确",
+     "ok": true,
+     "error_type": "",
+     "created_at": "2026-08-26T09:09:00"
+    },
+    {
+     "id": 203,
+     "stage": 1,
+     "week": 7,
+     "day": 3,
+     "word": "fk72",
+     "task_key": "basic:2",
+     "attempt": 1,
+     "sentence": "I am go to school about fk72.",
+     "corrected": "I go to school about fk72.",
+     "score": 83,
+     "verdict": "有错误",
+     "ok": false,
+     "error_type": "三单",
+     "created_at": "2026-08-26T09:06:00"
+    },
+    {
+     "id": 202,
+     "stage": 1,
+     "week": 7,
+     "day": 3,
+     "word": "fk71",
+     "task_key": "basic:1",
+     "attempt": 1,
+     "sentence": "I am go to school about fk71.",
+     "corrected": "I go to school about fk71.",
+     "score": 70,
+     "verdict": "正确",
+     "ok": true,
+     "error_type": "",
+     "created_at": "2026-08-26T09:03:00"
+    },
+    {
+     "id": 201,
+     "stage": 1,
+     "week": 7,
+     "day": 3,
+     "word": "fk70",
+     "task_key": "basic:0",
+     "attempt": 1,
+     "sentence": "I am go to school about fk70.",
+     "corrected": "I go to school about fk70.",
+     "score": 79,
+     "verdict": "正确",
+     "ok": true,
+     "error_type": "",
+     "created_at": "2026-08-26T09:00:00"
+    },
+    {
+     "id": 200,
+     "stage": 1,
+     "week": 7,
+     "day": 2,
+     "word": "fk74",
+     "task_key": "basic:4",
+     "attempt": 1,
+     "sentence": "I am go to school about fk74.",
+     "corrected": "I go to school about fk74.",
+     "score": 97,
+     "verdict": "正确",
+     "ok": true,
+     "error_type": "",
+     "created_at": "2026-08-25T09:12:00"
+    },
+    {
+     "id": 199,
+     "stage": 1,
+     "week": 7,
+     "day": 2,
+     "word": "fk73",
+     "task_key": "basic:3",
+     "attempt": 1,
+     "sentence": "I am go to school about fk73.",
+     "corrected": "I go to school about fk73.",
+     "score": 82,
+     "verdict": "正确",
+     "ok": true,
+     "error_type": "",
+     "created_at": "2026-08-25T09:09:00"
+    },
+    {
+     "id": 198,
+     "stage": 1,
+     "week": 7,
+     "day": 2,
+     "word": "fk72",
+     "task_key": "basic:2",
+     "attempt": 1,
+     "sentence": "I am go to school about fk72.",
+     "corrected": "I go to school about fk72.",
+     "score": 90,
+     "verdict": "正确",
+     "ok": true,
+     "error_type": "",
+     "created_at": "2026-08-25T09:06:00"
+    },
+    {
+     "id": 197,
+     "stage": 1,
+     "week": 7,
+     "day": 2,
+     "word": "fk71",
+     "task_key": "basic:1",
+     "attempt": 1,
+     "sentence": "I am go to school about fk71.",
+     "corrected": "I go to school about fk71.",
+     "score": 62,
+     "verdict": "正确",
+     "ok": true,
+     "error_type": "",
+     "created_at": "2026-08-25T09:03:00"
+    },
+    {
+     "id": 196,
+     "stage": 1,
+     "week": 7,
+     "day": 2,
+     "word": "fk70",
+     "task_key": "basic:0",
+     "attempt": 1,
+     "sentence": "I am go to school about fk70.",
+     "corrected": "I go to school about fk70.",
+     "score": 81,
+     "verdict": "有错误",
+     "ok": false,
+     "error_type": "冠词",
+     "created_at": "2026-08-25T09:00:00"
+    },
+    {
+     "id": 195,
+     "stage": 1,
+     "week": 7,
+     "day": 1,
+     "word": "fk74",
+     "task_key": "basic:4",
+     "attempt": 1,
+     "sentence": "I am go to school about fk74.",
+     "corrected": "I go to school about fk74.",
+     "score": 79,
+     "verdict": "正确",
+     "ok": true,
+     "error_type": "",
+     "created_at": "2026-08-24T09:12:00"
+    },
+    {
+     "id": 194,
+     "stage": 1,
+     "week": 7,
+     "day": 1,
+     "word": "fk73",
+     "task_key": "basic:3",
+     "attempt": 1,
+     "sentence": "I am go to school about fk73.",
+     "corrected": "I go to school about fk73.",
+     "score": 91,
+     "verdict": "正确",
+     "ok": true,
+     "error_type": "",
+     "created_at": "2026-08-24T09:09:00"
+    },
+    {
+     "id": 193,
+     "stage": 1,
+     "week": 7,
+     "day": 1,
+     "word": "fk72",
+     "task_key": "basic:2",
+     "attempt": 1,
+     "sentence": "I am go to school about fk72.",
+     "corrected": "I go to school about fk72.",
+     "score": 54,
+     "verdict": "正确",
+     "ok": true,
+     "error_type": "",
+     "created_at": "2026-08-24T09:06:00"
+    },
+    {
+     "id": 192,
+     "stage": 1,
+     "week": 7,
+     "day": 1,
+     "word": "fk71",
+     "task_key": "basic:1",
+     "attempt": 1,
+     "sentence": "I am go to school about fk71.",
+     "corrected": "I go to school about fk71.",
+     "score": 72,
+     "verdict": "有错误",
+     "ok": false,
+     "error_type": "非谓语",
+     "created_at": "2026-08-24T09:03:00"
+    },
+    {
+     "id": 191,
+     "stage": 1,
+     "week": 7,
+     "day": 1,
+     "word": "fk70",
+     "task_key": "basic:0",
+     "attempt": 1,
+     "sentence": "I am go to school about fk70.",
+     "corrected": "I go to school about fk70.",
+     "score": 86,
+     "verdict": "有错误",
+     "ok": false,
+     "error_type": "时态",
+     "created_at": "2026-08-24T09:00:00"
+    },
+    {
+     "id": 190,
+     "stage": 1,
+     "week": 6,
+     "day": 6,
+     "word": "fk64",
+     "task_key": "basic:4",
+     "attempt": 1,
+     "sentence": "I am go to school about fk64.",
+     "corrected": "I go to school about fk64.",
+     "score": 83,
+     "verdict": "正确",
+     "ok": true,
+     "error_type": "",
+     "created_at": "2026-08-22T09:12:00"
+    },
+    {
+     "id": 189,
+     "stage": 1,
+     "week": 6,
+     "day": 6,
+     "word": "fk63",
+     "task_key": "basic:3",
+     "attempt": 1,
+     "sentence": "I am go to school about fk63.",
+     "corrected": "I go to school about fk63.",
+     "score": 82,
+     "verdict": "正确",
+     "ok": true,
+     "error_type": "",
+     "created_at": "2026-08-22T09:09:00"
+    },
+    {
+     "id": 188,
+     "stage": 1,
+     "week": 6,
+     "day": 6,
+     "word": "fk62",
+     "task_key": "basic:2",
+     "attempt": 1,
+     "sentence": "I am go to school about fk62.",
+     "corrected": "I go to school about fk62.",
+     "score": 56,
+     "verdict": "正确",
+     "ok": true,
+     "error_type": "",
+     "created_at": "2026-08-22T09:06:00"
+    },
+    {
+     "id": 187,
+     "stage": 1,
+     "week": 6,
+     "day": 6,
+     "word": "fk61",
+     "task_key": "basic:1",
+     "attempt": 1,
+     "sentence": "I am go to school about fk61.",
+     "corrected": "I go to school about fk61.",
+     "score": 64,
+     "verdict": "正确",
+     "ok": true,
+     "error_type": "",
+     "created_at": "2026-08-22T09:03:00"
+    },
+    {
+     "id": 186,
+     "stage": 1,
+     "week": 6,
+     "day": 6,
+     "word": "fk60",
+     "task_key": "basic:0",
+     "attempt": 1,
+     "sentence": "I am go to school about fk60.",
+     "corrected": "I go to school about fk60.",
+     "score": 76,
+     "verdict": "正确",
+     "ok": true,
+     "error_type": "",
+     "created_at": "2026-08-22T09:00:00"
+    },
+    {
+     "id": 185,
+     "stage": 1,
+     "week": 6,
+     "day": 5,
+     "word": "fk64",
+     "task_key": "basic:4",
+     "attempt": 1,
+     "sentence": "I am go to school about fk64.",
+     "corrected": "I go to school about fk64.",
+     "score": 66,
+     "verdict": "有错误",
+     "ok": false,
+     "error_type": "冠词",
+     "created_at": "2026-08-21T09:12:00"
+    },
+    {
+     "id": 184,
+     "stage": 1,
+     "week": 6,
+     "day": 5,
+     "word": "fk63",
+     "task_key": "basic:3",
+     "attempt": 1,
+     "sentence": "I am go to school about fk63.",
+     "corrected": "I go to school about fk63.",
+     "score": 73,
+     "verdict": "有错误",
+     "ok": false,
+     "error_type": "介词",
+     "created_at": "2026-08-21T09:09:00"
+    },
+    {
+     "id": 183,
+     "stage": 1,
+     "week": 6,
+     "day": 5,
+     "word": "fk62",
+     "task_key": "basic:2",
+     "attempt": 1,
+     "sentence": "I am go to school about fk62.",
+     "corrected": "I go to school about fk62.",
+     "score": 87,
+     "verdict": "正确",
+     "ok": true,
+     "error_type": "",
+     "created_at": "2026-08-21T09:06:00"
+    },
+    {
+     "id": 182,
+     "stage": 1,
+     "week": 6,
+     "day": 5,
+     "word": "fk61",
+     "task_key": "basic:1",
+     "attempt": 1,
+     "sentence": "I am go to school about fk61.",
+     "corrected": "I go to school about fk61.",
+     "score": 73,
+     "verdict": "正确",
+     "ok": true,
+     "error_type": "",
+     "created_at": "2026-08-21T09:03:00"
+    },
+    {
+     "id": 181,
+     "stage": 1,
+     "week": 6,
+     "day": 5,
+     "word": "fk60",
+     "task_key": "basic:0",
+     "attempt": 1,
+     "sentence": "I am go to school about fk60.",
+     "corrected": "I go to school about fk60.",
+     "score": 95,
+     "verdict": "正确",
+     "ok": true,
+     "error_type": "",
+     "created_at": "2026-08-21T09:00:00"
+    },
+    {
+     "id": 180,
+     "stage": 1,
+     "week": 6,
+     "day": 4,
+     "word": "fk64",
+     "task_key": "basic:4",
+     "attempt": 1,
+     "sentence": "I am go to school about fk64.",
+     "corrected": "I go to school about fk64.",
+     "score": 76,
+     "verdict": "正确",
+     "ok": true,
+     "error_type": "",
+     "created_at": "2026-08-20T09:12:00"
+    },
+    {
+     "id": 179,
+     "stage": 1,
+     "week": 6,
+     "day": 4,
+     "word": "fk63",
+     "task_key": "basic:3",
+     "attempt": 1,
+     "sentence": "I am go to school about fk63.",
+     "corrected": "I go to school about fk63.",
+     "score": 70,
+     "verdict": "正确",
+     "ok": true,
+     "error_type": "",
+     "created_at": "2026-08-20T09:09:00"
+    },
+    {
+     "id": 178,
+     "stage": 1,
+     "week": 6,
+     "day": 4,
+     "word": "fk62",
+     "task_key": "basic:2",
+     "attempt": 1,
+     "sentence": "I am go to school about fk62.",
+     "corrected": "I go to school about fk62.",
+     "score": 85,
+     "verdict": "正确",
+     "ok": true,
+     "error_type": "",
+     "created_at": "2026-08-20T09:06:00"
+    },
+    {
+     "id": 177,
+     "stage": 1,
+     "week": 6,
+     "day": 4,
+     "word": "fk61",
+     "task_key": "basic:1",
+     "attempt": 1,
+     "sentence": "I am go to school about fk61.",
+     "corrected": "I go to school about fk61.",
+     "score": 81,
+     "verdict": "正确",
+     "ok": true,
+     "error_type": "",
+     "created_at": "2026-08-20T09:03:00"
+    },
+    {
+     "id": 176,
+     "stage": 1,
+     "week": 6,
+     "day": 4,
+     "word": "fk60",
+     "task_key": "basic:0",
+     "attempt": 1,
+     "sentence": "I am go to school about fk60.",
+     "corrected": "I go to school about fk60.",
+     "score": 93,
+     "verdict": "有错误",
+     "ok": false,
+     "error_type": "三单",
+     "created_at": "2026-08-20T09:00:00"
+    },
+    {
+     "id": 175,
+     "stage": 1,
+     "week": 6,
+     "day": 3,
+     "word": "fk64",
+     "task_key": "basic:4",
+     "attempt": 1,
+     "sentence": "I am go to school about fk64.",
+     "corrected": "I go to school about fk64.",
+     "score": 89,
+     "verdict": "正确",
+     "ok": true,
+     "error_type": "",
+     "created_at": "2026-08-19T09:12:00"
+    },
+    {
+     "id": 174,
+     "stage": 1,
+     "week": 6,
+     "day": 3,
+     "word": "fk63",
+     "task_key": "basic:3",
+     "attempt": 1,
+     "sentence": "I am go to school about fk63.",
+     "corrected": "I go to school about fk63.",
+     "score": 65,
+     "verdict": "正确",
+     "ok": true,
+     "error_type": "",
+     "created_at": "2026-08-19T09:09:00"
+    },
+    {
+     "id": 173,
+     "stage": 1,
+     "week": 6,
+     "day": 3,
+     "word": "fk62",
+     "task_key": "basic:2",
+     "attempt": 1,
+     "sentence": "I am go to school about fk62.",
+     "corrected": "I go to school about fk62.",
+     "score": 66,
+     "verdict": "有错误",
+     "ok": false,
+     "error_type": "冠词",
+     "created_at": "2026-08-19T09:06:00"
+    },
+    {
+     "id": 172,
+     "stage": 1,
+     "week": 6,
+     "day": 3,
+     "word": "fk61",
+     "task_key": "basic:1",
+     "attempt": 1,
+     "sentence": "I am go to school about fk61.",
+     "corrected": "I go to school about fk61.",
+     "score": 78,
+     "verdict": "有错误",
+     "ok": false,
+     "error_type": "冠词",
+     "created_at": "2026-08-19T09:03:00"
+    },
+    {
+     "id": 171,
+     "stage": 1,
+     "week": 6,
+     "day": 3,
+     "word": "fk60",
+     "task_key": "basic:0",
+     "attempt": 1,
+     "sentence": "I am go to school about fk60.",
+     "corrected": "I go to school about fk60.",
+     "score": 57,
+     "verdict": "有错误",
+     "ok": false,
+     "error_type": "三单",
+     "created_at": "2026-08-19T09:00:00"
+    },
+    {
+     "id": 170,
+     "stage": 1,
+     "week": 6,
+     "day": 2,
+     "word": "fk64",
+     "task_key": "basic:4",
+     "attempt": 1,
+     "sentence": "I am go to school about fk64.",
+     "corrected": "I go to school about fk64.",
+     "score": 79,
+     "verdict": "有错误",
+     "ok": false,
+     "error_type": "介词",
+     "created_at": "2026-08-18T09:12:00"
+    },
+    {
+     "id": 169,
+     "stage": 1,
+     "week": 6,
+     "day": 2,
+     "word": "fk63",
+     "task_key": "basic:3",
+     "attempt": 1,
+     "sentence": "I am go to school about fk63.",
+     "corrected": "I go to school about fk63.",
+     "score": 88,
+     "verdict": "有错误",
+     "ok": false,
+     "error_type": "冠词",
+     "created_at": "2026-08-18T09:09:00"
+    },
+    {
+     "id": 168,
+     "stage": 1,
+     "week": 6,
+     "day": 2,
+     "word": "fk62",
+     "task_key": "basic:2",
+     "attempt": 1,
+     "sentence": "I am go to school about fk62.",
+     "corrected": "I go to school about fk62.",
+     "score": 69,
+     "verdict": "正确",
+     "ok": true,
+     "error_type": "",
+     "created_at": "2026-08-18T09:06:00"
+    },
+    {
+     "id": 167,
+     "stage": 1,
+     "week": 6,
+     "day": 2,
+     "word": "fk61",
+     "task_key": "basic:1",
+     "attempt": 1,
+     "sentence": "I am go to school about fk61.",
+     "corrected": "I go to school about fk61.",
+     "score": 60,
+     "verdict": "正确",
+     "ok": true,
+     "error_type": "",
+     "created_at": "2026-08-18T09:03:00"
+    },
+    {
+     "id": 166,
+     "stage": 1,
+     "week": 6,
+     "day": 2,
+     "word": "fk60",
+     "task_key": "basic:0",
+     "attempt": 1,
+     "sentence": "I am go to school about fk60.",
+     "corrected": "I go to school about fk60.",
+     "score": 75,
+     "verdict": "有错误",
+     "ok": false,
+     "error_type": "冠词",
+     "created_at": "2026-08-18T09:00:00"
+    },
+    {
+     "id": 165,
+     "stage": 1,
+     "week": 5,
+     "day": 7,
+     "word": "fk54",
+     "task_key": "basic:4",
+     "attempt": 1,
+     "sentence": "I am go to school about fk54.",
+     "corrected": "I go to school about fk54.",
+     "score": 60,
+     "verdict": "正确",
+     "ok": true,
+     "error_type": "",
+     "created_at": "2026-08-16T09:12:00"
+    },
+    {
+     "id": 164,
+     "stage": 1,
+     "week": 5,
+     "day": 7,
+     "word": "fk53",
+     "task_key": "basic:3",
+     "attempt": 1,
+     "sentence": "I am go to school about fk53.",
+     "corrected": "I go to school about fk53.",
+     "score": 70,
+     "verdict": "正确",
+     "ok": true,
+     "error_type": "",
+     "created_at": "2026-08-16T09:09:00"
+    },
+    {
+     "id": 163,
+     "stage": 1,
+     "week": 5,
+     "day": 7,
+     "word": "fk52",
+     "task_key": "basic:2",
+     "attempt": 1,
+     "sentence": "I am go to school about fk52.",
+     "corrected": "I go to school about fk52.",
+     "score": 74,
+     "verdict": "正确",
+     "ok": true,
+     "error_type": "",
+     "created_at": "2026-08-16T09:06:00"
+    },
+    {
+     "id": 162,
+     "stage": 1,
+     "week": 5,
+     "day": 7,
+     "word": "fk51",
+     "task_key": "basic:1",
+     "attempt": 1,
+     "sentence": "I am go to school about fk51.",
+     "corrected": "I go to school about fk51.",
+     "score": 84,
+     "verdict": "有错误",
+     "ok": false,
+     "error_type": "非谓语",
+     "created_at": "2026-08-16T09:03:00"
+    },
+    {
+     "id": 161,
+     "stage": 1,
+     "week": 5,
+     "day": 7,
+     "word": "fk50",
+     "task_key": "basic:0",
+     "attempt": 1,
+     "sentence": "I am go to school about fk50.",
+     "corrected": "I go to school about fk50.",
+     "score": 70,
+     "verdict": "有错误",
+     "ok": false,
+     "error_type": "三单",
+     "created_at": "2026-08-16T09:00:00"
+    },
+    {
+     "id": 160,
+     "stage": 1,
+     "week": 5,
+     "day": 6,
+     "word": "fk54",
+     "task_key": "basic:4",
+     "attempt": 1,
+     "sentence": "I am go to school about fk54.",
+     "corrected": "I go to school about fk54.",
+     "score": 83,
+     "verdict": "正确",
+     "ok": true,
+     "error_type": "",
+     "created_at": "2026-08-15T09:12:00"
+    },
+    {
+     "id": 159,
+     "stage": 1,
+     "week": 5,
+     "day": 6,
+     "word": "fk53",
+     "task_key": "basic:3",
+     "attempt": 1,
+     "sentence": "I am go to school about fk53.",
+     "corrected": "I go to school about fk53.",
+     "score": 85,
+     "verdict": "正确",
+     "ok": true,
+     "error_type": "",
+     "created_at": "2026-08-15T09:09:00"
+    },
+    {
+     "id": 158,
+     "stage": 1,
+     "week": 5,
+     "day": 6,
+     "word": "fk52",
+     "task_key": "basic:2",
+     "attempt": 1,
+     "sentence": "I am go to school about fk52.",
+     "corrected": "I go to school about fk52.",
+     "score": 72,
+     "verdict": "正确",
+     "ok": true,
+     "error_type": "",
+     "created_at": "2026-08-15T09:06:00"
+    },
+    {
+     "id": 157,
+     "stage": 1,
+     "week": 5,
+     "day": 6,
+     "word": "fk51",
+     "task_key": "basic:1",
+     "attempt": 1,
+     "sentence": "I am go to school about fk51.",
+     "corrected": "I go to school about fk51.",
+     "score": 77,
+     "verdict": "正确",
+     "ok": true,
+     "error_type": "",
+     "created_at": "2026-08-15T09:03:00"
+    },
+    {
+     "id": 156,
+     "stage": 1,
+     "week": 5,
+     "day": 6,
+     "word": "fk50",
+     "task_key": "basic:0",
+     "attempt": 1,
+     "sentence": "I am go to school about fk50.",
+     "corrected": "I go to school about fk50.",
+     "score": 63,
+     "verdict": "有错误",
+     "ok": false,
+     "error_type": "三单",
+     "created_at": "2026-08-15T09:00:00"
+    },
+    {
+     "id": 155,
+     "stage": 1,
+     "week": 5,
+     "day": 5,
+     "word": "fk54",
+     "task_key": "basic:4",
+     "attempt": 1,
+     "sentence": "I am go to school about fk54.",
+     "corrected": "I go to school about fk54.",
+     "score": 60,
+     "verdict": "正确",
+     "ok": true,
+     "error_type": "",
+     "created_at": "2026-08-14T09:12:00"
+    },
+    {
+     "id": 154,
+     "stage": 1,
+     "week": 5,
+     "day": 5,
+     "word": "fk53",
+     "task_key": "basic:3",
+     "attempt": 1,
+     "sentence": "I am go to school about fk53.",
+     "corrected": "I go to school about fk53.",
+     "score": 88,
+     "verdict": "有错误",
+     "ok": false,
+     "error_type": "非谓语",
+     "created_at": "2026-08-14T09:09:00"
+    },
+    {
+     "id": 153,
+     "stage": 1,
+     "week": 5,
+     "day": 5,
+     "word": "fk52",
+     "task_key": "basic:2",
+     "attempt": 1,
+     "sentence": "I am go to school about fk52.",
+     "corrected": "I go to school about fk52.",
+     "score": 70,
+     "verdict": "正确",
+     "ok": true,
+     "error_type": "",
+     "created_at": "2026-08-14T09:06:00"
+    },
+    {
+     "id": 152,
+     "stage": 1,
+     "week": 5,
+     "day": 5,
+     "word": "fk51",
+     "task_key": "basic:1",
+     "attempt": 1,
+     "sentence": "I am go to school about fk51.",
+     "corrected": "I go to school about fk51.",
+     "score": 63,
+     "verdict": "正确",
+     "ok": true,
+     "error_type": "",
+     "created_at": "2026-08-14T09:03:00"
+    },
+    {
+     "id": 151,
+     "stage": 1,
+     "week": 5,
+     "day": 5,
+     "word": "fk50",
+     "task_key": "basic:0",
+     "attempt": 1,
+     "sentence": "I am go to school about fk50.",
+     "corrected": "I go to school about fk50.",
+     "score": 63,
+     "verdict": "有错误",
+     "ok": false,
+     "error_type": "时态",
+     "created_at": "2026-08-14T09:00:00"
+    },
+    {
+     "id": 150,
+     "stage": 1,
+     "week": 5,
+     "day": 4,
+     "word": "fk54",
+     "task_key": "basic:4",
+     "attempt": 1,
+     "sentence": "I am go to school about fk54.",
+     "corrected": "I go to school about fk54.",
+     "score": 86,
+     "verdict": "正确",
+     "ok": true,
+     "error_type": "",
+     "created_at": "2026-08-13T09:12:00"
+    },
+    {
+     "id": 149,
+     "stage": 1,
+     "week": 5,
+     "day": 4,
+     "word": "fk53",
+     "task_key": "basic:3",
+     "attempt": 1,
+     "sentence": "I am go to school about fk53.",
+     "corrected": "I go to school about fk53.",
+     "score": 64,
+     "verdict": "正确",
+     "ok": true,
+     "error_type": "",
+     "created_at": "2026-08-13T09:09:00"
+    },
+    {
+     "id": 148,
+     "stage": 1,
+     "week": 5,
+     "day": 4,
+     "word": "fk52",
+     "task_key": "basic:2",
+     "attempt": 1,
+     "sentence": "I am go to school about fk52.",
+     "corrected": "I go to school about fk52.",
+     "score": 77,
+     "verdict": "正确",
+     "ok": true,
+     "error_type": "",
+     "created_at": "2026-08-13T09:06:00"
+    },
+    {
+     "id": 147,
+     "stage": 1,
+     "week": 5,
+     "day": 4,
+     "word": "fk51",
+     "task_key": "basic:1",
+     "attempt": 1,
+     "sentence": "I am go to school about fk51.",
+     "corrected": "I go to school about fk51.",
+     "score": 69,
+     "verdict": "正确",
+     "ok": true,
+     "error_type": "",
+     "created_at": "2026-08-13T09:03:00"
+    },
+    {
+     "id": 146,
+     "stage": 1,
+     "week": 5,
+     "day": 4,
+     "word": "fk50",
+     "task_key": "basic:0",
+     "attempt": 1,
+     "sentence": "I am go to school about fk50.",
+     "corrected": "I go to school about fk50.",
+     "score": 73,
+     "verdict": "正确",
+     "ok": true,
+     "error_type": "",
+     "created_at": "2026-08-13T09:00:00"
+    },
+    {
+     "id": 145,
+     "stage": 1,
+     "week": 5,
+     "day": 3,
+     "word": "fk54",
+     "task_key": "basic:4",
+     "attempt": 1,
+     "sentence": "I am go to school about fk54.",
+     "corrected": "I go to school about fk54.",
+     "score": 93,
+     "verdict": "正确",
+     "ok": true,
+     "error_type": "",
+     "created_at": "2026-08-12T09:12:00"
+    },
+    {
+     "id": 144,
+     "stage": 1,
+     "week": 5,
+     "day": 3,
+     "word": "fk53",
+     "task_key": "basic:3",
+     "attempt": 1,
+     "sentence": "I am go to school about fk53.",
+     "corrected": "I go to school about fk53.",
+     "score": 65,
+     "verdict": "正确",
+     "ok": true,
+     "error_type": "",
+     "created_at": "2026-08-12T09:09:00"
+    },
+    {
+     "id": 143,
+     "stage": 1,
+     "week": 5,
+     "day": 3,
+     "word": "fk52",
+     "task_key": "basic:2",
+     "attempt": 1,
+     "sentence": "I am go to school about fk52.",
+     "corrected": "I go to school about fk52.",
+     "score": 76,
+     "verdict": "正确",
+     "ok": true,
+     "error_type": "",
+     "created_at": "2026-08-12T09:06:00"
+    },
+    {
+     "id": 142,
+     "stage": 1,
+     "week": 5,
+     "day": 3,
+     "word": "fk51",
+     "task_key": "basic:1",
+     "attempt": 1,
+     "sentence": "I am go to school about fk51.",
+     "corrected": "I go to school about fk51.",
+     "score": 59,
+     "verdict": "正确",
+     "ok": true,
+     "error_type": "",
+     "created_at": "2026-08-12T09:03:00"
+    },
+    {
+     "id": 141,
+     "stage": 1,
+     "week": 5,
+     "day": 3,
+     "word": "fk50",
+     "task_key": "basic:0",
+     "attempt": 1,
+     "sentence": "I am go to school about fk50.",
+     "corrected": "I go to school about fk50.",
+     "score": 65,
+     "verdict": "正确",
+     "ok": true,
+     "error_type": "",
+     "created_at": "2026-08-12T09:00:00"
+    },
+    {
+     "id": 140,
+     "stage": 1,
+     "week": 5,
+     "day": 2,
+     "word": "fk54",
+     "task_key": "basic:4",
+     "attempt": 1,
+     "sentence": "I am go to school about fk54.",
+     "corrected": "I go to school about fk54.",
+     "score": 88,
+     "verdict": "正确",
+     "ok": true,
+     "error_type": "",
+     "created_at": "2026-08-11T09:12:00"
+    },
+    {
+     "id": 139,
+     "stage": 1,
+     "week": 5,
+     "day": 2,
+     "word": "fk53",
+     "task_key": "basic:3",
+     "attempt": 1,
+     "sentence": "I am go to school about fk53.",
+     "corrected": "I go to school about fk53.",
+     "score": 95,
+     "verdict": "正确",
+     "ok": true,
+     "error_type": "",
+     "created_at": "2026-08-11T09:09:00"
+    },
+    {
+     "id": 138,
+     "stage": 1,
+     "week": 5,
+     "day": 2,
+     "word": "fk52",
+     "task_key": "basic:2",
+     "attempt": 1,
+     "sentence": "I am go to school about fk52.",
+     "corrected": "I go to school about fk52.",
+     "score": 78,
+     "verdict": "正确",
+     "ok": true,
+     "error_type": "",
+     "created_at": "2026-08-11T09:06:00"
+    },
+    {
+     "id": 137,
+     "stage": 1,
+     "week": 5,
+     "day": 2,
+     "word": "fk51",
+     "task_key": "basic:1",
+     "attempt": 1,
+     "sentence": "I am go to school about fk51.",
+     "corrected": "I go to school about fk51.",
+     "score": 69,
+     "verdict": "有错误",
+     "ok": false,
+     "error_type": "时态",
+     "created_at": "2026-08-11T09:03:00"
+    },
+    {
+     "id": 136,
+     "stage": 1,
+     "week": 5,
+     "day": 2,
+     "word": "fk50",
+     "task_key": "basic:0",
+     "attempt": 1,
+     "sentence": "I am go to school about fk50.",
+     "corrected": "I go to school about fk50.",
+     "score": 83,
+     "verdict": "正确",
+     "ok": true,
+     "error_type": "",
+     "created_at": "2026-08-11T09:00:00"
+    },
+    {
+     "id": 135,
+     "stage": 1,
+     "week": 5,
+     "day": 1,
+     "word": "fk54",
+     "task_key": "basic:4",
+     "attempt": 1,
+     "sentence": "I am go to school about fk54.",
+     "corrected": "I go to school about fk54.",
+     "score": 80,
+     "verdict": "有错误",
+     "ok": false,
+     "error_type": "冠词",
+     "created_at": "2026-08-10T09:12:00"
+    },
+    {
+     "id": 134,
+     "stage": 1,
+     "week": 5,
+     "day": 1,
+     "word": "fk53",
+     "task_key": "basic:3",
+     "attempt": 1,
+     "sentence": "I am go to school about fk53.",
+     "corrected": "I go to school about fk53.",
+     "score": 71,
+     "verdict": "正确",
+     "ok": true,
+     "error_type": "",
+     "created_at": "2026-08-10T09:09:00"
+    },
+    {
+     "id": 133,
+     "stage": 1,
+     "week": 5,
+     "day": 1,
+     "word": "fk52",
+     "task_key": "basic:2",
+     "attempt": 1,
+     "sentence": "I am go to school about fk52.",
+     "corrected": "I go to school about fk52.",
+     "score": 89,
+     "verdict": "有错误",
+     "ok": false,
+     "error_type": "介词",
+     "created_at": "2026-08-10T09:06:00"
+    },
+    {
+     "id": 132,
+     "stage": 1,
+     "week": 5,
+     "day": 1,
+     "word": "fk51",
+     "task_key": "basic:1",
+     "attempt": 1,
+     "sentence": "I am go to school about fk51.",
+     "corrected": "I go to school about fk51.",
+     "score": 67,
+     "verdict": "正确",
+     "ok": true,
+     "error_type": "",
+     "created_at": "2026-08-10T09:03:00"
+    },
+    {
+     "id": 131,
+     "stage": 1,
+     "week": 5,
+     "day": 1,
+     "word": "fk50",
+     "task_key": "basic:0",
+     "attempt": 1,
+     "sentence": "I am go to school about fk50.",
+     "corrected": "I go to school about fk50.",
+     "score": 74,
+     "verdict": "正确",
+     "ok": true,
+     "error_type": "",
+     "created_at": "2026-08-10T09:00:00"
+    },
+    {
+     "id": 130,
+     "stage": 1,
+     "week": 4,
+     "day": 6,
+     "word": "fk44",
+     "task_key": "basic:4",
+     "attempt": 1,
+     "sentence": "I am go to school about fk44.",
+     "corrected": "I go to school about fk44.",
+     "score": 54,
+     "verdict": "有错误",
+     "ok": false,
+     "error_type": "冠词",
+     "created_at": "2026-08-08T09:12:00"
+    },
+    {
+     "id": 129,
+     "stage": 1,
+     "week": 4,
+     "day": 6,
+     "word": "fk43",
+     "task_key": "basic:3",
+     "attempt": 1,
+     "sentence": "I am go to school about fk43.",
+     "corrected": "I go to school about fk43.",
+     "score": 37,
+     "verdict": "正确",
+     "ok": true,
+     "error_type": "",
+     "created_at": "2026-08-08T09:09:00"
+    },
+    {
+     "id": 128,
+     "stage": 1,
+     "week": 4,
+     "day": 6,
+     "word": "fk42",
+     "task_key": "basic:2",
+     "attempt": 1,
+     "sentence": "I am go to school about fk42.",
+     "corrected": "I go to school about fk42.",
+     "score": 80,
+     "verdict": "正确",
+     "ok": true,
+     "error_type": "",
+     "created_at": "2026-08-08T09:06:00"
+    },
+    {
+     "id": 127,
+     "stage": 1,
+     "week": 4,
+     "day": 6,
+     "word": "fk41",
+     "task_key": "basic:1",
+     "attempt": 1,
+     "sentence": "I am go to school about fk41.",
+     "corrected": "I go to school about fk41.",
+     "score": 61,
+     "verdict": "正确",
+     "ok": true,
+     "error_type": "",
+     "created_at": "2026-08-08T09:03:00"
+    },
+    {
+     "id": 126,
+     "stage": 1,
+     "week": 4,
+     "day": 6,
+     "word": "fk40",
+     "task_key": "basic:0",
+     "attempt": 1,
+     "sentence": "I am go to school about fk40.",
+     "corrected": "I go to school about fk40.",
+     "score": 75,
+     "verdict": "正确",
+     "ok": true,
+     "error_type": "",
+     "created_at": "2026-08-08T09:00:00"
+    },
+    {
+     "id": 125,
+     "stage": 1,
+     "week": 4,
+     "day": 5,
+     "word": "fk44",
+     "task_key": "basic:4",
+     "attempt": 1,
+     "sentence": "I am go to school about fk44.",
+     "corrected": "I go to school about fk44.",
+     "score": 81,
+     "verdict": "正确",
+     "ok": true,
+     "error_type": "",
+     "created_at": "2026-08-07T09:12:00"
+    },
+    {
+     "id": 124,
+     "stage": 1,
+     "week": 4,
+     "day": 5,
+     "word": "fk43",
+     "task_key": "basic:3",
+     "attempt": 1,
+     "sentence": "I am go to school about fk43.",
+     "corrected": "I go to school about fk43.",
+     "score": 66,
+     "verdict": "正确",
+     "ok": true,
+     "error_type": "",
+     "created_at": "2026-08-07T09:09:00"
+    },
+    {
+     "id": 123,
+     "stage": 1,
+     "week": 4,
+     "day": 5,
+     "word": "fk42",
+     "task_key": "basic:2",
+     "attempt": 1,
+     "sentence": "I am go to school about fk42.",
+     "corrected": "I go to school about fk42.",
+     "score": 69,
+     "verdict": "正确",
+     "ok": true,
+     "error_type": "",
+     "created_at": "2026-08-07T09:06:00"
+    },
+    {
+     "id": 122,
+     "stage": 1,
+     "week": 4,
+     "day": 5,
+     "word": "fk41",
+     "task_key": "basic:1",
+     "attempt": 1,
+     "sentence": "I am go to school about fk41.",
+     "corrected": "I go to school about fk41.",
+     "score": 79,
+     "verdict": "有错误",
+     "ok": false,
+     "error_type": "冠词",
+     "created_at": "2026-08-07T09:03:00"
+    },
+    {
+     "id": 121,
+     "stage": 1,
+     "week": 4,
+     "day": 5,
+     "word": "fk40",
+     "task_key": "basic:0",
+     "attempt": 1,
+     "sentence": "I am go to school about fk40.",
+     "corrected": "I go to school about fk40.",
+     "score": 69,
+     "verdict": "正确",
+     "ok": true,
+     "error_type": "",
+     "created_at": "2026-08-07T09:00:00"
+    },
+    {
+     "id": 120,
+     "stage": 1,
+     "week": 4,
+     "day": 4,
+     "word": "fk44",
+     "task_key": "basic:4",
+     "attempt": 1,
+     "sentence": "I am go to school about fk44.",
+     "corrected": "I go to school about fk44.",
+     "score": 76,
+     "verdict": "有错误",
+     "ok": false,
+     "error_type": "时态",
+     "created_at": "2026-08-06T09:12:00"
+    },
+    {
+     "id": 119,
+     "stage": 1,
+     "week": 4,
+     "day": 4,
+     "word": "fk43",
+     "task_key": "basic:3",
+     "attempt": 1,
+     "sentence": "I am go to school about fk43.",
+     "corrected": "I go to school about fk43.",
+     "score": 57,
+     "verdict": "正确",
+     "ok": true,
+     "error_type": "",
+     "created_at": "2026-08-06T09:09:00"
+    },
+    {
+     "id": 118,
+     "stage": 1,
+     "week": 4,
+     "day": 4,
+     "word": "fk42",
+     "task_key": "basic:2",
+     "attempt": 1,
+     "sentence": "I am go to school about fk42.",
+     "corrected": "I go to school about fk42.",
+     "score": 74,
+     "verdict": "有错误",
+     "ok": false,
+     "error_type": "介词",
+     "created_at": "2026-08-06T09:06:00"
+    },
+    {
+     "id": 117,
+     "stage": 1,
+     "week": 4,
+     "day": 4,
+     "word": "fk41",
+     "task_key": "basic:1",
+     "attempt": 1,
+     "sentence": "I am go to school about fk41.",
+     "corrected": "I go to school about fk41.",
+     "score": 85,
+     "verdict": "正确",
+     "ok": true,
+     "error_type": "",
+     "created_at": "2026-08-06T09:03:00"
+    },
+    {
+     "id": 116,
+     "stage": 1,
+     "week": 4,
+     "day": 4,
+     "word": "fk40",
+     "task_key": "basic:0",
+     "attempt": 1,
+     "sentence": "I am go to school about fk40.",
+     "corrected": "I go to school about fk40.",
+     "score": 52,
+     "verdict": "正确",
+     "ok": true,
+     "error_type": "",
+     "created_at": "2026-08-06T09:00:00"
+    },
+    {
+     "id": 115,
+     "stage": 1,
+     "week": 4,
+     "day": 3,
+     "word": "fk44",
+     "task_key": "basic:4",
+     "attempt": 1,
+     "sentence": "I am go to school about fk44.",
+     "corrected": "I go to school about fk44.",
+     "score": 74,
+     "verdict": "有错误",
+     "ok": false,
+     "error_type": "三单",
+     "created_at": "2026-08-05T09:12:00"
+    },
+    {
+     "id": 114,
+     "stage": 1,
+     "week": 4,
+     "day": 3,
+     "word": "fk43",
+     "task_key": "basic:3",
+     "attempt": 1,
+     "sentence": "I am go to school about fk43.",
+     "corrected": "I go to school about fk43.",
+     "score": 64,
+     "verdict": "正确",
+     "ok": true,
+     "error_type": "",
+     "created_at": "2026-08-05T09:09:00"
+    },
+    {
+     "id": 113,
+     "stage": 1,
+     "week": 4,
+     "day": 3,
+     "word": "fk42",
+     "task_key": "basic:2",
+     "attempt": 1,
+     "sentence": "I am go to school about fk42.",
+     "corrected": "I go to school about fk42.",
+     "score": 84,
+     "verdict": "有错误",
+     "ok": false,
+     "error_type": "介词",
+     "created_at": "2026-08-05T09:06:00"
+    },
+    {
+     "id": 112,
+     "stage": 1,
+     "week": 4,
+     "day": 3,
+     "word": "fk41",
+     "task_key": "basic:1",
+     "attempt": 1,
+     "sentence": "I am go to school about fk41.",
+     "corrected": "I go to school about fk41.",
+     "score": 70,
+     "verdict": "正确",
+     "ok": true,
+     "error_type": "",
+     "created_at": "2026-08-05T09:03:00"
+    },
+    {
+     "id": 111,
+     "stage": 1,
+     "week": 4,
+     "day": 3,
+     "word": "fk40",
+     "task_key": "basic:0",
+     "attempt": 1,
+     "sentence": "I am go to school about fk40.",
+     "corrected": "I go to school about fk40.",
+     "score": 80,
+     "verdict": "正确",
+     "ok": true,
+     "error_type": "",
+     "created_at": "2026-08-05T09:00:00"
+    },
+    {
+     "id": 110,
+     "stage": 1,
+     "week": 4,
+     "day": 2,
+     "word": "fk44",
+     "task_key": "basic:4",
+     "attempt": 1,
+     "sentence": "I am go to school about fk44.",
+     "corrected": "I go to school about fk44.",
+     "score": 54,
+     "verdict": "正确",
+     "ok": true,
+     "error_type": "",
+     "created_at": "2026-08-04T09:12:00"
+    },
+    {
+     "id": 109,
+     "stage": 1,
+     "week": 4,
+     "day": 2,
+     "word": "fk43",
+     "task_key": "basic:3",
+     "attempt": 1,
+     "sentence": "I am go to school about fk43.",
+     "corrected": "I go to school about fk43.",
+     "score": 72,
+     "verdict": "有错误",
+     "ok": false,
+     "error_type": "非谓语",
+     "created_at": "2026-08-04T09:09:00"
+    },
+    {
+     "id": 108,
+     "stage": 1,
+     "week": 4,
+     "day": 2,
+     "word": "fk42",
+     "task_key": "basic:2",
+     "attempt": 1,
+     "sentence": "I am go to school about fk42.",
+     "corrected": "I go to school about fk42.",
+     "score": 68,
+     "verdict": "正确",
+     "ok": true,
+     "error_type": "",
+     "created_at": "2026-08-04T09:06:00"
+    },
+    {
+     "id": 107,
+     "stage": 1,
+     "week": 4,
+     "day": 2,
+     "word": "fk41",
+     "task_key": "basic:1",
+     "attempt": 1,
+     "sentence": "I am go to school about fk41.",
+     "corrected": "I go to school about fk41.",
+     "score": 59,
+     "verdict": "正确",
+     "ok": true,
+     "error_type": "",
+     "created_at": "2026-08-04T09:03:00"
+    },
+    {
+     "id": 106,
+     "stage": 1,
+     "week": 4,
+     "day": 2,
+     "word": "fk40",
+     "task_key": "basic:0",
+     "attempt": 1,
+     "sentence": "I am go to school about fk40.",
+     "corrected": "I go to school about fk40.",
+     "score": 69,
+     "verdict": "有错误",
+     "ok": false,
+     "error_type": "冠词",
+     "created_at": "2026-08-04T09:00:00"
+    },
+    {
+     "id": 105,
+     "stage": 1,
+     "week": 4,
+     "day": 1,
+     "word": "fk44",
+     "task_key": "basic:4",
+     "attempt": 1,
+     "sentence": "I am go to school about fk44.",
+     "corrected": "I go to school about fk44.",
+     "score": 62,
+     "verdict": "有错误",
+     "ok": false,
+     "error_type": "时态",
+     "created_at": "2026-08-03T09:12:00"
+    },
+    {
+     "id": 104,
+     "stage": 1,
+     "week": 4,
+     "day": 1,
+     "word": "fk43",
+     "task_key": "basic:3",
+     "attempt": 1,
+     "sentence": "I am go to school about fk43.",
+     "corrected": "I go to school about fk43.",
+     "score": 62,
+     "verdict": "正确",
+     "ok": true,
+     "error_type": "",
+     "created_at": "2026-08-03T09:09:00"
+    },
+    {
+     "id": 103,
+     "stage": 1,
+     "week": 4,
+     "day": 1,
+     "word": "fk42",
+     "task_key": "basic:2",
+     "attempt": 1,
+     "sentence": "I am go to school about fk42.",
+     "corrected": "I go to school about fk42.",
+     "score": 53,
+     "verdict": "正确",
+     "ok": true,
+     "error_type": "",
+     "created_at": "2026-08-03T09:06:00"
+    },
+    {
+     "id": 102,
+     "stage": 1,
+     "week": 4,
+     "day": 1,
+     "word": "fk41",
+     "task_key": "basic:1",
+     "attempt": 1,
+     "sentence": "I am go to school about fk41.",
+     "corrected": "I go to school about fk41.",
+     "score": 59,
+     "verdict": "有错误",
+     "ok": false,
+     "error_type": "介词",
+     "created_at": "2026-08-03T09:03:00"
+    },
+    {
+     "id": 101,
+     "stage": 1,
+     "week": 4,
+     "day": 1,
+     "word": "fk40",
+     "task_key": "basic:0",
+     "attempt": 1,
+     "sentence": "I am go to school about fk40.",
+     "corrected": "I go to school about fk40.",
+     "score": 81,
+     "verdict": "正确",
+     "ok": true,
+     "error_type": "",
+     "created_at": "2026-08-03T09:00:00"
+    },
+    {
+     "id": 100,
+     "stage": 1,
+     "week": 3,
+     "day": 7,
+     "word": "fk34",
+     "task_key": "basic:4",
+     "attempt": 1,
+     "sentence": "I am go to school about fk34.",
+     "corrected": "I go to school about fk34.",
+     "score": 51,
+     "verdict": "正确",
+     "ok": true,
+     "error_type": "",
+     "created_at": "2026-08-02T09:12:00"
+    },
+    {
+     "id": 99,
+     "stage": 1,
+     "week": 3,
+     "day": 7,
+     "word": "fk33",
+     "task_key": "basic:3",
+     "attempt": 1,
+     "sentence": "I am go to school about fk33.",
+     "corrected": "I go to school about fk33.",
+     "score": 72,
+     "verdict": "有错误",
+     "ok": false,
+     "error_type": "介词",
+     "created_at": "2026-08-02T09:09:00"
+    },
+    {
+     "id": 98,
+     "stage": 1,
+     "week": 3,
+     "day": 7,
+     "word": "fk32",
+     "task_key": "basic:2",
+     "attempt": 1,
+     "sentence": "I am go to school about fk32.",
+     "corrected": "I go to school about fk32.",
+     "score": 86,
+     "verdict": "有错误",
+     "ok": false,
+     "error_type": "介词",
+     "created_at": "2026-08-02T09:06:00"
+    },
+    {
+     "id": 97,
+     "stage": 1,
+     "week": 3,
+     "day": 7,
+     "word": "fk31",
+     "task_key": "basic:1",
+     "attempt": 1,
+     "sentence": "I am go to school about fk31.",
+     "corrected": "I go to school about fk31.",
+     "score": 70,
+     "verdict": "有错误",
+     "ok": false,
+     "error_type": "时态",
+     "created_at": "2026-08-02T09:03:00"
+    },
+    {
+     "id": 96,
+     "stage": 1,
+     "week": 3,
+     "day": 7,
+     "word": "fk30",
+     "task_key": "basic:0",
+     "attempt": 1,
+     "sentence": "I am go to school about fk30.",
+     "corrected": "I go to school about fk30.",
+     "score": 68,
+     "verdict": "正确",
+     "ok": true,
+     "error_type": "",
+     "created_at": "2026-08-02T09:00:00"
+    },
+    {
+     "id": 95,
+     "stage": 1,
+     "week": 3,
+     "day": 6,
+     "word": "fk34",
+     "task_key": "basic:4",
+     "attempt": 1,
+     "sentence": "I am go to school about fk34.",
+     "corrected": "I go to school about fk34.",
+     "score": 81,
+     "verdict": "有错误",
+     "ok": false,
+     "error_type": "时态",
+     "created_at": "2026-08-01T09:12:00"
+    },
+    {
+     "id": 94,
+     "stage": 1,
+     "week": 3,
+     "day": 6,
+     "word": "fk33",
+     "task_key": "basic:3",
+     "attempt": 1,
+     "sentence": "I am go to school about fk33.",
+     "corrected": "I go to school about fk33.",
+     "score": 70,
+     "verdict": "正确",
+     "ok": true,
+     "error_type": "",
+     "created_at": "2026-08-01T09:09:00"
+    },
+    {
+     "id": 93,
+     "stage": 1,
+     "week": 3,
+     "day": 6,
+     "word": "fk32",
+     "task_key": "basic:2",
+     "attempt": 1,
+     "sentence": "I am go to school about fk32.",
+     "corrected": "I go to school about fk32.",
+     "score": 55,
+     "verdict": "正确",
+     "ok": true,
+     "error_type": "",
+     "created_at": "2026-08-01T09:06:00"
+    },
+    {
+     "id": 92,
+     "stage": 1,
+     "week": 3,
+     "day": 6,
+     "word": "fk31",
+     "task_key": "basic:1",
+     "attempt": 1,
+     "sentence": "I am go to school about fk31.",
+     "corrected": "I go to school about fk31.",
+     "score": 85,
+     "verdict": "有错误",
+     "ok": false,
+     "error_type": "三单",
+     "created_at": "2026-08-01T09:03:00"
+    },
+    {
+     "id": 91,
+     "stage": 1,
+     "week": 3,
+     "day": 6,
+     "word": "fk30",
+     "task_key": "basic:0",
+     "attempt": 1,
+     "sentence": "I am go to school about fk30.",
+     "corrected": "I go to school about fk30.",
+     "score": 85,
+     "verdict": "正确",
+     "ok": true,
+     "error_type": "",
+     "created_at": "2026-08-01T09:00:00"
+    },
+    {
+     "id": 90,
+     "stage": 1,
+     "week": 3,
+     "day": 5,
+     "word": "fk34",
+     "task_key": "basic:4",
+     "attempt": 1,
+     "sentence": "I am go to school about fk34.",
+     "corrected": "I go to school about fk34.",
+     "score": 57,
+     "verdict": "正确",
+     "ok": true,
+     "error_type": "",
+     "created_at": "2026-07-31T09:12:00"
+    },
+    {
+     "id": 89,
+     "stage": 1,
+     "week": 3,
+     "day": 5,
+     "word": "fk33",
+     "task_key": "basic:3",
+     "attempt": 1,
+     "sentence": "I am go to school about fk33.",
+     "corrected": "I go to school about fk33.",
+     "score": 68,
+     "verdict": "有错误",
+     "ok": false,
+     "error_type": "时态",
+     "created_at": "2026-07-31T09:09:00"
+    },
+    {
+     "id": 88,
+     "stage": 1,
+     "week": 3,
+     "day": 5,
+     "word": "fk32",
+     "task_key": "basic:2",
+     "attempt": 1,
+     "sentence": "I am go to school about fk32.",
+     "corrected": "I go to school about fk32.",
+     "score": 61,
+     "verdict": "正确",
+     "ok": true,
+     "error_type": "",
+     "created_at": "2026-07-31T09:06:00"
+    },
+    {
+     "id": 87,
+     "stage": 1,
+     "week": 3,
+     "day": 5,
+     "word": "fk31",
+     "task_key": "basic:1",
+     "attempt": 1,
+     "sentence": "I am go to school about fk31.",
+     "corrected": "I go to school about fk31.",
+     "score": 56,
+     "verdict": "正确",
+     "ok": true,
+     "error_type": "",
+     "created_at": "2026-07-31T09:03:00"
+    },
+    {
+     "id": 86,
+     "stage": 1,
+     "week": 3,
+     "day": 5,
+     "word": "fk30",
+     "task_key": "basic:0",
+     "attempt": 1,
+     "sentence": "I am go to school about fk30.",
+     "corrected": "I go to school about fk30.",
+     "score": 63,
+     "verdict": "有错误",
+     "ok": false,
+     "error_type": "时态",
+     "created_at": "2026-07-31T09:00:00"
+    },
+    {
+     "id": 85,
+     "stage": 1,
+     "week": 3,
+     "day": 4,
+     "word": "fk34",
+     "task_key": "basic:4",
+     "attempt": 1,
+     "sentence": "I am go to school about fk34.",
+     "corrected": "I go to school about fk34.",
+     "score": 75,
+     "verdict": "正确",
+     "ok": true,
+     "error_type": "",
+     "created_at": "2026-07-30T09:12:00"
+    },
+    {
+     "id": 84,
+     "stage": 1,
+     "week": 3,
+     "day": 4,
+     "word": "fk33",
+     "task_key": "basic:3",
+     "attempt": 1,
+     "sentence": "I am go to school about fk33.",
+     "corrected": "I go to school about fk33.",
+     "score": 54,
+     "verdict": "正确",
+     "ok": true,
+     "error_type": "",
+     "created_at": "2026-07-30T09:09:00"
+    },
+    {
+     "id": 83,
+     "stage": 1,
+     "week": 3,
+     "day": 4,
+     "word": "fk32",
+     "task_key": "basic:2",
+     "attempt": 1,
+     "sentence": "I am go to school about fk32.",
+     "corrected": "I go to school about fk32.",
+     "score": 58,
+     "verdict": "有错误",
+     "ok": false,
+     "error_type": "冠词",
+     "created_at": "2026-07-30T09:06:00"
+    },
+    {
+     "id": 82,
+     "stage": 1,
+     "week": 3,
+     "day": 4,
+     "word": "fk31",
+     "task_key": "basic:1",
+     "attempt": 1,
+     "sentence": "I am go to school about fk31.",
+     "corrected": "I go to school about fk31.",
+     "score": 70,
+     "verdict": "正确",
+     "ok": true,
+     "error_type": "",
+     "created_at": "2026-07-30T09:03:00"
+    },
+    {
+     "id": 81,
+     "stage": 1,
+     "week": 3,
+     "day": 4,
+     "word": "fk30",
+     "task_key": "basic:0",
+     "attempt": 1,
+     "sentence": "I am go to school about fk30.",
+     "corrected": "I go to school about fk30.",
+     "score": 61,
+     "verdict": "正确",
+     "ok": true,
+     "error_type": "",
+     "created_at": "2026-07-30T09:00:00"
+    },
+    {
+     "id": 80,
+     "stage": 1,
+     "week": 3,
+     "day": 3,
+     "word": "fk34",
+     "task_key": "basic:4",
+     "attempt": 1,
+     "sentence": "I am go to school about fk34.",
+     "corrected": "I go to school about fk34.",
+     "score": 70,
+     "verdict": "有错误",
+     "ok": false,
+     "error_type": "介词",
+     "created_at": "2026-07-29T09:12:00"
+    },
+    {
+     "id": 79,
+     "stage": 1,
+     "week": 3,
+     "day": 3,
+     "word": "fk33",
+     "task_key": "basic:3",
+     "attempt": 1,
+     "sentence": "I am go to school about fk33.",
+     "corrected": "I go to school about fk33.",
+     "score": 70,
+     "verdict": "正确",
+     "ok": true,
+     "error_type": "",
+     "created_at": "2026-07-29T09:09:00"
+    },
+    {
+     "id": 78,
+     "stage": 1,
+     "week": 3,
+     "day": 3,
+     "word": "fk32",
+     "task_key": "basic:2",
+     "attempt": 1,
+     "sentence": "I am go to school about fk32.",
+     "corrected": "I go to school about fk32.",
+     "score": 55,
+     "verdict": "有错误",
+     "ok": false,
+     "error_type": "介词",
+     "created_at": "2026-07-29T09:06:00"
+    },
+    {
+     "id": 77,
+     "stage": 1,
+     "week": 3,
+     "day": 3,
+     "word": "fk31",
+     "task_key": "basic:1",
+     "attempt": 1,
+     "sentence": "I am go to school about fk31.",
+     "corrected": "I go to school about fk31.",
+     "score": 52,
+     "verdict": "正确",
+     "ok": true,
+     "error_type": "",
+     "created_at": "2026-07-29T09:03:00"
+    },
+    {
+     "id": 76,
+     "stage": 1,
+     "week": 3,
+     "day": 3,
+     "word": "fk30",
+     "task_key": "basic:0",
+     "attempt": 1,
+     "sentence": "I am go to school about fk30.",
+     "corrected": "I go to school about fk30.",
+     "score": 86,
+     "verdict": "正确",
+     "ok": true,
+     "error_type": "",
+     "created_at": "2026-07-29T09:00:00"
+    },
+    {
+     "id": 75,
+     "stage": 1,
+     "week": 3,
+     "day": 2,
+     "word": "fk34",
+     "task_key": "basic:4",
+     "attempt": 1,
+     "sentence": "I am go to school about fk34.",
+     "corrected": "I go to school about fk34.",
+     "score": 80,
+     "verdict": "有错误",
+     "ok": false,
+     "error_type": "时态",
+     "created_at": "2026-07-28T09:12:00"
+    },
+    {
+     "id": 74,
+     "stage": 1,
+     "week": 3,
+     "day": 2,
+     "word": "fk33",
+     "task_key": "basic:3",
+     "attempt": 1,
+     "sentence": "I am go to school about fk33.",
+     "corrected": "I go to school about fk33.",
+     "score": 79,
+     "verdict": "有错误",
+     "ok": false,
+     "error_type": "时态",
+     "created_at": "2026-07-28T09:09:00"
+    },
+    {
+     "id": 73,
+     "stage": 1,
+     "week": 3,
+     "day": 2,
+     "word": "fk32",
+     "task_key": "basic:2",
+     "attempt": 1,
+     "sentence": "I am go to school about fk32.",
+     "corrected": "I go to school about fk32.",
+     "score": 62,
+     "verdict": "正确",
+     "ok": true,
+     "error_type": "",
+     "created_at": "2026-07-28T09:06:00"
+    },
+    {
+     "id": 72,
+     "stage": 1,
+     "week": 3,
+     "day": 2,
+     "word": "fk31",
+     "task_key": "basic:1",
+     "attempt": 1,
+     "sentence": "I am go to school about fk31.",
+     "corrected": "I go to school about fk31.",
+     "score": 74,
+     "verdict": "正确",
+     "ok": true,
+     "error_type": "",
+     "created_at": "2026-07-28T09:03:00"
+    },
+    {
+     "id": 71,
+     "stage": 1,
+     "week": 3,
+     "day": 2,
+     "word": "fk30",
+     "task_key": "basic:0",
+     "attempt": 1,
+     "sentence": "I am go to school about fk30.",
+     "corrected": "I go to school about fk30.",
+     "score": 79,
+     "verdict": "有错误",
+     "ok": false,
+     "error_type": "非谓语",
+     "created_at": "2026-07-28T09:00:00"
+    },
+    {
+     "id": 70,
+     "stage": 1,
+     "week": 3,
+     "day": 1,
+     "word": "fk34",
+     "task_key": "basic:4",
+     "attempt": 1,
+     "sentence": "I am go to school about fk34.",
+     "corrected": "I go to school about fk34.",
+     "score": 84,
+     "verdict": "正确",
+     "ok": true,
+     "error_type": "",
+     "created_at": "2026-07-27T09:12:00"
+    },
+    {
+     "id": 69,
+     "stage": 1,
+     "week": 3,
+     "day": 1,
+     "word": "fk33",
+     "task_key": "basic:3",
+     "attempt": 1,
+     "sentence": "I am go to school about fk33.",
+     "corrected": "I go to school about fk33.",
+     "score": 56,
+     "verdict": "有错误",
+     "ok": false,
+     "error_type": "介词",
+     "created_at": "2026-07-27T09:09:00"
+    },
+    {
+     "id": 68,
+     "stage": 1,
+     "week": 3,
+     "day": 1,
+     "word": "fk32",
+     "task_key": "basic:2",
+     "attempt": 1,
+     "sentence": "I am go to school about fk32.",
+     "corrected": "I go to school about fk32.",
+     "score": 46,
+     "verdict": "正确",
+     "ok": true,
+     "error_type": "",
+     "created_at": "2026-07-27T09:06:00"
+    },
+    {
+     "id": 67,
+     "stage": 1,
+     "week": 3,
+     "day": 1,
+     "word": "fk31",
+     "task_key": "basic:1",
+     "attempt": 1,
+     "sentence": "I am go to school about fk31.",
+     "corrected": "I go to school about fk31.",
+     "score": 60,
+     "verdict": "有错误",
+     "ok": false,
+     "error_type": "时态",
+     "created_at": "2026-07-27T09:03:00"
+    },
+    {
+     "id": 66,
+     "stage": 1,
+     "week": 3,
+     "day": 1,
+     "word": "fk30",
+     "task_key": "basic:0",
+     "attempt": 1,
+     "sentence": "I am go to school about fk30.",
+     "corrected": "I go to school about fk30.",
+     "score": 72,
+     "verdict": "有错误",
+     "ok": false,
+     "error_type": "三单",
+     "created_at": "2026-07-27T09:00:00"
+    },
+    {
+     "id": 65,
+     "stage": 1,
+     "week": 2,
+     "day": 7,
+     "word": "fk24",
+     "task_key": "basic:4",
+     "attempt": 1,
+     "sentence": "I am go to school about fk24.",
+     "corrected": "I go to school about fk24.",
+     "score": 75,
+     "verdict": "正确",
+     "ok": true,
+     "error_type": "",
+     "created_at": "2026-07-26T09:12:00"
+    },
+    {
+     "id": 64,
+     "stage": 1,
+     "week": 2,
+     "day": 7,
+     "word": "fk23",
+     "task_key": "basic:3",
+     "attempt": 1,
+     "sentence": "I am go to school about fk23.",
+     "corrected": "I go to school about fk23.",
+     "score": 68,
+     "verdict": "有错误",
+     "ok": false,
+     "error_type": "时态",
+     "created_at": "2026-07-26T09:09:00"
+    },
+    {
+     "id": 63,
+     "stage": 1,
+     "week": 2,
+     "day": 7,
+     "word": "fk22",
+     "task_key": "basic:2",
+     "attempt": 1,
+     "sentence": "I am go to school about fk22.",
+     "corrected": "I go to school about fk22.",
+     "score": 50,
+     "verdict": "有错误",
+     "ok": false,
+     "error_type": "时态",
+     "created_at": "2026-07-26T09:06:00"
+    },
+    {
+     "id": 62,
+     "stage": 1,
+     "week": 2,
+     "day": 7,
+     "word": "fk21",
+     "task_key": "basic:1",
+     "attempt": 1,
+     "sentence": "I am go to school about fk21.",
+     "corrected": "I go to school about fk21.",
+     "score": 55,
+     "verdict": "正确",
+     "ok": true,
+     "error_type": "",
+     "created_at": "2026-07-26T09:03:00"
+    },
+    {
+     "id": 61,
+     "stage": 1,
+     "week": 2,
+     "day": 7,
+     "word": "fk20",
+     "task_key": "basic:0",
+     "attempt": 1,
+     "sentence": "I am go to school about fk20.",
+     "corrected": "I go to school about fk20.",
+     "score": 40,
+     "verdict": "正确",
+     "ok": true,
+     "error_type": "",
+     "created_at": "2026-07-26T09:00:00"
+    },
+    {
+     "id": 60,
+     "stage": 1,
+     "week": 2,
+     "day": 6,
+     "word": "fk24",
+     "task_key": "basic:4",
+     "attempt": 1,
+     "sentence": "I am go to school about fk24.",
+     "corrected": "I go to school about fk24.",
+     "score": 57,
+     "verdict": "正确",
+     "ok": true,
+     "error_type": "",
+     "created_at": "2026-07-25T09:12:00"
+    },
+    {
+     "id": 59,
+     "stage": 1,
+     "week": 2,
+     "day": 6,
+     "word": "fk23",
+     "task_key": "basic:3",
+     "attempt": 1,
+     "sentence": "I am go to school about fk23.",
+     "corrected": "I go to school about fk23.",
+     "score": 61,
+     "verdict": "正确",
+     "ok": true,
+     "error_type": "",
+     "created_at": "2026-07-25T09:09:00"
+    },
+    {
+     "id": 58,
+     "stage": 1,
+     "week": 2,
+     "day": 6,
+     "word": "fk22",
+     "task_key": "basic:2",
+     "attempt": 1,
+     "sentence": "I am go to school about fk22.",
+     "corrected": "I go to school about fk22.",
+     "score": 72,
+     "verdict": "有错误",
+     "ok": false,
+     "error_type": "冠词",
+     "created_at": "2026-07-25T09:06:00"
+    },
+    {
+     "id": 57,
+     "stage": 1,
+     "week": 2,
+     "day": 6,
+     "word": "fk21",
+     "task_key": "basic:1",
+     "attempt": 1,
+     "sentence": "I am go to school about fk21.",
+     "corrected": "I go to school about fk21.",
+     "score": 77,
+     "verdict": "有错误",
+     "ok": false,
+     "error_type": "时态",
+     "created_at": "2026-07-25T09:03:00"
+    },
+    {
+     "id": 56,
+     "stage": 1,
+     "week": 2,
+     "day": 6,
+     "word": "fk20",
+     "task_key": "basic:0",
+     "attempt": 1,
+     "sentence": "I am go to school about fk20.",
+     "corrected": "I go to school about fk20.",
+     "score": 69,
+     "verdict": "正确",
+     "ok": true,
+     "error_type": "",
+     "created_at": "2026-07-25T09:00:00"
+    },
+    {
+     "id": 55,
+     "stage": 1,
+     "week": 2,
+     "day": 5,
+     "word": "fk24",
+     "task_key": "basic:4",
+     "attempt": 1,
+     "sentence": "I am go to school about fk24.",
+     "corrected": "I go to school about fk24.",
+     "score": 90,
+     "verdict": "有错误",
+     "ok": false,
+     "error_type": "三单",
+     "created_at": "2026-07-24T09:12:00"
+    },
+    {
+     "id": 54,
+     "stage": 1,
+     "week": 2,
+     "day": 5,
+     "word": "fk23",
+     "task_key": "basic:3",
+     "attempt": 1,
+     "sentence": "I am go to school about fk23.",
+     "corrected": "I go to school about fk23.",
+     "score": 38,
+     "verdict": "正确",
+     "ok": true,
+     "error_type": "",
+     "created_at": "2026-07-24T09:09:00"
+    },
+    {
+     "id": 53,
+     "stage": 1,
+     "week": 2,
+     "day": 5,
+     "word": "fk22",
+     "task_key": "basic:2",
+     "attempt": 1,
+     "sentence": "I am go to school about fk22.",
+     "corrected": "I go to school about fk22.",
+     "score": 54,
+     "verdict": "有错误",
+     "ok": false,
+     "error_type": "非谓语",
+     "created_at": "2026-07-24T09:06:00"
+    },
+    {
+     "id": 52,
+     "stage": 1,
+     "week": 2,
+     "day": 5,
+     "word": "fk21",
+     "task_key": "basic:1",
+     "attempt": 1,
+     "sentence": "I am go to school about fk21.",
+     "corrected": "I go to school about fk21.",
+     "score": 68,
+     "verdict": "有错误",
+     "ok": false,
+     "error_type": "冠词",
+     "created_at": "2026-07-24T09:03:00"
+    },
+    {
+     "id": 51,
+     "stage": 1,
+     "week": 2,
+     "day": 5,
+     "word": "fk20",
+     "task_key": "basic:0",
+     "attempt": 1,
+     "sentence": "I am go to school about fk20.",
+     "corrected": "I go to school about fk20.",
+     "score": 66,
+     "verdict": "正确",
+     "ok": true,
+     "error_type": "",
+     "created_at": "2026-07-24T09:00:00"
+    },
+    {
+     "id": 50,
+     "stage": 1,
+     "week": 2,
+     "day": 4,
+     "word": "fk24",
+     "task_key": "basic:4",
+     "attempt": 1,
+     "sentence": "I am go to school about fk24.",
+     "corrected": "I go to school about fk24.",
+     "score": 53,
+     "verdict": "正确",
+     "ok": true,
+     "error_type": "",
+     "created_at": "2026-07-23T09:12:00"
+    },
+    {
+     "id": 49,
+     "stage": 1,
+     "week": 2,
+     "day": 4,
+     "word": "fk23",
+     "task_key": "basic:3",
+     "attempt": 1,
+     "sentence": "I am go to school about fk23.",
+     "corrected": "I go to school about fk23.",
+     "score": 61,
+     "verdict": "正确",
+     "ok": true,
+     "error_type": "",
+     "created_at": "2026-07-23T09:09:00"
+    },
+    {
+     "id": 48,
+     "stage": 1,
+     "week": 2,
+     "day": 4,
+     "word": "fk22",
+     "task_key": "basic:2",
+     "attempt": 1,
+     "sentence": "I am go to school about fk22.",
+     "corrected": "I go to school about fk22.",
+     "score": 48,
+     "verdict": "正确",
+     "ok": true,
+     "error_type": "",
+     "created_at": "2026-07-23T09:06:00"
+    },
+    {
+     "id": 47,
+     "stage": 1,
+     "week": 2,
+     "day": 4,
+     "word": "fk21",
+     "task_key": "basic:1",
+     "attempt": 1,
+     "sentence": "I am go to school about fk21.",
+     "corrected": "I go to school about fk21.",
+     "score": 55,
+     "verdict": "正确",
+     "ok": true,
+     "error_type": "",
+     "created_at": "2026-07-23T09:03:00"
+    },
+    {
+     "id": 46,
+     "stage": 1,
+     "week": 2,
+     "day": 4,
+     "word": "fk20",
+     "task_key": "basic:0",
+     "attempt": 1,
+     "sentence": "I am go to school about fk20.",
+     "corrected": "I go to school about fk20.",
+     "score": 69,
+     "verdict": "有错误",
+     "ok": false,
+     "error_type": "时态",
+     "created_at": "2026-07-23T09:00:00"
+    },
+    {
+     "id": 45,
+     "stage": 1,
+     "week": 2,
+     "day": 3,
+     "word": "fk24",
+     "task_key": "basic:4",
+     "attempt": 1,
+     "sentence": "I am go to school about fk24.",
+     "corrected": "I go to school about fk24.",
+     "score": 87,
+     "verdict": "有错误",
+     "ok": false,
+     "error_type": "三单",
+     "created_at": "2026-07-22T09:12:00"
+    },
+    {
+     "id": 44,
+     "stage": 1,
+     "week": 2,
+     "day": 3,
+     "word": "fk23",
+     "task_key": "basic:3",
+     "attempt": 1,
+     "sentence": "I am go to school about fk23.",
+     "corrected": "I go to school about fk23.",
+     "score": 49,
+     "verdict": "正确",
+     "ok": true,
+     "error_type": "",
+     "created_at": "2026-07-22T09:09:00"
+    },
+    {
+     "id": 43,
+     "stage": 1,
+     "week": 2,
+     "day": 3,
+     "word": "fk22",
+     "task_key": "basic:2",
+     "attempt": 1,
+     "sentence": "I am go to school about fk22.",
+     "corrected": "I go to school about fk22.",
+     "score": 64,
+     "verdict": "正确",
+     "ok": true,
+     "error_type": "",
+     "created_at": "2026-07-22T09:06:00"
+    },
+    {
+     "id": 42,
+     "stage": 1,
+     "week": 2,
+     "day": 3,
+     "word": "fk21",
+     "task_key": "basic:1",
+     "attempt": 1,
+     "sentence": "I am go to school about fk21.",
+     "corrected": "I go to school about fk21.",
+     "score": 66,
+     "verdict": "正确",
+     "ok": true,
+     "error_type": "",
+     "created_at": "2026-07-22T09:03:00"
+    },
+    {
+     "id": 41,
+     "stage": 1,
+     "week": 2,
+     "day": 3,
+     "word": "fk20",
+     "task_key": "basic:0",
+     "attempt": 1,
+     "sentence": "I am go to school about fk20.",
+     "corrected": "I go to school about fk20.",
+     "score": 64,
+     "verdict": "有错误",
+     "ok": false,
+     "error_type": "三单",
+     "created_at": "2026-07-22T09:00:00"
+    },
+    {
+     "id": 40,
+     "stage": 1,
+     "week": 2,
+     "day": 2,
+     "word": "fk24",
+     "task_key": "basic:4",
+     "attempt": 1,
+     "sentence": "I am go to school about fk24.",
+     "corrected": "I go to school about fk24.",
+     "score": 66,
+     "verdict": "有错误",
+     "ok": false,
+     "error_type": "时态",
+     "created_at": "2026-07-21T09:12:00"
+    },
+    {
+     "id": 39,
+     "stage": 1,
+     "week": 2,
+     "day": 2,
+     "word": "fk23",
+     "task_key": "basic:3",
+     "attempt": 1,
+     "sentence": "I am go to school about fk23.",
+     "corrected": "I go to school about fk23.",
+     "score": 81,
+     "verdict": "有错误",
+     "ok": false,
+     "error_type": "非谓语",
+     "created_at": "2026-07-21T09:09:00"
+    },
+    {
+     "id": 38,
+     "stage": 1,
+     "week": 2,
+     "day": 2,
+     "word": "fk22",
+     "task_key": "basic:2",
+     "attempt": 1,
+     "sentence": "I am go to school about fk22.",
+     "corrected": "I go to school about fk22.",
+     "score": 71,
+     "verdict": "有错误",
+     "ok": false,
+     "error_type": "介词",
+     "created_at": "2026-07-21T09:06:00"
+    },
+    {
+     "id": 37,
+     "stage": 1,
+     "week": 2,
+     "day": 2,
+     "word": "fk21",
+     "task_key": "basic:1",
+     "attempt": 1,
+     "sentence": "I am go to school about fk21.",
+     "corrected": "I go to school about fk21.",
+     "score": 64,
+     "verdict": "有错误",
+     "ok": false,
+     "error_type": "时态",
+     "created_at": "2026-07-21T09:03:00"
+    },
+    {
+     "id": 36,
+     "stage": 1,
+     "week": 2,
+     "day": 2,
+     "word": "fk20",
+     "task_key": "basic:0",
+     "attempt": 1,
+     "sentence": "I am go to school about fk20.",
+     "corrected": "I go to school about fk20.",
+     "score": 60,
+     "verdict": "有错误",
+     "ok": false,
+     "error_type": "时态",
+     "created_at": "2026-07-21T09:00:00"
+    },
+    {
+     "id": 35,
+     "stage": 1,
+     "week": 2,
+     "day": 1,
+     "word": "fk24",
+     "task_key": "basic:4",
+     "attempt": 1,
+     "sentence": "I am go to school about fk24.",
+     "corrected": "I go to school about fk24.",
+     "score": 63,
+     "verdict": "正确",
+     "ok": true,
+     "error_type": "",
+     "created_at": "2026-07-20T09:12:00"
+    },
+    {
+     "id": 34,
+     "stage": 1,
+     "week": 2,
+     "day": 1,
+     "word": "fk23",
+     "task_key": "basic:3",
+     "attempt": 1,
+     "sentence": "I am go to school about fk23.",
+     "corrected": "I go to school about fk23.",
+     "score": 72,
+     "verdict": "有错误",
+     "ok": false,
+     "error_type": "非谓语",
+     "created_at": "2026-07-20T09:09:00"
+    },
+    {
+     "id": 33,
+     "stage": 1,
+     "week": 2,
+     "day": 1,
+     "word": "fk22",
+     "task_key": "basic:2",
+     "attempt": 1,
+     "sentence": "I am go to school about fk22.",
+     "corrected": "I go to school about fk22.",
+     "score": 68,
+     "verdict": "正确",
+     "ok": true,
+     "error_type": "",
+     "created_at": "2026-07-20T09:06:00"
+    },
+    {
+     "id": 32,
+     "stage": 1,
+     "week": 2,
+     "day": 1,
+     "word": "fk21",
+     "task_key": "basic:1",
+     "attempt": 1,
+     "sentence": "I am go to school about fk21.",
+     "corrected": "I go to school about fk21.",
+     "score": 46,
+     "verdict": "正确",
+     "ok": true,
+     "error_type": "",
+     "created_at": "2026-07-20T09:03:00"
+    },
+    {
+     "id": 31,
+     "stage": 1,
+     "week": 2,
+     "day": 1,
+     "word": "fk20",
+     "task_key": "basic:0",
+     "attempt": 1,
+     "sentence": "I am go to school about fk20.",
+     "corrected": "I go to school about fk20.",
+     "score": 58,
+     "verdict": "有错误",
+     "ok": false,
+     "error_type": "三单",
+     "created_at": "2026-07-20T09:00:00"
+    },
+    {
+     "id": 30,
+     "stage": 1,
+     "week": 1,
+     "day": 7,
+     "word": "fk14",
+     "task_key": "basic:4",
+     "attempt": 1,
+     "sentence": "I am go to school about fk14.",
+     "corrected": "I go to school about fk14.",
+     "score": 69,
+     "verdict": "正确",
+     "ok": true,
+     "error_type": "",
+     "created_at": "2026-07-19T09:12:00"
+    },
+    {
+     "id": 29,
+     "stage": 1,
+     "week": 1,
+     "day": 7,
+     "word": "fk13",
+     "task_key": "basic:3",
+     "attempt": 1,
+     "sentence": "I am go to school about fk13.",
+     "corrected": "I go to school about fk13.",
+     "score": 79,
+     "verdict": "有错误",
+     "ok": false,
+     "error_type": "非谓语",
+     "created_at": "2026-07-19T09:09:00"
+    },
+    {
+     "id": 28,
+     "stage": 1,
+     "week": 1,
+     "day": 7,
+     "word": "fk12",
+     "task_key": "basic:2",
+     "attempt": 1,
+     "sentence": "I am go to school about fk12.",
+     "corrected": "I go to school about fk12.",
+     "score": 74,
+     "verdict": "有错误",
+     "ok": false,
+     "error_type": "三单",
+     "created_at": "2026-07-19T09:06:00"
+    },
+    {
+     "id": 27,
+     "stage": 1,
+     "week": 1,
+     "day": 7,
+     "word": "fk11",
+     "task_key": "basic:1",
+     "attempt": 1,
+     "sentence": "I am go to school about fk11.",
+     "corrected": "I go to school about fk11.",
+     "score": 41,
+     "verdict": "正确",
+     "ok": true,
+     "error_type": "",
+     "created_at": "2026-07-19T09:03:00"
+    },
+    {
+     "id": 26,
+     "stage": 1,
+     "week": 1,
+     "day": 7,
+     "word": "fk10",
+     "task_key": "basic:0",
+     "attempt": 1,
+     "sentence": "I am go to school about fk10.",
+     "corrected": "I go to school about fk10.",
+     "score": 64,
+     "verdict": "正确",
+     "ok": true,
+     "error_type": "",
+     "created_at": "2026-07-19T09:00:00"
+    },
+    {
+     "id": 25,
+     "stage": 1,
+     "week": 1,
+     "day": 5,
+     "word": "fk14",
+     "task_key": "basic:4",
+     "attempt": 1,
+     "sentence": "I am go to school about fk14.",
+     "corrected": "I go to school about fk14.",
+     "score": 64,
+     "verdict": "有错误",
+     "ok": false,
+     "error_type": "三单",
+     "created_at": "2026-07-17T09:12:00"
+    },
+    {
+     "id": 24,
+     "stage": 1,
+     "week": 1,
+     "day": 5,
+     "word": "fk13",
+     "task_key": "basic:3",
+     "attempt": 1,
+     "sentence": "I am go to school about fk13.",
+     "corrected": "I go to school about fk13.",
+     "score": 51,
+     "verdict": "正确",
+     "ok": true,
+     "error_type": "",
+     "created_at": "2026-07-17T09:09:00"
+    },
+    {
+     "id": 23,
+     "stage": 1,
+     "week": 1,
+     "day": 5,
+     "word": "fk12",
+     "task_key": "basic:2",
+     "attempt": 1,
+     "sentence": "I am go to school about fk12.",
+     "corrected": "I go to school about fk12.",
+     "score": 56,
+     "verdict": "有错误",
+     "ok": false,
+     "error_type": "时态",
+     "created_at": "2026-07-17T09:06:00"
+    },
+    {
+     "id": 22,
+     "stage": 1,
+     "week": 1,
+     "day": 5,
+     "word": "fk11",
+     "task_key": "basic:1",
+     "attempt": 1,
+     "sentence": "I am go to school about fk11.",
+     "corrected": "I go to school about fk11.",
+     "score": 55,
+     "verdict": "有错误",
+     "ok": false,
+     "error_type": "时态",
+     "created_at": "2026-07-17T09:03:00"
+    },
+    {
+     "id": 21,
+     "stage": 1,
+     "week": 1,
+     "day": 5,
+     "word": "fk10",
+     "task_key": "basic:0",
+     "attempt": 1,
+     "sentence": "I am go to school about fk10.",
+     "corrected": "I go to school about fk10.",
+     "score": 88,
+     "verdict": "有错误",
+     "ok": false,
+     "error_type": "三单",
+     "created_at": "2026-07-17T09:00:00"
+    },
+    {
+     "id": 20,
+     "stage": 1,
+     "week": 1,
+     "day": 4,
+     "word": "fk14",
+     "task_key": "basic:4",
+     "attempt": 1,
+     "sentence": "I am go to school about fk14.",
+     "corrected": "I go to school about fk14.",
+     "score": 43,
+     "verdict": "有错误",
+     "ok": false,
+     "error_type": "非谓语",
+     "created_at": "2026-07-16T09:12:00"
+    },
+    {
+     "id": 19,
+     "stage": 1,
+     "week": 1,
+     "day": 4,
+     "word": "fk13",
+     "task_key": "basic:3",
+     "attempt": 1,
+     "sentence": "I am go to school about fk13.",
+     "corrected": "I go to school about fk13.",
+     "score": 58,
+     "verdict": "有错误",
+     "ok": false,
+     "error_type": "冠词",
+     "created_at": "2026-07-16T09:09:00"
+    },
+    {
+     "id": 18,
+     "stage": 1,
+     "week": 1,
+     "day": 4,
+     "word": "fk12",
+     "task_key": "basic:2",
+     "attempt": 1,
+     "sentence": "I am go to school about fk12.",
+     "corrected": "I go to school about fk12.",
+     "score": 70,
+     "verdict": "正确",
+     "ok": true,
+     "error_type": "",
+     "created_at": "2026-07-16T09:06:00"
+    },
+    {
+     "id": 17,
+     "stage": 1,
+     "week": 1,
+     "day": 4,
+     "word": "fk11",
+     "task_key": "basic:1",
+     "attempt": 1,
+     "sentence": "I am go to school about fk11.",
+     "corrected": "I go to school about fk11.",
+     "score": 56,
+     "verdict": "正确",
+     "ok": true,
+     "error_type": "",
+     "created_at": "2026-07-16T09:03:00"
+    },
+    {
+     "id": 16,
+     "stage": 1,
+     "week": 1,
+     "day": 4,
+     "word": "fk10",
+     "task_key": "basic:0",
+     "attempt": 1,
+     "sentence": "I am go to school about fk10.",
+     "corrected": "I go to school about fk10.",
+     "score": 56,
+     "verdict": "有错误",
+     "ok": false,
+     "error_type": "冠词",
+     "created_at": "2026-07-16T09:00:00"
+    },
+    {
+     "id": 15,
+     "stage": 1,
+     "week": 1,
+     "day": 3,
+     "word": "fk14",
+     "task_key": "basic:4",
+     "attempt": 1,
+     "sentence": "I am go to school about fk14.",
+     "corrected": "I go to school about fk14.",
+     "score": 73,
+     "verdict": "正确",
+     "ok": true,
+     "error_type": "",
+     "created_at": "2026-07-15T09:12:00"
+    },
+    {
+     "id": 14,
+     "stage": 1,
+     "week": 1,
+     "day": 3,
+     "word": "fk13",
+     "task_key": "basic:3",
+     "attempt": 1,
+     "sentence": "I am go to school about fk13.",
+     "corrected": "I go to school about fk13.",
+     "score": 89,
+     "verdict": "有错误",
+     "ok": false,
+     "error_type": "时态",
+     "created_at": "2026-07-15T09:09:00"
+    },
+    {
+     "id": 13,
+     "stage": 1,
+     "week": 1,
+     "day": 3,
+     "word": "fk12",
+     "task_key": "basic:2",
+     "attempt": 1,
+     "sentence": "I am go to school about fk12.",
+     "corrected": "I go to school about fk12.",
+     "score": 68,
+     "verdict": "有错误",
+     "ok": false,
+     "error_type": "时态",
+     "created_at": "2026-07-15T09:06:00"
+    },
+    {
+     "id": 12,
+     "stage": 1,
+     "week": 1,
+     "day": 3,
+     "word": "fk11",
+     "task_key": "basic:1",
+     "attempt": 1,
+     "sentence": "I am go to school about fk11.",
+     "corrected": "I go to school about fk11.",
+     "score": 65,
+     "verdict": "正确",
+     "ok": true,
+     "error_type": "",
+     "created_at": "2026-07-15T09:03:00"
+    },
+    {
+     "id": 11,
+     "stage": 1,
+     "week": 1,
+     "day": 3,
+     "word": "fk10",
+     "task_key": "basic:0",
+     "attempt": 1,
+     "sentence": "I am go to school about fk10.",
+     "corrected": "I go to school about fk10.",
+     "score": 62,
+     "verdict": "正确",
+     "ok": true,
+     "error_type": "",
+     "created_at": "2026-07-15T09:00:00"
+    },
+    {
+     "id": 10,
+     "stage": 1,
+     "week": 1,
+     "day": 2,
+     "word": "fk14",
+     "task_key": "basic:4",
+     "attempt": 1,
+     "sentence": "I am go to school about fk14.",
+     "corrected": "I go to school about fk14.",
+     "score": 66,
+     "verdict": "正确",
+     "ok": true,
+     "error_type": "",
+     "created_at": "2026-07-14T09:12:00"
+    },
+    {
+     "id": 9,
+     "stage": 1,
+     "week": 1,
+     "day": 2,
+     "word": "fk13",
+     "task_key": "basic:3",
+     "attempt": 1,
+     "sentence": "I am go to school about fk13.",
+     "corrected": "I go to school about fk13.",
+     "score": 69,
+     "verdict": "正确",
+     "ok": true,
+     "error_type": "",
+     "created_at": "2026-07-14T09:09:00"
+    },
+    {
+     "id": 8,
+     "stage": 1,
+     "week": 1,
+     "day": 2,
+     "word": "fk12",
+     "task_key": "basic:2",
+     "attempt": 1,
+     "sentence": "I am go to school about fk12.",
+     "corrected": "I go to school about fk12.",
+     "score": 58,
+     "verdict": "正确",
+     "ok": true,
+     "error_type": "",
+     "created_at": "2026-07-14T09:06:00"
+    },
+    {
+     "id": 7,
+     "stage": 1,
+     "week": 1,
+     "day": 2,
+     "word": "fk11",
+     "task_key": "basic:1",
+     "attempt": 1,
+     "sentence": "I am go to school about fk11.",
+     "corrected": "I go to school about fk11.",
+     "score": 60,
+     "verdict": "正确",
+     "ok": true,
+     "error_type": "",
+     "created_at": "2026-07-14T09:03:00"
+    },
+    {
+     "id": 6,
+     "stage": 1,
+     "week": 1,
+     "day": 2,
+     "word": "fk10",
+     "task_key": "basic:0",
+     "attempt": 1,
+     "sentence": "I am go to school about fk10.",
+     "corrected": "I go to school about fk10.",
+     "score": 54,
+     "verdict": "有错误",
+     "ok": false,
+     "error_type": "三单",
+     "created_at": "2026-07-14T09:00:00"
+    },
+    {
+     "id": 5,
+     "stage": 1,
+     "week": 1,
+     "day": 1,
+     "word": "fk14",
+     "task_key": "basic:4",
+     "attempt": 1,
+     "sentence": "I am go to school about fk14.",
+     "corrected": "I go to school about fk14.",
+     "score": 64,
+     "verdict": "正确",
+     "ok": true,
+     "error_type": "",
+     "created_at": "2026-07-13T09:12:00"
+    },
+    {
+     "id": 4,
+     "stage": 1,
+     "week": 1,
+     "day": 1,
+     "word": "fk13",
+     "task_key": "basic:3",
+     "attempt": 1,
+     "sentence": "I am go to school about fk13.",
+     "corrected": "I go to school about fk13.",
+     "score": 58,
+     "verdict": "正确",
+     "ok": true,
+     "error_type": "",
+     "created_at": "2026-07-13T09:09:00"
+    },
+    {
+     "id": 3,
+     "stage": 1,
+     "week": 1,
+     "day": 1,
+     "word": "fk12",
+     "task_key": "basic:2",
+     "attempt": 1,
+     "sentence": "I am go to school about fk12.",
+     "corrected": "I go to school about fk12.",
+     "score": 65,
+     "verdict": "正确",
+     "ok": true,
+     "error_type": "",
+     "created_at": "2026-07-13T09:06:00"
+    },
+    {
+     "id": 2,
+     "stage": 1,
+     "week": 1,
+     "day": 1,
+     "word": "fk11",
+     "task_key": "basic:1",
+     "attempt": 1,
+     "sentence": "I am go to school about fk11.",
+     "corrected": "I go to school about fk11.",
+     "score": 63,
+     "verdict": "有错误",
+     "ok": false,
+     "error_type": "三单",
+     "created_at": "2026-07-13T09:03:00"
+    },
+    {
+     "id": 1,
+     "stage": 1,
+     "week": 1,
+     "day": 1,
+     "word": "fk10",
+     "task_key": "basic:0",
+     "attempt": 1,
+     "sentence": "I am go to school about fk10.",
+     "corrected": "I go to school about fk10.",
+     "score": 71,
+     "verdict": "正确",
+     "ok": true,
+     "error_type": "",
+     "created_at": "2026-07-13T09:00:00"
+    }
+   ]
+  },
+  "training_summary": {
+   "ok": true,
+   "summary": {
+    "projects": 3,
+    "sessions": 24,
+    "passed": 9,
+    "valid_attempts": 144,
+    "correct": 75,
+    "independent_correct": 51,
+    "attempts": 144,
+    "rate": 52
+   }
+  },
+  "review_due": {
+   "items": [
+    {
+     "id": 79,
+     "kind": "vocab",
+     "ref_key": "fk50",
+     "prompt": "fk50 的中文",
+     "answer": "模拟释义",
+     "stage": 1,
+     "week": 5,
+     "day": 1,
+     "ease": 2.5,
+     "interval": 7.0,
+     "reps": 7,
+     "next_due": "2026-08-11",
+     "last_score": 76,
+     "total_correct": 5,
+     "total_wrong": 6,
+     "last_reviewed": "2026-08-16T00:00:00",
+     "created_at": "2026-08-10T00:00:00"
+    },
+    {
+     "id": 80,
+     "kind": "vocab",
+     "ref_key": "fk51",
+     "prompt": "fk51 的中文",
+     "answer": "模拟释义",
+     "stage": 1,
+     "week": 5,
+     "day": 1,
+     "ease": 2.5,
+     "interval": 7.0,
+     "reps": 7,
+     "next_due": "2026-08-11",
+     "last_score": 76,
+     "total_correct": 7,
+     "total_wrong": 3,
+     "last_reviewed": "2026-08-16T00:00:00",
+     "created_at": "2026-08-10T00:00:00"
+    },
+    {
+     "id": 81,
+     "kind": "vocab",
+     "ref_key": "fk52",
+     "prompt": "fk52 的中文",
+     "answer": "模拟释义",
+     "stage": 1,
+     "week": 5,
+     "day": 1,
+     "ease": 2.5,
+     "interval": 7.0,
+     "reps": 7,
+     "next_due": "2026-08-11",
+     "last_score": 76,
+     "total_correct": 8,
+     "total_wrong": 2,
+     "last_reviewed": "2026-08-16T00:00:00",
+     "created_at": "2026-08-10T00:00:00"
+    },
+    {
+     "id": 100,
+     "kind": "vocab",
+     "ref_key": "fk60",
+     "prompt": "fk60 的中文",
+     "answer": "模拟释义",
+     "stage": 1,
+     "week": 6,
+     "day": 2,
+     "ease": 2.5,
+     "interval": 5.0,
+     "reps": 5,
+     "next_due": "2026-08-19",
+     "last_score": 80,
+     "total_correct": 4,
+     "total_wrong": 1,
+     "last_reviewed": "2026-08-22T00:00:00",
+     "created_at": "2026-08-18T00:00:00"
+    },
+    {
+     "id": 101,
+     "kind": "vocab",
+     "ref_key": "fk61",
+     "prompt": "fk61 的中文",
+     "answer": "模拟释义",
+     "stage": 1,
+     "week": 6,
+     "day": 2,
+     "ease": 2.5,
+     "interval": 5.0,
+     "reps": 5,
+     "next_due": "2026-08-19",
+     "last_score": 80,
+     "total_correct": 4,
+     "total_wrong": 1,
+     "last_reviewed": "2026-08-22T00:00:00",
+     "created_at": "2026-08-18T00:00:00"
+    },
+    {
+     "id": 102,
+     "kind": "vocab",
+     "ref_key": "fk62",
+     "prompt": "fk62 的中文",
+     "answer": "模拟释义",
+     "stage": 1,
+     "week": 6,
+     "day": 2,
+     "ease": 2.5,
+     "interval": 5.0,
+     "reps": 5,
+     "next_due": "2026-08-19",
+     "last_score": 80,
+     "total_correct": 8,
+     "total_wrong": 0,
+     "last_reviewed": "2026-08-22T00:00:00",
+     "created_at": "2026-08-18T00:00:00"
+    },
+    {
+     "id": 115,
+     "kind": "vocab",
+     "ref_key": "fk70",
+     "prompt": "fk70 的中文",
+     "answer": "模拟释义",
+     "stage": 1,
+     "week": 7,
+     "day": 1,
+     "ease": 2.5,
+     "interval": 7.0,
+     "reps": 7,
+     "next_due": "2026-08-25",
+     "last_score": 84,
+     "total_correct": 5,
+     "total_wrong": 2,
+     "last_reviewed": "2026-08-30T00:00:00",
+     "created_at": "2026-08-24T00:00:00"
+    },
+    {
+     "id": 116,
+     "kind": "vocab",
+     "ref_key": "fk71",
+     "prompt": "fk71 的中文",
+     "answer": "模拟释义",
+     "stage": 1,
+     "week": 7,
+     "day": 1,
+     "ease": 2.5,
+     "interval": 7.0,
+     "reps": 7,
+     "next_due": "2026-08-25",
+     "last_score": 84,
+     "total_correct": 8,
+     "total_wrong": 1,
+     "last_reviewed": "2026-08-30T00:00:00",
+     "created_at": "2026-08-24T00:00:00"
+    },
+    {
+     "id": 117,
+     "kind": "vocab",
+     "ref_key": "fk72",
+     "prompt": "fk72 的中文",
+     "answer": "模拟释义",
+     "stage": 1,
+     "week": 7,
+     "day": 1,
+     "ease": 2.5,
+     "interval": 7.0,
+     "reps": 7,
+     "next_due": "2026-08-25",
+     "last_score": 84,
+     "total_correct": 8,
+     "total_wrong": 3,
+     "last_reviewed": "2026-08-30T00:00:00",
+     "created_at": "2026-08-24T00:00:00"
+    },
+    {
+     "id": 136,
+     "kind": "vocab",
+     "ref_key": "fk80",
+     "prompt": "fk80 的中文",
+     "answer": "模拟释义",
+     "stage": 1,
+     "week": 8,
+     "day": 1,
+     "ease": 2.5,
+     "interval": 5.0,
+     "reps": 5,
+     "next_due": "2026-09-01",
+     "last_score": 88,
+     "total_correct": 7,
+     "total_wrong": 0,
+     "last_reviewed": "2026-09-05T00:00:00",
+     "created_at": "2026-08-31T00:00:00"
+    },
+    {
+     "id": 137,
+     "kind": "vocab",
+     "ref_key": "fk81",
+     "prompt": "fk81 的中文",
+     "answer": "模拟释义",
+     "stage": 1,
+     "week": 8,
+     "day": 1,
+     "ease": 2.5,
+     "interval": 5.0,
+     "reps": 5,
+     "next_due": "2026-09-01",
+     "last_score": 88,
+     "total_correct": 5,
+     "total_wrong": 2,
+     "last_reviewed": "2026-09-05T00:00:00",
+     "created_at": "2026-08-31T00:00:00"
+    },
+    {
+     "id": 138,
+     "kind": "vocab",
+     "ref_key": "fk82",
+     "prompt": "fk82 的中文",
+     "answer": "模拟释义",
+     "stage": 1,
+     "week": 8,
+     "day": 1,
+     "ease": 2.5,
+     "interval": 5.0,
+     "reps": 5,
+     "next_due": "2026-09-01",
+     "last_score": 88,
+     "total_correct": 6,
+     "total_wrong": 1,
+     "last_reviewed": "2026-09-05T00:00:00",
+     "created_at": "2026-08-31T00:00:00"
+    },
+    {
+     "id": 1,
+     "kind": "vocab",
+     "ref_key": "fk10",
+     "prompt": "fk10 的中文",
+     "answer": "模拟释义",
+     "stage": 1,
+     "week": 1,
+     "day": 1,
+     "ease": 2.5,
+     "interval": 6.0,
+     "reps": 6,
+     "next_due": "2026-09-06",
+     "last_score": 60,
+     "total_correct": 6,
+     "total_wrong": 4,
+     "last_reviewed": "2026-07-19T00:00:00",
+     "created_at": "2026-07-13T00:00:00"
+    },
+    {
+     "id": 2,
+     "kind": "vocab",
+     "ref_key": "fk11",
+     "prompt": "fk11 的中文",
+     "answer": "模拟释义",
+     "stage": 1,
+     "week": 1,
+     "day": 1,
+     "ease": 2.5,
+     "interval": 6.0,
+     "reps": 6,
+     "next_due": "2026-09-06",
+     "last_score": 60,
+     "total_correct": 8,
+     "total_wrong": 4,
+     "last_reviewed": "2026-07-19T00:00:00",
+     "created_at": "2026-07-13T00:00:00"
+    },
+    {
+     "id": 3,
+     "kind": "vocab",
+     "ref_key": "fk12",
+     "prompt": "fk12 的中文",
+     "answer": "模拟释义",
+     "stage": 1,
+     "week": 1,
+     "day": 1,
+     "ease": 2.5,
+     "interval": 6.0,
+     "reps": 6,
+     "next_due": "2026-09-06",
+     "last_score": 60,
+     "total_correct": 3,
+     "total_wrong": 3,
+     "last_reviewed": "2026-07-19T00:00:00",
+     "created_at": "2026-07-13T00:00:00"
+    },
+    {
+     "id": 19,
+     "kind": "vocab",
+     "ref_key": "fk20",
+     "prompt": "fk20 的中文",
+     "answer": "模拟释义",
+     "stage": 1,
+     "week": 2,
+     "day": 1,
+     "ease": 2.5,
+     "interval": 7.0,
+     "reps": 7,
+     "next_due": "2026-09-06",
+     "last_score": 64,
+     "total_correct": 5,
+     "total_wrong": 7,
+     "last_reviewed": "2026-07-26T00:00:00",
+     "created_at": "2026-07-20T00:00:00"
+    },
+    {
+     "id": 20,
+     "kind": "vocab",
+     "ref_key": "fk21",
+     "prompt": "fk21 的中文",
+     "answer": "模拟释义",
+     "stage": 1,
+     "week": 2,
+     "day": 1,
+     "ease": 2.5,
+     "interval": 7.0,
+     "reps": 7,
+     "next_due": "2026-09-06",
+     "last_score": 64,
+     "total_correct": 6,
+     "total_wrong": 5,
+     "last_reviewed": "2026-07-26T00:00:00",
+     "created_at": "2026-07-20T00:00:00"
+    },
+    {
+     "id": 21,
+     "kind": "vocab",
+     "ref_key": "fk22",
+     "prompt": "fk22 的中文",
+     "answer": "模拟释义",
+     "stage": 1,
+     "week": 2,
+     "day": 1,
+     "ease": 2.5,
+     "interval": 7.0,
+     "reps": 7,
+     "next_due": "2026-09-06",
+     "last_score": 64,
+     "total_correct": 5,
+     "total_wrong": 2,
+     "last_reviewed": "2026-07-26T00:00:00",
+     "created_at": "2026-07-20T00:00:00"
+    },
+    {
+     "id": 40,
+     "kind": "vocab",
+     "ref_key": "fk30",
+     "prompt": "fk30 的中文",
+     "answer": "模拟释义",
+     "stage": 1,
+     "week": 3,
+     "day": 1,
+     "ease": 2.5,
+     "interval": 7.0,
+     "reps": 7,
+     "next_due": "2026-09-06",
+     "last_score": 68,
+     "total_correct": 7,
+     "total_wrong": 2,
+     "last_reviewed": "2026-08-02T00:00:00",
+     "created_at": "2026-07-27T00:00:00"
+    },
+    {
+     "id": 41,
+     "kind": "vocab",
+     "ref_key": "fk31",
+     "prompt": "fk31 的中文",
+     "answer": "模拟释义",
+     "stage": 1,
+     "week": 3,
+     "day": 1,
+     "ease": 2.5,
+     "interval": 7.0,
+     "reps": 7,
+     "next_due": "2026-09-06",
+     "last_score": 68,
+     "total_correct": 9,
+     "total_wrong": 4,
+     "last_reviewed": "2026-08-02T00:00:00",
+     "created_at": "2026-07-27T00:00:00"
+    },
+    {
+     "id": 42,
+     "kind": "vocab",
+     "ref_key": "fk32",
+     "prompt": "fk32 的中文",
+     "answer": "模拟释义",
+     "stage": 1,
+     "week": 3,
+     "day": 1,
+     "ease": 2.5,
+     "interval": 7.0,
+     "reps": 7,
+     "next_due": "2026-09-06",
+     "last_score": 68,
+     "total_correct": 6,
+     "total_wrong": 7,
+     "last_reviewed": "2026-08-02T00:00:00",
+     "created_at": "2026-07-27T00:00:00"
+    },
+    {
+     "id": 61,
+     "kind": "vocab",
+     "ref_key": "fk40",
+     "prompt": "fk40 的中文",
+     "answer": "模拟释义",
+     "stage": 1,
+     "week": 4,
+     "day": 1,
+     "ease": 2.5,
+     "interval": 6.0,
+     "reps": 6,
+     "next_due": "2026-09-06",
+     "last_score": 72,
+     "total_correct": 6,
+     "total_wrong": 5,
+     "last_reviewed": "2026-08-08T00:00:00",
+     "created_at": "2026-08-03T00:00:00"
+    },
+    {
+     "id": 62,
+     "kind": "vocab",
+     "ref_key": "fk41",
+     "prompt": "fk41 的中文",
+     "answer": "模拟释义",
+     "stage": 1,
+     "week": 4,
+     "day": 1,
+     "ease": 2.5,
+     "interval": 6.0,
+     "reps": 6,
+     "next_due": "2026-09-06",
+     "last_score": 72,
+     "total_correct": 5,
+     "total_wrong": 1,
+     "last_reviewed": "2026-08-08T00:00:00",
+     "created_at": "2026-08-03T00:00:00"
+    },
+    {
+     "id": 63,
+     "kind": "vocab",
+     "ref_key": "fk42",
+     "prompt": "fk42 的中文",
+     "answer": "模拟释义",
+     "stage": 1,
+     "week": 4,
+     "day": 1,
+     "ease": 2.5,
+     "interval": 6.0,
+     "reps": 6,
+     "next_due": "2026-09-06",
+     "last_score": 72,
+     "total_correct": 5,
+     "total_wrong": 6,
+     "last_reviewed": "2026-08-08T00:00:00",
+     "created_at": "2026-08-03T00:00:00"
+    }
+   ],
+   "summary": {
+    "vocab": 24
+   }
+  },
+  "week": {
+   "stage": 1,
+   "week": 8,
+   "title": "FAKE8-天气环境-W8",
+   "grammar": "比较级",
+   "topics": "[\"话题8-0\", \"话题8-1\", \"话题8-2\"]",
+   "vocab": [
+    {
+     "word": "fk80"
+    },
+    {
+     "word": "fk81"
+    },
+    {
+     "word": "fk82"
+    },
+    {
+     "word": "fk83"
+    },
+    {
+     "word": "fk84"
+    },
+    {
+     "word": "fk85"
+    },
+    {
+     "word": "fk86"
+    },
+    {
+     "word": "fk87"
+    },
+    {
+     "word": "fk88"
+    },
+    {
+     "word": "fk89"
+    }
+   ]
+  },
+  "quiz": {
+   "grammar": "比较级",
+   "questions": [
+    {
+     "id": 1,
+     "question": "____ work at a bank.",
+     "options": [
+      "I",
+      "Me",
+      "My",
+      "Mine"
+     ],
+     "answer": 0,
+     "tag": "主谓/人称代词"
+    },
+    {
+     "id": 2,
+     "question": "She ____ to school every day.",
+     "options": [
+      "go",
+      "goes",
+      "going",
+      "gone"
+     ],
+     "answer": 1,
+     "tag": "一般现在时三单"
+    },
+    {
+     "id": 3,
+     "question": "We ____ a movie last night.",
+     "options": [
+      "watch",
+      "watches",
+      "watched",
+      "watching"
+     ],
+     "answer": 2,
+     "tag": "一般过去时"
+    },
+    {
+     "id": 4,
+     "question": "There ____ many books on the desk.",
+     "options": [
+      "is",
+      "are",
+      "be",
+      "am"
+     ],
+     "answer": 1,
+     "tag": "there be"
+    },
+    {
+     "id": 5,
+     "question": "I like ____ books.",
+     "options": [
+      "read",
+      "reads",
+      "reading",
+      "to reading"
+     ],
+     "answer": 2,
+     "tag": "like doing"
+    },
+    {
+     "id": 6,
+     "question": "He ____ at home yesterday.",
+     "options": [
+      "is",
+      "am",
+      "was",
+      "were"
+     ],
+     "answer": 2,
+     "tag": "be 过去式"
+    },
+    {
+     "id": 7,
+     "question": "____ you like tea?",
+     "options": [
+      "Does",
+      "Do",
+      "Is",
+      "Are"
+     ],
+     "answer": 1,
+     "tag": "助动词"
+    },
+    {
+     "id": 8,
+     "question": "I have ____ apple.",
+     "options": [
+      "a",
+      "an",
+      "the",
+      "x"
+     ],
+     "answer": 1,
+     "tag": "冠词"
+    },
+    {
+     "id": 9,
+     "question": "She lives ____ Beijing.",
+     "options": [
+      "at",
+      "in",
+      "on",
+      "to"
+     ],
+     "answer": 1,
+     "tag": "介词"
+    },
+    {
+     "id": 10,
+     "question": "They ____ playing now.",
+     "options": [
+      "is",
+      "are",
+      "am",
+      "be"
+     ],
+     "answer": 1,
+     "tag": "现在进行"
+    }
+   ]
+  }
+ }
+}

@@ -261,6 +261,7 @@ textarea{font-family:monospace;font-size:13px;min-height:110px;line-height:1.6}
 </style>
 </head>
 <body>
+<div id="demoBannerHost"></div>
 <div class="topbar">
   <div class="brand">English OS</div>
   <button class="prog-pill" id="topProg" onclick="openProg()">阶段0 · W1 · D1</button>
@@ -307,6 +308,54 @@ function promptEosToken() {
 // 数据走同源后端：页面与后端同域部署，所有 /api 请求走相对路径
 const API_BASE = '';
 
+/* ---------- 演示模式（?demo=1）----------
+   网址带 demo=1 时，所有请求自动带上这个参数：
+     - 读接口 → 后端返回预生成的 8 周快照（不查库）
+     - 写接口 → 后端直接 403，一个字都不会写进你的真实数据
+   去掉参数就回到真实数据。看完想彻底删掉这个功能，
+   git revert 那个 commit 即可，没有任何数据残留。 */
+/* 演示模式开关：仅认网址参数 ?demo=1，去掉就回真实数据。
+   用 try 包裹，避免在非浏览器环境（如 Node 测试桩）里因
+   URLSearchParams / location 不存在而直接抛错。 */
+const DEMO = (function(){
+  try { return (new URLSearchParams(location.search).get('demo')||'') === '1'; }
+  catch(e){ return false; }
+})();
+
+function withDemo(p){
+  if(!DEMO) return p;
+  return p + (p.indexOf('?') >= 0 ? '&' : '?') + 'demo=1';
+}
+
+function demoBanner(){
+  if(!DEMO) return '';
+  return `<div style="position:sticky;top:0;z-index:9999;background:#fef3c7;
+    border-bottom:1px solid #fcd34d;color:#92400e;padding:8px 12px;
+    font-size:12.5px;line-height:1.5;text-align:center">
+    <b>演示模式</b> · 下面是 8 周示例数据，仅供查看，<b>不会保存</b>。
+    <a href="./" style="color:#b45309;font-weight:700">退出演示</a>
+  </div>`;
+}
+
+/* 页面内的「示例数据 / 真实数据」切换条。
+   不是独立页面 —— 就长在总结页和薄弱项页顶上，点了整页换数据源。
+   演示数据不查库、不写库，所以切过去看多少遍都不会弄脏真实记录。 */
+function demoSwitchHtml(){
+  if(DEMO){
+    return `<div style="background:#fef3c7;border:1px solid #fcd34d;border-radius:10px;
+      padding:9px 11px;margin:6px 0;font-size:12.5px;color:#92400e;line-height:1.55">
+      🧪 <b>正在看 8 周示例数据</b>（不会保存、不进你的库）
+      <a href="./" style="color:#b45309;font-weight:700;margin-left:6px">← 切回真实数据</a>
+    </div>`;
+  }
+  return `<div style="background:#f1f5f9;border:1px solid #e2e8f0;border-radius:10px;
+    padding:9px 11px;margin:6px 0;font-size:12.5px;color:#475569;line-height:1.55">
+    🧪 想先看看有数据的样子？
+    <a href="?demo=1" style="color:var(--primary);font-weight:700;margin-left:4px">切到 8 周示例数据 →</a>
+    <span style="color:var(--muted)">（只读，不写库）</span>
+  </div>`;
+}
+
 async function apiRaw(p, opt) {
   // 真正的 fetch：带 token、透传 opt
   const headers = Object.assign({}, (opt && opt.headers) || {});
@@ -316,7 +365,7 @@ async function apiRaw(p, opt) {
     headers['X-Auth-Token'] = tok;
   }
   const finalOpt = Object.assign({}, opt || {}, { headers });
-  const r = await fetch(API_BASE + '/api' + p, finalOpt);
+  const r = await fetch(API_BASE + '/api' + withDemo(p), finalOpt);
   return r;
 }
 
@@ -2622,6 +2671,7 @@ pages.errors=async function(el){
     </div>
     <div class="sub" style="margin-top:8px">只列会改变后续学习安排的能力项（近30天有错 ${active} 类）。
       拼错单词不算薄弱项——那只是这个词没记住，交给闪卡星级。</div>
+    ${demoSwitchHtml()}
     ${weakHtml}
 
     <div class="card" style="margin-top:12px;background:var(--primary-bg)">
@@ -3709,6 +3759,7 @@ pages.sum=async function(el){
 
   el.innerHTML=`
   <h1>📊 学习总结</h1>
+  ${demoSwitchHtml()}
   <div style="display:flex;gap:7px;margin:6px 0">
     ${tabBtn('week','📅 周报')}
     ${tabBtn('month','🗓 月报')}
@@ -4644,6 +4695,12 @@ window.addEventListener('unhandledrejection', e => {
     <button class="btn" onclick="location.reload()">重新加载</button>
   </div>`;
 });
+/* 演示模式黄条：DEMO 为真时插到页面最顶上。
+   放在 render('learn') 之前，保证一进页面就能看到，不会误以为是真实数据。 */
+(function(){
+  var host=document.getElementById('demoBannerHost');
+  if(host) host.innerHTML=demoBanner();
+})();
 render('learn');
 </script>
 <script type="text/plain" id="tplPromptDiag">

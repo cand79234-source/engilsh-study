@@ -128,6 +128,62 @@ def _weak_from_sentences(conn, limit=5):
              "last_at": _row(r).get("last")} for r in rows]
 
 
+def _weak_from_expression(conn, limit=5):
+    """「表达丰富度」薄弱项 —— 语法没错，但一直在说很短、很单调的句子。
+
+    语法批改只能判对错，判不出「你这三个月一直在写 I like ... 三词句」。
+    可这两件事同样该进薄弱项，否则学习者会一直停在舒适区：
+    每句都 PASS，但永远长不出从句。
+
+    两个信号（都要求该词造够 3 句才统计，样本太少不冤枉人）：
+      - 短句占比 >= 60%（少于 10 个词）  → 表达过于单一
+      - I 开头占比 >= 70%                → 句式单一
+    """
+    try:
+        rows = conn.execute(
+            "SELECT word, original, created_at FROM sentences "
+            "WHERE word IS NOT NULL AND word <> '' "
+            "AND original IS NOT NULL AND original <> '' "
+            "ORDER BY created_at DESC LIMIT 2000").fetchall()
+    except Exception:
+        return []
+
+    import re as _re
+    buckets = {}
+    for r in rows:
+        d = _row(r)
+        w = (d.get("word") or "").strip()
+        if not w:
+            continue
+        b = buckets.setdefault(w, {"n": 0, "short": 0, "i_head": 0})
+        s = (d.get("original") or "").strip()
+        b["n"] += 1
+        if len(_re.findall(r"[A-Za-z']+", s)) < 10:
+            b["short"] += 1
+        if _re.match(r"^\s*i['\s]", s.lower()):
+            b["i_head"] += 1
+
+    out = []
+    for w, b in buckets.items():
+        if b["n"] < 3:
+            continue
+        short_rate = round(b["short"] / b["n"] * 100)
+        i_rate = round(b["i_head"] / b["n"] * 100)
+        if short_rate >= 60 and i_rate >= 70:
+            kind, detail = "both", f"{b['n']} 句里有 {b['short']} 句不到 10 个词、{b['i_head']} 句用 I 开头"
+        elif short_rate >= 60:
+            kind, detail = "short", f"{b['n']} 句里有 {b['short']} 句不到 10 个词"
+        elif i_rate >= 70:
+            kind, detail = "i_head", f"{b['n']} 句里有 {b['i_head']} 句用 I 开头"
+        else:
+            continue
+        out.append({"word": w, "count": b["n"], "kind": kind,
+                    "short_rate": short_rate, "i_head_rate": i_rate,
+                    "detail": detail})
+    out.sort(key=lambda x: (-max(x["short_rate"], x["i_head_rate"]), -x["count"]))
+    return out[:limit]
+
+
 def _weak_from_reviews(conn, limit=5):
     """复习里反复答错的卡（按错误率排序）。"""
     try:
@@ -230,6 +286,7 @@ def build_weakness():
     quiz = _weak_from_quizzes(conn)
     listen = _weak_from_listening(conn)
     train = _weak_from_training(conn)
+    expr = _weak_from_expression(conn)
     conn.close()
 
     recs = []
@@ -263,6 +320,22 @@ def build_weakness():
                      "detail": f"练了 {t.get('sessions')} 次仍未通过" +
                                (f"，正确率 {t.get('rate')}%" if t.get("rate") is not None else ""),
                      "advice": "换个角度重新练，或先回错误本把基础知识点补上。"})
+    # 新增来源：表达丰富度（语法没错，但一直在写很短 / 很单调的句子）
+    for x in expr[:3]:
+        if x["kind"] == "both":
+            label = "表达过于单一 · " + str(x["word"])
+            advice = ("这个词的句子又短又全是 I 开头。试着换个主语（My team / "
+                      "The work），再加个 because 说清原因，写到 10 个词以上。")
+        elif x["kind"] == "short":
+            label = "表达过于单一 · " + str(x["word"])
+            advice = ("句子本身没错，但一直很短。加个 because 说原因，"
+                      "或补上时间 / 地点，一句话就能带出两段信息。")
+        else:
+            label = "句式单一 · " + str(x["word"])
+            advice = ("几乎每句都用 I 开头。换成 My team / The work / It 当主语，"
+                      "句式立刻丰富起来，也更像真实的职场表达。")
+        recs.append({"kind": "expression", "label": label,
+                     "detail": x["detail"], "advice": advice})
 
     return {
         # 向后兼容：前端原有的三个字段一个不少
@@ -276,6 +349,7 @@ def build_weakness():
             "quizzes": quiz,
             "listening": listen,
             "training": train,
+            "expression": expr,
         },
     }
 

@@ -198,10 +198,17 @@ def _parse_word_header(line):
         if "★" in rest or "*" in rest:
             focus = True
             rest = re.sub(r"[★*]", "", rest).strip()
+        # 这条路径是「单词 + 空格 + 释义」（无 — 分隔符），音标同样可能紧随单词
+        phonetic = ""
+        m_ipa = _IPA_SEG_RE.search(rest)
+        if m_ipa:
+            phonetic = m_ipa.group(0).strip().strip("[]").strip()
+            rest = _IPA_SEG_RE.sub(" ", rest).strip()
         pos, cn = _split_pos_and_cn(rest) if rest else ("", "")
         if rest and not cn:
             cn = rest
-        return {"word": m.group(1), "meaning": cn or "", "pos": pos, "focus": focus}
+        return {"word": m.group(1), "meaning": cn or "", "pos": pos,
+                "focus": focus, "phonetic": phonetic}
     return None
 
 
@@ -228,9 +235,18 @@ def _is_word_header_line(line):
 def _build(left, right):
     left = left.strip()
     right = right.strip()
-    # 剥离左侧的 IPA 音标。原正则 ^([A-Za-z][A-Za-z'\-]*)...$ 要求 left
-    # 只能是纯单词，"continue /kənˈtɪnjuː/" 拖着音标 → 不匹配 → 返回 None
-    # → 整行被丢进 skipped → 一个词都导不进去。
+    # 先**取出**左侧的 IPA 音标（AI 生成的词表几乎每行都带），再剥离。
+    #   原正则 ^([A-Za-z][A-Za-z'\-]*)...$ 要求 left 只能是纯单词，
+    #   "continue /kənˈtɪnjuː/" 拖着音标 → 不匹配 → 返回 None → 一个词都导不进去。
+    #   当年的修法是把音标直接丢了，代价是导入的词全都没音标，只能靠
+    #   ECDICT 词典事后补 —— 词典里没有的词就永远空着，用户看到的就是
+    #   「有些有音标、有些没有」。现在改成提取保留。
+    phonetic = ""
+    m_ipa = _IPA_SEG_RE.search(left)
+    if m_ipa:
+        phonetic = m_ipa.group(0).strip()
+        # 去掉可能包在外面的方括号，只留 /.../
+        phonetic = phonetic.strip("[]").strip()
     left = _IPA_SEG_RE.sub(" ", left).strip()
     # ★ 重点词标记：用户在单词行打 ★，表示"这个词要重点升级"
     focus = False
@@ -242,7 +258,8 @@ def _build(left, right):
     if not m or not _is_english_word(m.group(1)):
         return None
     pos, cn = _split_pos_and_cn(right)
-    return {"word": m.group(1), "meaning": cn or "", "pos": pos, "focus": focus}
+    return {"word": m.group(1), "meaning": cn or "", "pos": pos,
+            "focus": focus, "phonetic": phonetic}
 
 
 # ---------------- 周/组信息提取（通用） ----------------

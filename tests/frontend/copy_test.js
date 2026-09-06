@@ -71,7 +71,7 @@ function fakeFetch(url, opt) {
 const ctx = {
   document, fetch: fakeFetch, console,
   navigator: { clipboard: { writeText: (t) => { captured.push(t); return Promise.resolve(); } } },
-  window: { isSecureContext: true },
+  window: { isSecureContext: true, addEventListener() {} },
   setTimeout, clearTimeout, requestAnimationFrame: (f) => f(),
   Date, JSON, Math, String, Number, Object, Array, RegExp, Error, Promise,
   parseInt, parseFloat, encodeURIComponent, decodeURIComponent, isNaN,

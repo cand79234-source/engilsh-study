@@ -34,8 +34,9 @@ def test_case1_comoany_not_pass():
     wheres = [e["where"] for e in r["errors"]]
     # 必须至少识别出拼写错误 comoany→company
     assert any("comoany" in w for w in wheres), wheres
-    # 必须识别句首 l→I
-    assert any(w == "l" for w in wheres), wheres
+    # 句首小写 l 不再判错（产品决定：把注意力放在表达上，不纠缠大小写），
+    # 所以这里断言「不能」把它当拼写错误报出来。见 ai_service._r_i_l。
+    assert not any(w == "l" for w in wheres), wheres
 
 
 # =====================================================================
@@ -58,7 +59,8 @@ def test_case3_overseas_department_and_l():
     assert r["ok"] is False, r
     assert r["status"] == "NEEDS_REVIEW", r
     wheres = [e["where"] for e in r["errors"]]
-    assert any(w == "l" for w in wheres), wheres
+    # 句首小写 l 不再判错（同上），真正该抓的是缺冠词
+    assert not any(w == "l" for w in wheres), wheres
     assert any("overseas department" in w for w in wheres), wheres
 
 
