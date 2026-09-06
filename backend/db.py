@@ -54,6 +54,17 @@ _IGNORE_CONFLICT = {
     "collocations": "word, phrase",
 }
 
+# INSERT OR REPLACE 的冲突列（= 各表 UNIQUE 约束列）。
+# PostgreSQL 没有 INSERT OR REPLACE 这种语法（SQLite 专有），
+# 官方解析器会直接报 syntax error at or near "OR"。
+# 之前漏了这条翻译，导致凡是用了 INSERT OR REPLACE 的接口在
+# PostgreSQL（Render/Neon）上必定 500，本地 SQLite 却一切正常——
+# 所以这类问题在本机测试里永远测不出来。
+_REPLACE_CONFLICT = {
+    "listening_materials": "stage, week, day",
+    "listening_progress": "stage, week, day",
+}
+
 
 def _tr(sql):
     """把 sqlite 风格 SQL 转成 Postgres 风格。sqlite 模式不会调用本函数。"""
@@ -61,9 +72,47 @@ def _tr(sql):
         tbl, cols, vals = m.group(1), m.group(2), m.group(3)
         conflict = _IGNORE_CONFLICT.get(tbl, cols.split(",")[0].strip())
         return f"INSERT INTO {tbl} ({cols}) VALUES ({vals}) ON CONFLICT ({conflict}) DO NOTHING"
+
+    def repl_replace(m):
+        tbl, cols, vals = m.group(1), m.group(2), m.group(3)
+        conflict = _REPLACE_CONFLICT.get(tbl, cols.split(",")[0].strip())
+        conflict_cols = {c.strip() for c in conflict.split(",")}
+        # 冲突列本身不进 SET（它本来就是用来定位那一行的），
+        # 其余列全部更新为本次传入的值，等价于 SQLite 的 REPLACE 语义。
+        updates = [f"{c.strip()}=excluded.{c.strip()}"
+                   for c in cols.split(",") if c.strip() not in conflict_cols]
+        if not updates:      # 全是冲突列 → 没有可更新的，退化成 DO NOTHING
+            return (f"INSERT INTO {tbl} ({cols}) VALUES ({vals}) "
+                    f"ON CONFLICT ({conflict}) DO NOTHING")
+        return (f"INSERT INTO {tbl} ({cols}) VALUES ({vals}) "
+                f"ON CONFLICT ({conflict}) DO UPDATE SET " + ", ".join(updates))
+
     sql = re.sub(
         r"INSERT OR IGNORE INTO (\w+)\s*\(([^)]+)\)\s*VALUES\s*\(([^)]*)\)",
         repl, sql, flags=re.IGNORECASE)
+    sql = re.sub(
+        r"INSERT OR REPLACE INTO (\w+)\s*\(([^)]+)\)\s*VALUES\s*\(([^)]*)\)",
+        repl_replace, sql, flags=re.IGNORECASE)
+
+    def repl_nocols(m):
+        # 省略列清单的写法：INSERT OR IGNORE INTO t VALUES (...)
+        # 上面两条正则都要求 VALUES 前有 (cols)，这条漏网
+        # （seed_ecdict.py 里就有一处）。IGNORE 语义 = 任何约束冲突都跳过，
+        # 对应 PG 的裸 ON CONFLICT DO NOTHING（可以不指定冲突目标）。
+        # REPLACE 没法这么写 —— DO UPDATE 必须带冲突目标，
+        # 只能靠表名映射，映射不到就原样返回，让它在启动时显式报错，
+        # 也好过悄悄生成一条错误的 SQL。
+        kind, tbl, vals = m.group(1).upper(), m.group(2), m.group(3)
+        if kind == "IGNORE":
+            return f"INSERT INTO {tbl} VALUES ({vals}) ON CONFLICT DO NOTHING"
+        conflict = _REPLACE_CONFLICT.get(tbl)
+        if not conflict:
+            return m.group(0)
+        return f"INSERT INTO {tbl} VALUES ({vals}) ON CONFLICT ({conflict}) DO NOTHING"
+
+    sql = re.sub(
+        r"INSERT OR (IGNORE|REPLACE) INTO (\w+)\s*VALUES\s*\(([^)]*)\)",
+        repl_nocols, sql, flags=re.IGNORECASE)
     sql = sql.replace("?", "%s")
     sql = re.sub(r"INTEGER PRIMARY KEY AUTOINCREMENT", "SERIAL PRIMARY KEY", sql, flags=re.IGNORECASE)
     # SQLite 的 datetime('now') 默认值在 Postgres 下无效 → 统一翻成 CURRENT_TIMESTAMP
