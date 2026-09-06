@@ -1339,7 +1339,7 @@ def analyze(sentence, word="", task_grammar="", task_prompt=""):
         "task_issues": [{"type": i["type"], "where": i["where"],
                           "correct": i["correct"], "explanation": i["explanation"]}
                         for i in task_issues],
-        "optimizations": _optimizations(raw, low) if ok else [],
+        "optimizations": _optimizations(raw, low),
     }
 
 
