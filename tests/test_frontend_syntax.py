@@ -32,7 +32,7 @@ def _inline_js(path):
         re.DOTALL | re.IGNORECASE)
     return "\n;\n".join(
         body for attrs, body in blocks
-        if "text/plain" not in attrs and "text/template" not in attrs)
+        if "type=" not in attrs)
 
 
 @pytest.mark.skipif(shutil.which("node") is None, reason="需要 node 才能静态校验")

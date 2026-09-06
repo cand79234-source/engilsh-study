@@ -1074,9 +1074,6 @@ RULES = [
     _r_colloc,           # go work -> go to work
     _r_article,          # a apple -> an apple
     _r_plural,           # two friend -> two friends
-    _r_modal_to,         # I can to swim -> I can swim
-    _r_to_gerund,        # like to playing -> like to play / like playing
-    _r_s3_with_i,        # I likes -> I like
 ]
 
 

@@ -642,14 +642,12 @@ function renderWords(words){
         <div><div class="en">${esc(w.word)} ${w.phonetic?`<span class="ph">${esc(w.phonetic)}</span>`:''}</div><div class="cn">${esc(w.meaning)||''}</div></div>
         <div style="display:flex;align-items:center;gap:7px">
           <span class="spk" data-role="spk" title="听发音" data-act="speak" data-val="${esc(w.word)}">🔊</span>
-          ${w.pos?`<span class="badge" style="${done?'background:#dcfce7;color:var(--green)':''}">${esc(w.pos)}</span>`:''}
           ${done?'✅':''}
         </div>
       </div>
       ${isOpen?`<div class="detail">
         <div style="display:flex;justify-content:flex-end;margin-bottom:6px"><button class="btn ghost sm" data-act="toggleW" data-val="${esc(w.word)}">↑ 收起</button></div>
         <div class="row" style="display:flex;align-items:center;gap:6px"><b>${esc(w.word)}</b>
-          ${w.pos?`<span style="color:var(--muted)">· ${esc(w.pos)}</span>`:''}
           <span style="color:var(--muted)">/${esc(w.meaning)}/</span>
           <span class="spk" style="margin-left:auto" data-act="speak" data-val="${esc(w.word)}">🔊</span></div>
         ${collocs.length?`<div class="row"><span class="lbl">固定搭配 · 点开看解释</span>
@@ -789,8 +787,7 @@ async function wordLookup(word){
     const body=ov.querySelector('#wlookup_body');
     if(!r||!r.found){ body.textContent='本地词典未收录该词'; return; }
     const ph=r.phonetic?`/${esc(r.phonetic)}/ `:'';
-    const pos=r.pos?`<span class="badge" style="background:var(--primary-bg);color:var(--primary)">${esc(r.pos)}</span> `:'';
-    body.innerHTML=`<div style="font-size:15px;line-height:1.7;margin-top:4px">${pos}${ph}${esc(r.meaning)||'（无释义）'}</div>
+    body.innerHTML=`<div style="font-size:15px;line-height:1.7;margin-top:4px">${ph}${esc(r.meaning)||'（无释义）'}</div>
       <button class="btn ghost sm" style="margin-top:10px" data-act="wordProfile" data-val="${esc(word)}">📖 查看这个词的学习档案</button>`;
   }catch(e){
     const body=ov.querySelector('#wlookup_body'); if(body)body.textContent='查询失败，请重试';
@@ -2258,8 +2255,7 @@ function renderFlashcard(el){
     ${isZh2En
       ? `<div style="font-size:31px;font-weight:800">${esc(c.word)}</div>
          ${c.phonetic?`<div class="sub" style="margin-top:5px">${esc(c.phonetic)}</div>`:''}`
-      : `<div style="font-size:20px;font-weight:700;line-height:1.45">${esc(c.meaning||'（暂无释义）')}</div>
-         ${c.pos?`<div class="sub" style="margin-top:5px">${esc(c.pos)}</div>`:''}`}
+      : `<div style="font-size:20px;font-weight:700;line-height:1.45">${esc(c.meaning||'（暂无释义）')}</div>`}
     ${colsHtml}
     ${exsHtml}
   `;
