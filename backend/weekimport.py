@@ -292,6 +292,9 @@ def _trigger_scenarios(new_vocab, stage, week):
     - 后台线程跑：批量生成不阻塞导入结果返回，用户不需要在页面前干等
     - 已生成过的词自动跳过，不重复烧 token
     - AI 只往 word_scenarios 写情景文字，绝不碰导入列表、周次、进度
+    - **只补 Day1 那批**（2026-09-10 改）：导入通常是整周 120 词，全部一次补
+      要 240 次 AI 调用，又慢又贵；而用户当天只学 Day1。其余的天数交给
+      scenario.backfill_step 按天慢慢补（页面访问 / 外部定时器驱动）。
     """
     try:
         import scenario
@@ -300,12 +303,24 @@ def _trigger_scenarios(new_vocab, stage, week):
         words = [v.get("word") for v in (new_vocab or []) if v.get("word")]
         if not words:
             return
+        # 只取第一天（Day1）的词；分组信息缺失时退回全部（行为与旧版一致）
+        try:
+            _days = sorted({int(v.get("day") or 0) for v in (new_vocab or [])
+                            if v.get("day")})
+        except Exception:
+            _days = []
+        if _days:
+            first = _days[0]
+            only = [v.get("word") for v in (new_vocab or [])
+                    if v.get("word") and int(v.get("day") or 0) == first]
+        else:
+            only = words
         grammar = ""
         try:
             grammar = (svc.get_week(stage, week) or {}).get("grammar") or ""
         except Exception:
             pass
-        scenario.spawn(scenario.ensure_for_words, words, grammar)
+        scenario.spawn(scenario.ensure_for_words, words, grammar, 3, only)
     except Exception as e:
         # 情景是增强项：生成失败绝不能影响导入本身的结果
         print("[weekimport] 情景生成触发失败（不影响导入）:", e)

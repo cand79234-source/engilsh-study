@@ -73,6 +73,11 @@ init_db()
 # ---------- 健康检查（不鉴权，供 Render / 保活用） ----------
 @app.get("/api/health")
 def health():
+    # UptimeRobot 每 5 分钟戳一次这里做保活 → 顺手推进"按天补齐"。
+    # 情景是 AI 生成的，导入时只保当天那批，后面几天的量靠这里慢慢补
+    # （详见 scenario.backfill_step：今天那批优先，齐了再按 (week, day) 往后）。
+    # spawn 到后台线程，不阻塞也不拖慢健康检查本身。
+    _scenario.spawn(_scenario.backfill_step)
     return {"ok": True, "auth_required": bool(ACCESS_TOKEN)}
 
 
@@ -129,7 +134,7 @@ def stealth_next():
     grammar = t.get("grammar") or ""
     sc = _scenario.with_label(_scenario.pick(w.get("word") or ""))
     if sc:
-        # 库存快见底时后台补 3 条（§2.4），不阻塞这次返回
+        # 该词哪一层缺就补哪一层（不阻塞本次返回）
         _scenario.refill_if_low(w.get("word") or "", grammar)
     return {"ok": True, "done": False, "word": w, "scenario": sc,
             "grammar": grammar, "progress": prog}
@@ -148,8 +153,12 @@ def scenario_next(word: str = "", cur: int = 0, tier: str = ""):
         return JSONResponse({"ok": False, "error": "缺少参数 word"})
     sc = _scenario.with_label(_scenario.pick(w, exclude_id=cur, tier=tier))
     if not sc:
+        # 这个词还没有该层的情景 —— 顺手推进一步"按天补齐"（不阻塞本次返回）。
+        # 注意：**只有真的一条都没有时**才在这里补，正常取景（看一眼）绝不触发，
+        # 避免"刷一下页面就在后台烧一堆 token"。
+        _scenario.spawn(_scenario.backfill_step)
         return {"ok": True, "scenario": None,
-                "message": "这个词还没有情景（导入时会自动生成）"}
+                "message": "这个词还没有情景，正在后台生成，稍后点 🔁 再看"}
     _scenario.refill_if_low(w)
     return {"ok": True, "scenario": sc}
 

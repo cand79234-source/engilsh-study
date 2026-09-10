@@ -245,25 +245,46 @@ def _lookup_word(word):
     return "", ""
 
 
-def generate_for_word(word, grammar="", n=GEN_COUNT, extra=None):
-    """给一个词生成首批情景并入库。返回新增条数（0 = 库里已够 / AI 不可用 / 失败）。
+def generate_for_word(word, grammar="", n=GEN_COUNT, extra=None, need_tier=None):
+    """给一个词生成情景并入库。返回新增条数（0 = 库里已够 / AI 不可用 / 失败）。
 
     grammar 只作为**背景参考**交给模型（让它知道这周在学什么，选场景时更贴），
     但明确要求它**不要把语法写进情景文字**——语法要求由页面统一显示。
 
     extra：同批的其他学习词（含复习词），只在 large 大情景里"能自然嵌入就带上"，
     嵌不进去不许硬造事件。没有就传 None，行为与以前一致。
+
+    need_tier（2026-09-10 新增）：只补某一层（"small" / "large"）。
+        页面是按 tier 精确取景的（基础句只取 small、组合句只取 large），
+        以前"够不够"只看总数，于是常出现「有 3 条 small 就以为够了、
+        large 永远 0 条」——组合句一直没情景就是这么来的。
+        传了 need_tier 就**只补这一层**，并跳过其它层的库存判断。
+        传 None 则退回旧行为（small/large 都生成，用于导入时的首批）。
     """
     word = (word or "").strip().lower()
     if not word or not ai_correct.ai_enabled():
         return 0
+    nt = (str(need_tier) if need_tier else "").strip().lower() or None
+    if nt not in ("small", "large"):
+        nt = None
     with _busy_lock:
-        if word in _busy:
+        # 同一词 + 同一层正在生成中就跳过；不同层互不阻塞
+        busy_key = "%s|%s" % (word, nt or "all")
+        if busy_key in _busy:
             return 0
-        _busy.add(word)
+        _busy.add(busy_key)
     try:
-        if count_of(word) >= MIN_POOL:
-            return 0            # 已生成过 —— 不重复烧 token
+        if nt:
+            # 只补指定层：该层够了就退（其它层缺不缺不归这次管）
+            if count_of(word, nt) >= TIER_TARGET.get(nt, MIN_POOL):
+                return 0
+        else:
+            # 不指定层（导入时的首批）：**两层都够**才算够。
+            # 这里以前是 `count_of(word) >= MIN_POOL`（只看总数），
+            # 某词若只有 3 条 large 就会被误判"够了"、永远不补 small。
+            if all(count_of(word, x) >= TIER_TARGET.get(x, MIN_POOL)
+                   for x in ("small", "large")):
+                return 0
         meaning, pos = _lookup_word(word)
         user = "目标词：%s" % word
         if meaning or pos:
@@ -294,17 +315,37 @@ def generate_for_word(word, grammar="", n=GEN_COUNT, extra=None):
         # ⚠️ 大情景（large）不参与这个"按顺序分角度"的分配（2026-09-10 改）。
         # 原因：大情景的本质是**一条连续的故事线**，要求它同时承担 4 个不同
         # 生活角度，模型只能靠"硬编十几二十件事"来满足 —— 这就是流水账的来源。
-        # 所以角度只分给 small / medium，large 专心讲一件事讲完整。
+        # 所以角度只分给 small，large 专心讲一件事讲完整。
         _angs = angle_order_for_word(word, n)
         if _angs and len(_angs) > 1:
-            _small_med = max(1, len(_angs) - 1)      # 留一条给 large，不参与分配
-            user += ("\n其中 small / medium 这 %d 条情景，请分别取材于：%s。"
-                     "只用来决定每条往哪个生活方向取料：不要把角度名写进情景文字，"
-                     "也不要因此规定时态或句式（上面那几条禁止项在这里一样生效）。"
-                     "**large 大情景不参与这个分配** —— 它只要写一件连续发生的事，"
-                     "从头到尾讲完就行，不要为了凑角度硬加情节。"
-                     % (_small_med, " / ".join(_angs[:_small_med])))
-        user += "\n请生成 %d 条情景（small / medium / large 都要有）。" % n
+            if nt == "large":
+                # 只补大情景：不需要角度（它们本来就是同一条故事线）
+                pass
+            elif nt == "small":
+                user += ("\n这些情景请分别取材于：%s。"
+                         "只用来决定每条往哪个生活方向取料：不要把角度名写进情景文字，"
+                         "也不要因此规定时态或句式（上面那几条禁止项在这里一样生效）。"
+                         % " / ".join(_angs[:n]))
+            else:
+                _small_only = max(1, len(_angs) - 1)     # 留一条给 large，不参与分配
+                user += ("\n其中 small 这 %d 条情景，请分别取材于：%s。"
+                         "只用来决定每条往哪个生活方向取料：不要把角度名写进情景文字，"
+                         "也不要因此规定时态或句式（上面那几条禁止项在这里一样生效）。"
+                         "**large 大情景不参与这个分配** —— 它只要写一件连续发生的事，"
+                         "从头到尾讲完就行，不要为了凑角度硬加情节。"
+                         % (_small_only, " / ".join(_angs[:_small_only])))
+
+        # 生成配额：只产 small / large（medium 是删掉升级句之后的死层，
+        # 页面没有任何地方取它，继续生成纯属白烧额度）。
+        if nt == "large":
+            user += "\n请生成 %d 条情景，tier 全部填 \"large\"。" % n
+        elif nt == "small":
+            user += "\n请生成 %d 条情景，tier 全部填 \"small\"。" % n
+        else:
+            _half = max(1, n // 2)
+            user += ("\n请生成 %d 条情景：其中 %d 条 tier 填 \"small\"、"
+                     "%d 条 tier 填 \"large\"（**不要 medium**）。"
+                     % (n, _half, max(1, n - _half)))
 
         data, err = ai_correct.ark_json(_SYS, user, max_tokens=1400,
                                         temperature=0.8, tag="scenario")
@@ -327,6 +368,9 @@ def generate_for_word(word, grammar="", n=GEN_COUNT, extra=None):
                 tier = str(it.get("tier") or "small").strip().lower()[:10]
                 if tier not in ("small", "medium", "large"):
                     tier = "small"
+                # 认准要补的那层：AI 偶尔会无视配额，这里兜一道，别把货入错层
+                if nt and tier != nt:
+                    continue
                 conn.execute(
                     "INSERT INTO word_scenarios (word, tier, prompt, grammar, used_count, created_at)"
                     " VALUES (?,?,?,?,0,?)",
@@ -346,35 +390,68 @@ def generate_for_word(word, grammar="", n=GEN_COUNT, extra=None):
             except Exception:
                 pass
         if saved:
-            print("[scenario] %s 生成 %d 条情景" % (word, saved))
+            print("[scenario] %s 生成 %d 条情景%s"
+                  % (word, saved, ("（只补 %s）" % nt) if nt else ""))
         return saved
     finally:
         with _busy_lock:
-            _busy.discard(word)
+            _busy.discard(busy_key)
 
 
 # ------------------------------------------------------------------
 # 查询 / 轮换
 # ------------------------------------------------------------------
-def count_of(word):
-    """该词库里已有多少条情景。"""
+def count_of(word, tier=None):
+    """该词库里已有多少条情景（可按 tier 过滤）。
+
+    ⚠️ 2026-09-10 加 tier 参数：以前只数总数，导致「有 3 条 small 就以为够了」，
+    于是 large 永远是 0 条，组合句一直没情景。页面是**按 tier 精确取景**的
+    （基础句只取 small、组合句只取 large），所以"够不够"必须按层判断。
+    """
     try:
         conn = get_conn()
-        row = conn.execute(
-            "SELECT COUNT(*) AS n FROM word_scenarios WHERE word=?",
-            ((word or "").strip().lower(),)).fetchone()
+        w = (word or "").strip().lower()
+        t = (str(tier) if tier else "").strip().lower() or None
+        if t:
+            row = conn.execute(
+                "SELECT COUNT(*) AS n FROM word_scenarios WHERE word=? AND tier=?",
+                (w, t)).fetchone()
+        else:
+            row = conn.execute(
+                "SELECT COUNT(*) AS n FROM word_scenarios WHERE word=?",
+                (w,)).fetchone()
         conn.close()
         return int(row["n"] if row and row["n"] is not None else 0)
     except Exception:
         return 0
 
 
-def pick(word, exclude_id=0, tier=None):
-    """取一条情景：used_count 最少的优先（最少用过 → 避免连着重复）。
+# 每个 tier 的库存目标：低于它就该补。页面只消费 small（基础句）和
+# large（组合句），medium 是删掉升级句之后的死层，不再补。
+TIER_TARGET = {"small": 3, "large": 3}
 
-    取到就把 used_count +1。exclude_id 用于 🔁 换场景：跳过当前正在看的这条。
-    tier 用于按题型分层取景：basic=small / upgrade=medium / combo=large；
-    指定层级无库存时自动退回不过滤（保证有情景显示，不开天窗）。
+
+def pick(word, exclude_id=0, tier=None):
+    """取一条情景：**纯轮换，不消耗库存**（2026-09-10 改）。
+
+    ⚠️ 这里以前是「取一条就把 used_count +1」，问题很大：
+       前端每渲染一次页面、每点一次 🔁 都会调进来，于是**用户只是"看一眼"
+       就被记成"用掉一条"**，紧接着 refill_if_low 数到"没用过的"变少，
+       误判库存不足，后台反复重新生成 —— 用户看到的现象就是"我都没写，
+       它怎么一直在生成新的"。语义从一开始就错了：
+           used_count 本意是「防连着重复」，却被拿来当「库存消耗计数器」。
+       现在：取景**只读不写**，绝不因为"看了一眼"触发补货。
+
+    轮换怎么保证（不靠消耗）：按 id 顺序循环。
+        - 传了 exclude_id（🔁 换场景，= 当前正在看的那条）：
+          先找 id > exclude_id 的下一条；没有就绕回最小的那一条。
+          两步都不带 id<>exclude_id 的硬排除，所以**只有一条时也能给出去**，
+          不会开天窗。
+        - 没传 exclude_id（首次取景）：固定取 id 最小的那条 —— 同一个词
+          每次进页面看到的是同一条，稳定、可预期（要换用户自己点 🔁）。
+
+    tier 用于按题型分层取景：basic=small / combo=large；
+    该层级没库存时退回不过滤（保证有情景显示，不开天窗）。
     返回 dict(id, tier, prompt) 或 None。
     """
     w = (word or "").strip().lower()
@@ -383,32 +460,48 @@ def pick(word, exclude_id=0, tier=None):
     t = (str(tier) if tier else "").strip().lower() or None
     if t not in ("small", "medium", "large"):
         t = None
+    cur = int(exclude_id or 0)
     try:
         conn = get_conn()
         row = None
-        if t:
-            # 先按层级取；该层级没库存 → 退回不过滤
-            row = conn.execute(
-                "SELECT id, tier, prompt, used_count FROM word_scenarios"
-                " WHERE word=? AND tier=? AND id<>?"
-                " ORDER BY used_count ASC, id ASC LIMIT 1",
-                (w, t, int(exclude_id or 0))).fetchone()
-        if not row:
-            row = conn.execute(
-                "SELECT id, tier, prompt, used_count FROM word_scenarios WHERE word=?"
-                " AND id<>? ORDER BY used_count ASC, id ASC LIMIT 1",
-                (w, int(exclude_id or 0))).fetchone()
-        if not row and exclude_id:
-            # 只有一条且正好被排除 → 还是把这条给出去，别开天窗
-            row = conn.execute(
-                "SELECT id, tier, prompt, used_count FROM word_scenarios WHERE word=?"
-                " ORDER BY used_count ASC, id ASC LIMIT 1", (w,)).fetchone()
-        if not row:
-            conn.close()
-            return None
-        conn.execute("UPDATE word_scenarios SET used_count=used_count+1 WHERE id=?", (row["id"],))
-        conn.commit()
+
+        def _one(tier_filter, after):
+            """取一条。tier_filter 为 None 表示不按层过滤；
+            after > 0 表示要 id 比它大的（循环轮转用）。"""
+            sql = "SELECT id, tier, prompt FROM word_scenarios WHERE word=?"
+            args = [w]
+            if tier_filter:
+                sql += " AND tier=?"
+                args.append(tier_filter)
+            if after:
+                sql += " AND id>?"
+                args.append(after)
+            sql += " ORDER BY id ASC LIMIT 1"
+            return conn.execute(sql, tuple(args)).fetchone()
+
+        def _first(tier_filter):
+            sql = "SELECT id, tier, prompt FROM word_scenarios WHERE word=?"
+            args = [w]
+            if tier_filter:
+                sql += " AND tier=?"
+                args.append(tier_filter)
+            sql += " ORDER BY id ASC LIMIT 1"
+            return conn.execute(sql, tuple(args)).fetchone()
+
+        # 按层找；该层没有 → 退回不过滤（老数据可能全是 medium）
+        for tf in ([t, None] if t else [None]):
+            if cur:
+                row = _one(tf, cur)          # 当前这条之后的
+                if not row:
+                    row = _first(tf)          # 绕回：从头开始（含当前这条）
+            else:
+                row = _first(tf)
+            if row:
+                break
+
         conn.close()
+        if not row:
+            return None
         return {"id": row["id"], "tier": row["tier"] or "small",
                 "prompt": row["prompt"] or ""}
     except Exception as e:
@@ -429,21 +522,25 @@ def with_label(sc):
 
 
 def refill_if_low(word, grammar=""):
-    """剩余「从没用过」的条数 ≤ LOW_WATER → 后台再补 3 条（成本极低）。"""
+    """按 tier 检查库存，缺哪层补哪层（2026-09-10 重写）。
+
+    ⚠️ 旧版有三个错，一起修掉：
+     ① 数的是「used_count=0 的条数」，而 used_count 会被"看一眼"动作递增
+        （详见 pick 的注释），于是用户没写也判定"快用完了"，反复重新生成；
+     ② 完全不看 tier —— 有 3 条 small 就以为够了，large 永远补不上，
+        组合句一直没情景；
+     ③ 只补 3 条、层数随机，补了也可能全补到 small 上（约 30% 白补）。
+    现在：**按 small / large 分别检查**，缺哪层就专门补哪层。
+    仍然只在 AI 可用时补，且由调用方决定何时调（不在这里发太多请求）。
+    """
     w = (word or "").strip().lower()
     if not w or not ai_correct.ai_enabled():
         return
-    try:
-        conn = get_conn()
-        row = conn.execute(
-            "SELECT COUNT(*) AS n FROM word_scenarios WHERE word=? AND used_count=0",
-            (w,)).fetchone()
-        conn.close()
-        if int(row["n"] if row and row["n"] is not None else 0) > LOW_WATER:
-            return
-    except Exception:
-        return
-    spawn(generate_for_word, w, grammar, 3)
+    for t in ("small", "large"):
+        need = TIER_TARGET.get(t, MIN_POOL)
+        if count_of(w, t) < need:
+            # 只补缺的那一层；同一词不同层可并行，同层由 _busy 去重
+            spawn(generate_for_word, w, grammar, max(1, need - count_of(w, t)), None, t)
 
 
 # ------------------------------------------------------------------
@@ -460,14 +557,25 @@ def spawn(fn, *args, **kwargs):
         return None
 
 
-def ensure_for_words(words, grammar="", workers=3):
+def ensure_for_words(words, grammar="", workers=3, only_words=None):
     """导入时主触发：给这批词补齐首批情景。**已生成过的自动跳过**。
 
     同步执行（调用方自己放在后台线程里），返回生成了多少个词。
+
+    ⚠️ 2026-09-10 重要调整：**导入时不再一次补全整周**。
+    导入 120 个词若每词补 small+large 两层 = 240 次 AI 调用，既慢又烧额度；
+    而用户当天只学 20 个词，其余的天数是往后慢慢走的。
+    所以这里只保「当天要学的那批」（调用方用 only_words 指定，一般是 Day1），
+    剩下的交给 backfill_step 按天慢慢补（由页面访问 / 外部定时器驱动）。
+
+    旧版只看总数（count_of(w) < MIN_POOL）判断"缺不缺"，会出现
+    「有 3 条 small 就跳过、large 永远 0 条」——组合句没情景的根因之一。
+    现在按 tier 判断，缺哪层补哪层。
     """
     ws = []
     seen = set()
-    for w in (words or []):
+    pool = only_words if only_words else words
+    for w in (pool or []):
         wl = (w or "").strip().lower()
         if not wl or wl in seen:
             continue
@@ -475,40 +583,267 @@ def ensure_for_words(words, grammar="", workers=3):
         ws.append(wl)
     if not ws or not ai_correct.ai_enabled():
         return 0
-    todo = [w for w in ws if count_of(w) < MIN_POOL]
+    todo = [w for w in ws
+            if any(count_of(w, t) < TIER_TARGET.get(t, MIN_POOL)
+                   for t in ("small", "large"))]
     if not todo:
         return 0
-    print("[scenario] 导入触发：%d 个词待生成情景" % len(todo))
+    print("[scenario] 导入触发：%d 个词待生成情景（只补当天这批）" % len(todo))
 
     done = 0
     try:
-        from concurrent.futures import ThreadPoolExecutor
+        from concurrent.futures import ThreadPoolExecutor, as_completed
         with ThreadPoolExecutor(max_workers=max(1, min(workers, 4))) as ex:
-            for r in ex.map(lambda w: generate_for_word(w, grammar, GEN_COUNT, partner_words(w)), todo):
-                done += 1 if r else 0
+            # small / large 分别补，缺哪层补哪层（generate_for_word 传 need_tier）
+            futs = []
+            for w in todo:
+                for t in ("small", "large"):
+                    if count_of(w, t) < TIER_TARGET.get(t, MIN_POOL):
+                        futs.append(ex.submit(generate_for_word, w, grammar,
+                                              max(1, TIER_TARGET.get(t, MIN_POOL)
+                                                  - count_of(w, t)), None, t))
+            for f in as_completed(futs):
+                try:
+                    if f.result():
+                        done += 1
+                except Exception:
+                    pass
     except Exception as e:
         print("[scenario] 批量生成异常: %s" % e)
     return done
 
 
 def ensure_for_word_bg(word, grammar=""):
-    """点「记住了」兜底触发：这个词还没有情景才补生成（后台，不卡界面）。"""
+    """点「记住了」兜底触发：这个词的情景缺哪层就补哪层（后台，不卡界面）。
+
+    ⚠️ 旧版是 `if count_of(w) >= MIN_POOL: return` —— 只看总数。某词若已有
+    3 条 small，总数够 3 就再也不补，它的 large 永远补不上，组合句一直没情景。
+    现在改成**按 small / large 分别判断**，谁缺补谁。
+    """
     w = (word or "").strip().lower()
     if not w or not ai_correct.ai_enabled():
         return
-    if count_of(w) >= MIN_POOL:
+    for t in ("small", "large"):
+        if count_of(w, t) < TIER_TARGET.get(t, MIN_POOL):
+            spawn(generate_for_word, w, grammar,
+                  max(1, TIER_TARGET.get(t, MIN_POOL) - count_of(w, t)), None, t)
+            return          # 一次只触发一层（另一层留着给下一次请求，避免瞬时打爆）
+
+
+# ------------------------------------------------------------------
+# 按天补齐（2026-09-10 新增）
+# ------------------------------------------------------------------
+# 为什么需要它：
+#   情景是调 AI 生成的，一次给全周 120 个词 × 2 层 × 3 条 = 720 次调用，
+#   不现实（烧额度、还慢）。但**用户当天只学 20 个词**，其余的天数是慢慢
+#   往后走的 —— 所以只要保证"今天那批齐"，剩下的靠时间补上就行。
+#   于是这里做一个**按 Day 顺序、从导入时第一天开始**的补齐任务：
+#       Day1 齐 → 补 Day2 → Day2 齐 → 补 Day3 → ……
+#   每天只推进一小步（限速），既不烧额度，到期那天又一定是齐的。
+# 触发方式：① 服务里每次有相关请求时"借一步"（request_budget）；
+#           ② 外部定时器（UptimeRobot）定期戳 /api/scenario/backfill 唤醒它。
+# ------------------------------------------------------------------
+_BF_LOCK = threading.Lock()
+_BF_STATE = {"cursor": None, "ts": 0.0}
+# 每轮最多补几个词（防止一次性打爆 AI）；可由调用方临时放大
+BF_BATCH = 2
+# 两次"借步"之间至少间隔多少秒（太频繁对外部定时器没意义，还费额度）
+BF_MIN_INTERVAL = 20.0
+
+
+def _bf_days():
+    """返回按 (week, day) 升序排列的「天」，每天带该天的词。
+
+    只取 kind='vocab' 的学习项；词来自 ref_key。
+    返回 [{"stage":.., "week":.., "day":.., "words":[...]}, ...]
+    """
+    try:
+        conn = get_conn()
+        rows = conn.execute(
+            "SELECT stage, week, day, ref_key FROM day_items"
+            " WHERE kind='vocab' AND ref_key IS NOT NULL AND ref_key<>''"
+            " ORDER BY stage ASC, week ASC, day ASC, id ASC").fetchall()
+        conn.close()
+    except Exception:
+        return []
+    days, cur, key = [], None, None
+    for r in rows:
+        k = (int(r["stage"] or 0), int(r["week"] or 0), int(r["day"] or 0))
+        if k != key:
+            key = k
+            cur = {"stage": k[0], "week": k[1], "day": k[2], "words": []}
+            days.append(cur)
+        w = (r["ref_key"] or "").strip().lower()
+        if w and w not in cur["words"]:
+            cur["words"].append(w)
+    return days
+
+
+def _bf_grammar_of(week):
+    """取某周的语法（作背景交给 AI，页面不显示它）。查不到就空串。"""
+    try:
+        conn = get_conn()
+        row = conn.execute(
+            "SELECT grammar FROM weeks WHERE week_no=? LIMIT 1", (int(week or 0),)).fetchone()
+        conn.close()
+        return (row["grammar"] or "") if row else ""
+    except Exception:
+        return ""
+
+
+def _bf_today():
+    """当前学习位置 (stage, week, day)。取不到返回 None。"""
+    try:
+        import services as _svc
+        p = _svc.get_progress() or {}
+        return (int(p.get("stage") or 0), int(p.get("week") or 0),
+                int(p.get("day") or 0))
+    except Exception:
+        return None
+
+
+def backfill_step(max_words=None, force=False):
+    """推进一轮"按天补齐"。返回本次补齐了多少个词。
+
+    优先级（2026-09-10 定）：
+      ① **今天要学的那天**最优先 —— 用户马上就用到，必须最先齐；
+      ② 其余按 (week, day) 顺序，从前往后慢慢补（时间平摊，不一次生成整周）。
+    每轮只补 limit 个词，补完就停；下一次调用接着推进。
+    force=True 忽略最小间隔（供外部定时器调用）。线程安全：同一时刻只跑一个。
+    """
+    if not ai_correct.ai_enabled():
+        return 0
+    now = time.monotonic()
+    with _BF_LOCK:
+        if not force and (now - _BF_STATE["ts"]) < BF_MIN_INTERVAL:
+            return 0
+        _BF_STATE["ts"] = now
+        if _BF_STATE["cursor"] is None:
+            _BF_STATE["cursor"] = 0
+        start = _BF_STATE["cursor"]
+
+    days = _bf_days()
+    if not days:
+        return 0
+    limit = int(max_words or BF_BATCH)
+
+    def _gaps_of(d):
+        """这一天还缺哪些 (词, 层)。"""
+        g = []
+        for w in d["words"]:
+            for t in ("small", "large"):
+                if count_of(w, t) < TIER_TARGET.get(t, MIN_POOL):
+                    g.append((w, t))
+            if len(g) >= limit:
+                return g
+        return g
+
+    # ① 今天那批优先：不占游标，每次都先看它
+    today = _bf_today()
+    if today:
+        for d in days:
+            if (d["stage"], d["week"], d["day"]) == today:
+                g = _gaps_of(d)
+                if g:
+                    gr = _bf_grammar_of(d["week"])
+                    n = 0
+                    for w, t in g[:limit]:
+                        if generate_for_word(w, gr, TIER_TARGET.get(t, MIN_POOL), None, t):
+                            n += 1
+                    if n:
+                        print("[scenario] 按天补齐（今天）：W%s D%s 补了 %d 个词"
+                              % (d["week"], d["day"], n))
+                    return n
+                break
+
+    # ② 其余按顺序推进
+    done = 0
+    idx = start
+    scanned = 0
+    # 从游标往后找第一个"有缺口"的天；扫完一圈后从头再来（数据可能新增）
+    while scanned < len(days):
+        d = days[idx % len(days)]
+        scanned += 1
+        gaps = _gaps_of(d)
+        if gaps:
+            g = _bf_grammar_of(d["week"])
+            for w, t in gaps[:limit]:
+                if generate_for_word(w, g, TIER_TARGET.get(t, MIN_POOL), None, t):
+                    done += 1
+            # 停在这一天：下次接着补同一天，直到它齐了再往后走
+            with _BF_LOCK:
+                _BF_STATE["cursor"] = idx % len(days)
+            if done:
+                print("[scenario] 按天补齐：W%s D%s 补了 %d 个词"
+                      % (d["week"], d["day"], done))
+            return done
+        idx += 1
+    # 全部齐了：游标归零，之后有新词会从头再扫
+    with _BF_LOCK:
+        _BF_STATE["cursor"] = 0
+    return 0
+
+
+def backfill_status():
+    """给外部定时器看的状态：总共几天、每天齐了没、当前游标。"""
+    days = _bf_days()
+    out = []
+    for d in days:
+        miss = 0
+        for w in d["words"]:
+            for t in ("small", "large"):
+                if count_of(w, t) < TIER_TARGET.get(t, MIN_POOL):
+                    miss += 1
+        out.append({"week": d["week"], "day": d["day"],
+                    "words": len(d["words"]), "missing": miss})
+    with _BF_LOCK:
+        cur = _BF_STATE["cursor"]
+    return {"days": out, "cursor": cur, "total_days": len(out),
+            "all_done": all(x["missing"] == 0 for x in out) if out else True}
+
+
+# ------------------------------------------------------------------
+# 命令行
+#   python3 backend/scenario.py --clean      清洗历史情景里的「（语法：…）」残留
+#   python3 backend/scenario.py --status     看每天情景齐了没（不调 AI）
+#   python3 backend/scenario.py --backfill   按天补齐（会调 AI，逐个词跑）
+# ------------------------------------------------------------------
+def _cli_status():
+    st = backfill_status()
+    print("[scenario] 共 %d 天，全部齐了: %s（游标 %s）"
+          % (st["total_days"], st["all_done"], st["cursor"]))
+    for d in st["days"]:
+        flag = "✅" if d["missing"] == 0 else "缺 %d" % d["missing"]
+        print("   W%-2s D%-2s  %2d 个词   %s" % (d["week"], d["day"], d["words"], flag))
+    return st
+
+
+def _cli_backfill():
+    if not ai_correct.ai_enabled():
+        print("[scenario] 未配置 AI Key，无法补齐。请先设置环境变量。")
         return
-    spawn(generate_for_word, w, grammar)
+    total = 0
+    for i in range(2000):          # 硬上限，防死循环
+        n = backfill_step(force=True, max_words=2)
+        total += n
+        if n == 0:
+            break
+        if i % 10 == 0:
+            print("[scenario] 已补齐 %d 个词…" % total)
+    print("[scenario] 补齐完成，共 %d 个词。" % total)
+    _cli_status()
 
 
-# ------------------------------------------------------------------
-# 命令行：python3 backend/scenario.py --clean
-# 旧版 AI 会把「（语法：一般现在时）」写进情景，而页面现在统一显示语法——
-# 已经生成过的词不会重新生成，所以老数据要用这个命令清洗一次。
-# ------------------------------------------------------------------
 if __name__ == "__main__":
     if "--clean" in sys.argv:
         n = resanitize_all()
         print("[scenario] 历史情景清洗完成：修复 %d 条" % n)
+    elif "--status" in sys.argv:
+        _cli_status()
+    elif "--backfill" in sys.argv:
+        _cli_backfill()
     else:
-        print("用法：python3 backend/scenario.py --clean")
+        print("用法：\n"
+              "  python3 backend/scenario.py --clean     清洗情景里的语法残留\n"
+              "  python3 backend/scenario.py --status    查看每天情景齐了没\n"
+              "  python3 backend/scenario.py --backfill  按天补齐（会调 AI）")
