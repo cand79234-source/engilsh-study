@@ -870,28 +870,26 @@ def build_sentence_prompts(today_new, due_vocab, grammar, stage, week, day, seed
     return prompts[:10]
 
 
-# ==================== 三段式造句计划 ====================
+# ==================== 两段式造句计划 ====================
 # 用户定的学习节奏：
 #   ① 基础：当天每个词各造一句（会用）
-#   ② 升级：挑 5 个重点词，给升级方向+示范句，把原句改得更自然（用得更自然）
-#   ③ 组合：10 组，每组 2-3 个词写成连续表达；复习词混进这里（真正放进表达里）
+#   ② 组合：10 组，每组 2-3 个词写成连续表达；复习词混进这里（真正放进表达里）
 # 说明：组合表达只是任务引导，不强制写多长、不强制用满词。
-
-# 升级方向库（纯本地规则：给方向 + 可照搬的示范，不是 AI 润色）
-UPGRADE_DIRECTIONS = [
-    ("加原因", "用 because / since 说明「为什么」，句子立刻有内容",
-     "I am busy. → I am busy because I have a deadline this week."),
-    ("加结果或目的", "用 so / so that 接上「结果」或「目的」",
-     "I work hard. → I work hard so that I can finish the report on time."),
-    ("补具体信息", "补上时间 / 地点 / 方式，别让句子悬在半空",
-     "I have a meeting. → I have a meeting with my manager at 3 pm."),
-    ("换成固定搭配", "把泛泛的说法换成这个词的固定搭配，地道度立刻上来",
-     "I finished the report. → I met the deadline for the report."),
-    ("两句并一句", "把两个短句用 and / but / which 连起来，避免全是简单句",
-     "I have a meeting. It is at 3. → I have a meeting which starts at 3."),
-    ("加程度或频率", "用 usually / quite / a bit 等，让语气更真实",
-     "This task is hard. → This task is quite hard for me."),
-]
+#
+# 【② 升级已删除（2026-09-10）】
+# 原设计：挑 5 个重点词，给「升级方向 + 示范句」，把原句改得更自然。
+# 删掉的原因（三条都实测过）：
+#   1. 20 个词已经在①基础句里每个都写过一遍，再挑 5 个重写一遍是重复劳动；
+#   2. 升级方向是**预置的 6 个方向**（加原因/加结果/…），不是针对用户写的
+#      那句话给的，实质只是"换个角度再写一句"，价值低；
+#   3. 挑词规则给复习词起手 50 分、新词只有 0-9 分，导致升级句里全是复习词，
+#      与"只服务当天新词"的设计意图相反。
+# 「给方向 + 示范句」这个价值已挪到**批改反馈**里（用户提交后由 AI 针对他
+# 那句话给具体改法），不占题量、而且是针对性的。
+#
+# 一并删除：UPGRADE_DIRECTIONS / _pick_focus_words / _build_upgrade。
+# sentences 表里历史存下的 up:0 / up:1 记录**保留不动**（只是不再产生新的），
+# 不影响任何统计与页面。
 
 
 def _word_key(w):
@@ -903,39 +901,6 @@ def _display(w):
     word = w.get("word") or ""
     meaning = (w.get("meaning") or "").strip()
     return f"{word}（{meaning}）" if meaning else word
-
-
-def _pick_focus_words(today_new, due_vocab, n=5):
-    """挑出 n 个「重点升级词」。
-
-    优先级：用户★标记 > 复习词错误率高 > 搭配丰富(升级空间大) > 还没掌握
-    复习词与今日新词重复时只保留新词那份（避免同一词既基础又升级）。
-    """
-    scored = []
-    seen = set()
-    for w in today_new:
-        key = _word_key(w)
-        if not key or key in seen:
-            continue
-        seen.add(key)
-        s = 0.0
-        if w.get("focus"):                       # 用户自己标的 ★，最高优先
-            s += 100
-        s += min(len(w.get("collocations") or []), 4) * 2.0
-        if not w.get("mastered"):
-            s += 1.0
-        scored.append((s, key, w, False))
-    for w in due_vocab:
-        key = _word_key(w)
-        if not key or key in seen:
-            continue
-        seen.add(key)
-        er = w.get("error_rate") or 0
-        # 复习词基准分高于普通新词（错过的词更该升级），错误率权重最高
-        s = 50 + er * 30 + (w.get("priority") or 0) * 5
-        scored.append((s, key, w, True))
-    scored.sort(key=lambda x: (-x[0], x[1]))
-    return [(w, is_review) for _, _, w, is_review in scored[:n]]
 
 
 def _build_basic(today_new, grammar, seed_date=None, weights=None):
@@ -967,34 +932,6 @@ def _build_basic(today_new, grammar, seed_date=None, weights=None):
     return out
 
 
-def _build_upgrade(today_new, due_vocab, grammar, seed, n=5):
-    """② 升级：n 个重点词，每个给「升级方向 + 示范句」。"""
-    picked = _pick_focus_words(today_new, due_vocab, n)
-    out = []
-    for i, (w, is_review) in enumerate(picked, 1):
-        # 用 seed 轮换升级方向，保证同一天不同词拿到不同方向
-        di = (seed + i * 7) % len(UPGRADE_DIRECTIONS)
-        dname, ddesc, dsample = UPGRADE_DIRECTIONS[di]
-        # 若该词有固定搭配，优先把它作为「升级原料」提示出来
-        collocs = w.get("collocations") or []
-        use_colloc = collocs[0].get("phrase", "") if collocs else ""
-        reason = "你标了★" if w.get("focus") else (
-            "这个词你错过，值得改好" if is_review else
-            ("搭配多，升级空间大" if len(collocs) >= 2 else "先用熟，再改好"))
-        out.append({
-            "i": i, "word": w.get("word"), "meaning": w.get("meaning") or "",
-            "is_review": is_review,
-            "direction": dname, "direction_desc": ddesc,
-            "sample": dsample,
-            "collocation": use_colloc,
-            "reason": reason,
-            "task": f"把「{_display(w)}」那句升级：{ddesc}"
-                    + (f"（可用搭配：{use_colloc}）" if use_colloc else "")
-                    + (f"（语法：{grammar}）" if grammar else ""),
-        })
-    return out
-
-
 def _build_combos(today_new, due_vocab, grammar, seed, n=10, per=3):
     """③ 组合：n 组，每组 2-3 个词写成连续表达。复习词优先入选且不额外占位。"""
     seen = set()
@@ -1013,11 +950,26 @@ def _build_combos(today_new, due_vocab, grammar, seed, n=10, per=3):
     # 洗牌新词（同日稳定），让每天的搭配不重样
     new_words = _deterministic_shuffle(new_words, seed + 99)
 
+    # 每组配比：复习词占多数（2026-09-10 改）
+    #
+    # 旧配比是「1 复习 + 2 新词」，复习只占 1/3 —— 与"复习为主"的设计意图相反。
+    # 现在改成 n_review_per_group 个复习词 + 剩下的位置给新词。
+    # 默认 2 复习 + 1 新词（per=3）：复习占 2/3，且**每组还是 3 个词**，
+    # 页面「建议 2-3 句」的长度提示不用改，不会突然变长。
+    #
+    # 【复习词不够时不补（用户定）】
+    # 复习词靠 SRS 到期产生，某天可能只有三五个。这时**不重复使用复习词**，
+    # 缺的位置直接让新词顶上 —— 复习占比自然退化，但不硬凑。
+    # 理由：同一个词一天写两三遍是纯抄，不产生新记忆。
+    # 复查（2026-09-10 实测）：库存 8 个复习词时，2A 与 3+1 方案的实际效果
+    # 完全一样（都退化到 复习 8 / 新词 20，占 28%）—— 所以不补也不会更差。
+    n_review_per_group = min(2, max(1, per - 1)) if len(review_words) else 0
     combos, ri, ni = [], 0, 0
     for gi in range(n):
         group = []
-        # 每组尽量带 1 个复习词（复习词靠组合表达来过，不再单独出基础句）
-        if ri < len(review_words):
+        for _ in range(n_review_per_group):
+            if ri >= len(review_words):
+                break
             group.append({"word": review_words[ri].get("word"),
                           "meaning": review_words[ri].get("meaning") or "",
                           "review": True})
@@ -1027,8 +979,14 @@ def _build_combos(today_new, due_vocab, grammar, seed, n=10, per=3):
                           "meaning": new_words[ni].get("meaning") or "",
                           "review": False})
             ni += 1
+        # 词总量不够凑满 per 个时，宁可不凑（不生成只有 1-2 个词的残缺组）：
+        # 单独一个词写不出"连续表达"，那种题是废题还占题量。
+        # 直接 break —— 后面所有组都只会更短。
+        if len(group) < 2:
+            break
         if not group:
-            # 词不够：允许复读已用过的词（重复本身就是复习）
+            # 复习词和新词都用光了才走到这里。这时允许复读已用过的词：
+            # 复习词优先（重复本身就是复习），但只用来补满组，不提前触发。
             if not (review_words or new_words):
                 break
             pool = review_words + new_words
@@ -1040,7 +998,9 @@ def _build_combos(today_new, due_vocab, grammar, seed, n=10, per=3):
         if not group:
             break
 
-        # 场景：用组内首个词的功能分类作为表达框架
+        # 场景：用组内首个词的功能分类作为表达框架。
+        # 配比改了以后首个词固定是复习词，分类跟着复习词走 —— 没问题，
+        # 组合表达本来就是用复习词当主线的。
         first = next((w for w in (today_new + due_vocab)
                       if _word_key(w) == _word_key({"word": group[0]["word"]})), None)
         cat = "自由表达"
@@ -1063,13 +1023,19 @@ def _build_combos(today_new, due_vocab, grammar, seed, n=10, per=3):
 
 
 def build_sentence_plan(today_new, due_vocab, grammar, stage, week, day,
-                        seed_date=None, n_upgrade=5, n_combo=10):
-    """三段式造句计划。返回 {basic, upgrade, combo, meta}。"""
+                        seed_date=None, n_combo=10):
+    """两段式造句计划。返回 {basic, combo, meta}。
+
+    ⚠️ 返回值里**不再有 upgrade 字段**（2026-09-10 删除升级句）。
+    前端已同步删掉「② 升级」整块；旧客户端读到 undefined 也不会报错
+    （那边本来就是 `(p.upgrade||[]).map(...)` 的兜底写法）。
+    n_upgrade 参数一并移除 —— 留着会让人以为还能打开。
+    """
     if seed_date is None:
         seed_date = app_today()
     seed = abs(hash(f"{stage}-{week}-{day}-{seed_date.isoformat()}")) % (10 ** 6)
 
-    # ③ 造句五星：达到 5 星的词「主动输出已稳定」，不进常规造句计划。
+    # 造句五星：达到 5 星的词「主动输出已稳定」，不进常规造句计划。
     #
     # 但 5 星不是终态——原实现一旦到 5 星就永久剔除，导致「后来忘了、写错了
     # 也掉不了星」，五星维度只升不降，与 SRS 彻底脱钩。
@@ -1093,19 +1059,16 @@ def build_sentence_plan(today_new, due_vocab, grammar, stage, week, day,
     weights = angle_weights()
 
     basic = _build_basic(today_new, grammar, seed_date, weights)
-    upgrade = _build_upgrade(today_new, due_vocab, grammar, seed, n_upgrade)
     combo = _build_combos(today_new, due_vocab, grammar, seed, n_combo)
 
     return {
         "basic": basic,
-        "upgrade": upgrade,
         "combo": combo,
         "meta": {
             "basic_count": len(basic),
-            "upgrade_count": len(upgrade),
             "combo_count": len(combo),
             "review_count": len(due_vocab or []),
             "grammar": grammar,
-            "note": "①基础每词一句 ②5句升级(给方向+示范) ③10组组合(复习词混在这里，不强制长度)",
+            "note": "①基础每词一句 ②10组组合(复习词占多数，不强制长度)",
         },
     }

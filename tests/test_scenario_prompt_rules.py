@@ -38,8 +38,18 @@ def _build_user(word="account", meaning="账户；账目", grammar="一般现在
                  "**不要写进情景文字**，不要出现「语法：…」「请用…时」这类字样）" % grammar)
     extra = [e for e in (extra or []) if e != word]
     if extra:
+        # 与 scenario.generate_for_word 保持一致（2026-09-10 起说清「其他词」是用来串故事的）
         user += ("\n大情景（large）里可以自然带上的其他词：%s"
-                 "——能自然嵌进场景就带上，嵌不进去不要新开事件硬塞。" % "、".join(extra[:6]))
+                 "——它们的作用是**串进同一条故事线**，让故事往下走的时候顺带带出来"
+                 "（比如换成「选哪个」「什么时候做」这类自然的动作或对话），"
+                 "不是一张要挨个打勾的清单。嵌不进去的就不写，不要为它新开一件事。"
+                 % "、".join(extra[:6]))
+    # 取材角度只分给 small/medium，large 不参与（这是流水账的根因修复）
+    user += ("\n其中 small / medium 这 3 条情景，请分别取材于：A / B / C。"
+             "只用来决定每条往哪个生活方向取料：不要把角度名写进情景文字，"
+             "也不要因此规定时态或句式（上面那几条禁止项在这里一样生效）。"
+             "**large 大情景不参与这个分配** —— 它只要写一件连续发生的事，"
+             "从头到尾讲完就行，不要为了凑角度硬加情节。")
     user += "\n请生成 4 条情景（small / medium / large 都要有）。"
     return user
 
@@ -90,12 +100,20 @@ def test_no_yesterday_template():
 
 
 def test_no_numbered_event_list():
-    """不许为了覆盖多个词，生成 10-20 个编号事件拼成的"场景"。"""
+    """情景必须写成一段连贯叙述，不能是编号事件清单。
+
+    ⚠️ 2026-09-10 调整：以前断言的是**禁令原文**（"编号事件清单""按 1. 2. 3. 编号"），
+    但实测证明 AI 对禁令不太听话 —— 大场景照样吐出 20 条编号清单。
+    现在改成**正面说法**，这才是真正起作用的那句。
+    本测试改为断言正面说法在位，并确认 large 不再被要求覆盖多个角度。
+    """
     p = _full_prompt()
-    assert "编号事件清单" in p          # 明令禁止
-    assert "按 1. 2. 3. 编号" in p
-    for bad in ("10-20 个", "10~20 个", "10 到 20 个", "编号事件"):
-        assert p.count(bad) <= 1, "疑似在要求编号事件：%r" % bad
+    # 正面说法必须在位
+    assert "一段连贯的叙述" in p, "缺少「写成一段连贯叙述」的正面要求"
+    assert "不是清单" in p, "缺少「不是清单」的正面说明"
+    assert "写一件连续发生的事，从头到尾讲完" in p, "large 缺少「讲完一件事」的正面要求"
+    # 大情景不许再参与「按顺序分角度」的分配（那正是流水账的根因）
+    assert "large 大情景不参与这个分配" in p, "large 仍在被要求覆盖多个角度"
 
 
 # ---------------------------------------------------------------- 新规则
@@ -108,12 +126,12 @@ def test_medium_definition():
 
 
 def test_large_definition():
-    """大情景 = 更完整丰富的真实情境，自然容纳多个学习词；不是事件堆砌。"""
+    """大情景 = 一件连续发生的事，自然容纳多个学习词；不是事件堆砌。"""
     p = _full_prompt()
     assert "自然容纳多个学习词" in p
-    assert "有因果、有时间线、有连续性" in p
+    assert "有因果、有时间线、是一个说得通的整体" in p
     assert "刚入职公司的第一周" in p
-    assert "不是把十几个小事件硬拼在一起" in p
+    assert "写一件连续发生的事，从头到尾讲完" in p
 
 
 def test_tier_by_capacity_not_sentence_count():
@@ -133,7 +151,9 @@ def test_review_word_embedding_rules():
     assert "就不要硬编事件，优先保证场景自然度" in p
     # 复习词确实会被传给模型（否则大情景无从嵌入）
     assert "可以自然带上的其他词" in p
-    assert "嵌不进去不要新开事件硬塞" in p
+    # 2026-09-10 起改成正面说法：说清它们是「串故事线」用的，不是打勾清单
+    assert "串进同一条故事线" in p
+    assert "不要为它新开一件事" in p
 
 
 def test_sys_keeps_json_contract():

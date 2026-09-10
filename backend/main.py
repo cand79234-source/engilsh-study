@@ -140,7 +140,7 @@ def scenario_next(word: str = "", cur: int = 0, tier: str = ""):
     """🔁 换场景：取同一个词的下一条情景（**只从库存轮换，不现场生成**，§2.5）。
 
     任何分数都能点，点一次换一条；cur = 当前正在看的情景 id（用来跳过它）。
-    tier = 按题型分层取景（basic=small / upgrade=medium / combo=large），
+    tier = 按题型分层取景（basic=small / combo=large），
     该层级没库存时自动退回不过滤。库存见底时后台补池，前端无感。
     """
     w = (word or "").strip()
@@ -357,12 +357,13 @@ def today():
     # Day7 = 休息日：不学新词、不出造句任务，只做周测/自由复习
     is_rest_day = (int(p["day"]) == 7)
 
-    # 造句引导：三段式（①每词一句 ②5句升级 ③10组组合，复习词混进组合）
+    # 造句引导：两段式（①每词一句 ②10组组合，复习词混进组合）
+    # ② 升级已于 2026-09-10 删除 —— 这里的休息日空计划也同步去掉 upgrade 字段。
     grammar = week["grammar"]
     due_vocab = srs.due_vocab_words()
     if is_rest_day:
-        plan = {"basic": [], "upgrade": [], "combo": [],
-                "meta": {"basic_count": 0, "upgrade_count": 0, "combo_count": 0,
+        plan = {"basic": [], "combo": [],
+                "meta": {"basic_count": 0, "combo_count": 0,
                          "review_count": len(due_vocab or []), "grammar": grammar,
                          "note": "Day7 休息日"}}
     else:

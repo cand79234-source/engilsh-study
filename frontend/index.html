@@ -489,7 +489,7 @@ pages.learn=async function(el){
   const lT=Number(d.today.listening_total)||10;
   const lD=Math.min(Number(d.today.listening_done)||0, lT);
   const lp=lT?Math.round(lD/lT*100):0;
-  state.folds=Object.assign({voc:true,sen:true,copy:false,listen:false,basic:true,upgrade:true,combo:true}, state.folds||{});
+  state.folds=Object.assign({voc:true,sen:true,copy:false,listen:false,basic:true,combo:true}, state.folds||{});
   document.getElementById('topProg').textContent=`阶段${p.stage} · W${p.week} · D${p.day}`;
   el.innerHTML=`
   <div class="card" style="border:1.5px solid var(--primary)">
@@ -551,18 +551,9 @@ pages.learn=async function(el){
     <div id="basicBody" ${state.folds.basic?'':'style="display:none"'}><div id="sentences"></div></div>
   </div>
 
-  <div class="card" id="planUpgrade" style="background:#fffbeb;border-color:#fde68a">
-    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px">
-      <h2 style="margin:0;flex:1;min-width:0">② 升级 · 5 句 <span class="badge" id="upProg" style="background:#fef3c7;color:#92400e"></span></h2>
-      <span class="fold-ic" data-act="catFold" data-val="upgrade" data-fold-for="upBody" title="折叠/展开">${state.folds.upgrade?'▽':'▷'}</span>
-    </div>
-    <div class="sub" style="margin-top:4px">目标：<b>用得更自然</b>。系统给升级方向 + 可照搬的示范句，你把第①段的句子改好</div>
-    <div id="upBody" ${state.folds.upgrade?'':'style="display:none"'}><div id="upgrades"></div></div>
-  </div>
-
   <div class="card" id="planCombo" style="background:#f8fafc;border-color:#e2e8f0">
     <div style="display:flex;justify-content:space-between;align-items:center;gap:8px">
-      <h2 style="margin:0;flex:1;min-width:0">③ 组合表达 · 10 组 <span class="badge" id="comboProg" style="background:#e0e7ff;color:var(--primary)"></span></h2>
+      <h2 style="margin:0;flex:1;min-width:0">② 组合表达 · 10 组 <span class="badge" id="comboProg" style="background:#e0e7ff;color:var(--primary)"></span></h2>
       <span class="fold-ic" data-act="catFold" data-val="combo" data-fold-for="comboBody" title="折叠/展开">${state.folds.combo?'▽':'▷'}</span>
     </div>
     <div class="sub" style="margin-top:4px">目标：<b>把词放进连续表达</b>。到期复习词混在这里一起过${(t.review_pool||[]).length?`（今天 ${(t.review_pool||[]).length} 个）`:''} · 写多写少随意，不强制</div>
@@ -937,7 +928,7 @@ function speak(text){
 }
 
 /* ---- 造句：三段式（①每词一句 ②5句升级 ③10组组合）---- */
-function planOf(t){ return t.sentence_plan || {basic:[],upgrade:[],combo:[],meta:{}}; }
+function planOf(t){ return t.sentence_plan || {basic:[],combo:[],meta:{}}; }
 function setTxt(id,txt){const e=document.getElementById(id);if(e)e.textContent=txt;}
 
 /* 题目标识：basic:i / up:i / combo:i。当天唯一，用来串起「同一题的多次作答」。 */
@@ -945,7 +936,6 @@ function planKeys(){
   const p=planOf(state.today);
   return [].concat(
     p.basic.map((_,i)=>'basic:'+i),
-    (p.upgrade||[]).map((_,i)=>'up:'+i),
     (p.combo||[]).map((_,i)=>'combo:'+i));
 }
 function histOf(tk){ return ((state.hist||{})[tk]) || []; }
@@ -953,7 +943,6 @@ function doneCount(prefix,total){let n=0;for(let i=0;i<total;i++){if(histOf(pref
 function planProgress(){
   const p=planOf(state.today);
   setTxt('basicProg',`${doneCount('basic',p.basic.length)}/${p.basic.length}`);
-  setTxt('upProg',`${doneCount('up',(p.upgrade||[]).length)}/${(p.upgrade||[]).length}`);
   setTxt('comboProg',`${doneCount('combo',(p.combo||[]).length)}/${(p.combo||[]).length}`);
   const b=document.getElementById('copyAllBtn');
   if(b) b.textContent=`📋 复制全部（${planKeys().filter(k=>histOf(k).length).length} 题）`;
@@ -987,7 +976,7 @@ async function renderSentencePlan(t){
   const g=(t&&t.grammar)||'';   // 本周语法要求（如「一般现在时、频率副词」），随批改一起传给后端
 
   // ③ 造句五星：拉取每个词的五星熟练度，用于渲染 ★ 徽章（未记录则不显示）
-  const _words=[...p.basic.map(b=>b.word), ...(p.upgrade||[]).map(u=>u.word),
+  const _words=[...p.basic.map(b=>b.word),
     ...(p.combo||[]).flatMap(c=>(c.words||[]).map(w=>w.word))].filter(Boolean);
   try{
     const _sm=await api('/output/stars',{method:'POST',headers:{'Content-Type':'application/json'},
@@ -1009,28 +998,16 @@ async function renderSentencePlan(t){
       '写一个英文句子…', false);
   }).join('') || '<div class="sub">今天没有新词。</div>';
   /* 情景异步拉取：渲染完题目后逐词请求（导入时已批量生成好，这里只取一条展示）。
-     basic=小情景 / upgrade=中情景 / combo=大场景，按数据库 tier 字段分层取。 */
+     basic=小情景 / combo=大场景，按数据库 tier 字段分层取。 */
   p.basic.forEach((b,i)=>{ fetchScenarioQ('basic:'+i, g); });
-  (p.upgrade||[]).forEach((u,i)=>{ fetchScenarioQ('up:'+i, g); });
   (p.combo||[]).forEach((c,i)=>{ fetchScenarioQ('combo:'+i, g); });
 
-  // ② 升级：给方向 + 示范句
-  document.getElementById('upgrades').innerHTML=(p.upgrade||[]).map((u,i)=>{
-    const tk='up:'+i;
-    state.tkMeta[tk]={word:u.word||'', scenWord:u.word||'', task:fixSentenceTask(u.task)||'', label:'升级「'+(u.word||'')+'」', grammar:g, tier:'medium',
-      cleanHead:`${u.i}. 升级「<b>${esc(u.word)}</b>${starBadge(u.word)}${u.meaning?'（'+esc(u.meaning)+'）':''}」`};
-    return itemHtml(tk,
-      `<div class="sq"><span id="sq_${tk}">${u.i}. 升级「<b>${esc(u.word)}</b>${starBadge(u.word)}${u.meaning?'（'+esc(u.meaning)+'）':''}」</span>
-        <span class="badge" style="background:#fef3c7;color:#92400e">${esc(u.direction)}</span>
-        ${u.is_review?'<span class="badge" style="background:#fee2e2;color:#b91c1c">复习词</span>':''}
-        <span id="scspan_${tk}" style="display:none"></span></div>
-      <div class="sub" style="margin:4px 0">${esc(u.direction_desc)}</div>
-      <div class="sub" style="margin:4px 0;color:var(--muted)">示范：${esc(u.sample)}</div>
-      ${u.collocation?`<div class="sub" style="margin:4px 0">可用搭配：<b>${esc(u.collocation)}</b></div>`:''}`,
-      '把第①段的句子改得更自然…', false);
-  }).join('') || '<div class="sub">今天的词还够不上升级，先把基础句写完。</div>';
-
-  // ③ 组合：2-3 个词写成连续表达
+  // ② 组合：2-3 个词写成连续表达
+  /* ⚠️ ① 升级（给方向 + 示范句）已于 2026-09-10 删除，对应的
+     #planUpgrade 卡片、upgrades 容器、planKeys 里的 'up:i'、planProgress
+     里的 upProg 都一并去掉了 —— 后端 build_sentence_plan 不再返回 upgrade。
+     「给方向 + 示范句」的价值挪到了批改反馈（AI 针对你那句话给具体改法）。
+     sentences 表里的历史 up:i 记录保持不动，只是不再产生新的。 */
   document.getElementById('combos').innerHTML=(p.combo||[]).map((c,i)=>{
     const tk='combo:'+i;
     const sceneTxt=fixSentenceTask(c.scene)||'';
@@ -1058,7 +1035,7 @@ function starBadge(w){
    复用后端原有 /api/scenario/next（按 used_count 轮换，只出同一个词的情景）。
    展示格式（用户反馈去重后）：「题干，情景：…（语法：…）🔁▽」——
    情景直接接在题干后面，不再单独占一行；题干里原本重复的搭配/语法括号由 cleanTaskHead 去掉。
-   层级由 tkMeta.tier 决定（basic=small / upgrade=medium / combo=large），后端按 tier 字段过滤。 */
+   层级由 tkMeta.tier 决定（basic=small / combo=large），后端按 tier 字段过滤。 */
 function cleanTaskHead(s){
   /* 只删两类与情景重复的括号段，别的括号（如「（自我介绍、遇到的问题…）」）一律保留：
      ① （语法：…）/(语法: …) ② 纯英文搭配式（like/enjoy/hate+doing、verb+ing…） */
@@ -1210,7 +1187,12 @@ async function submitSentence(tk){
       id:f.sentence_id, attempt:f.attempt, sentence:f.original, corrected:f.corrected,
       score:f.score, verdict:f.verdict, ok:!!f.ok, error_type:f.error_type,
       status:f.status||'', errors:f.errors||[], task_issues:f.task_issues||[],
-      optimizations:f.optimizations||[], created_at:f.created_at, _local:f._local||0});
+      optimizations:f.optimizations||[], created_at:f.created_at, _local:f._local||0,
+      /* ai：只留「更地道说法」这一项带进历史。
+         ① 刷新页面后 attemptCard 还能渲染出 AI 建议（不然刷一次就没了）；
+         ② 只存 natural，不存 errors/score —— 那些已经拍平成上面的字段了，
+            整包 ai 存进去会让本地存储白白变大。 */
+      ai:(byAI&&f.ai)?{natural:(f.ai.natural||[])}:null});
     renderAttempts(tk);
     planProgress();
     /* ⭐ 薄弱项讲解（§4）：同词同错累计 ≥3 次才由后端给出，
@@ -1345,8 +1327,19 @@ function attemptCard(a,tk,i,isLast){
   const taskHtml = taskBoxHtml(tasks);
   const corHtml = (!pass && a.corrected && a.corrected!==a.sentence)
     ? `<div style="margin-top:6px;font-size:13.5px">📗 <b>整句正确写法：</b><b style="color:var(--green)">${esc(a.corrected)}</b></div>`:'';
-  // 参考建议：合并润色 + 扩写，避免重复大标题，统一用简洁 bullet
+  // 参考建议：合并润色 + 扩写 + AI 地道说法，避免重复大标题，统一用简洁 bullet
   const tips=[];
+  /* ① AI 的「更地道的说法」（ai.natural）：后端早就返回了，以前前端没用，
+        白白浪费。现在拼进同一块 —— 这是**针对你这句**给的，不是通用模板，
+        而且不占题量、不加新块。
+        AI 没跑通时 ai.natural 就是空数组，这块自然退回原样，不会开天窗。 */
+  const nat=((a.ai&&!a.ai_error&&a.ai.natural)||[]);
+  nat.forEach(n=>{
+    if(!n||!n.better) return;
+    const why=n.reason?`<span style="color:var(--muted);font-size:12.5px"> — ${esc(n.reason)}</span>`:'';
+    const org=n.original?`<span style="color:var(--muted);font-size:12.5px">（你写的：${esc(n.original)}）</span>`:'';
+    tips.push(`<span style="color:var(--primary);font-weight:700">更地道说法：</span><b style="color:var(--green)">${esc(n.better)}</b>${org}${why}`);
+  });
   opts.forEach(o=>{
     if(!o) return;
     if(o.kind==='expand'){
@@ -1428,7 +1421,7 @@ function attemptCopyText(tk,a){
 /* 学习页可折叠区：voc = 词汇卡体, sen = 造句区, copy = 今日词单面板。
    折叠只改 DOM 显示（不动已渲染的输入框/进度），并同步标题旁图标。 */
 function foldToggle(key, id){
-  state.folds=Object.assign({voc:true,sen:true,copy:false,listen:false,basic:true,upgrade:true,combo:true}, state.folds||{});
+  state.folds=Object.assign({voc:true,sen:true,copy:false,listen:false,basic:true,combo:true}, state.folds||{});
   state.folds[key]=!state.folds[key];
   const box=document.getElementById(id);
   if(box) box.style.display=state.folds[key]?'':'none';
@@ -1437,7 +1430,7 @@ function foldToggle(key, id){
     g.textContent=state.folds[key]?'▽':'▷';});
 }
 /* 三类造句（基础/升级/组合）各自折叠：映射 key → 内容区 id */
-const _CAT_BODY={basic:'basicBody', upgrade:'upBody', combo:'comboBody'};
+const _CAT_BODY={basic:'basicBody', combo:'comboBody'};
 function catFold(key){
   const bodyId=_CAT_BODY[key]; if(!bodyId) return;
   foldToggle(key, bodyId);

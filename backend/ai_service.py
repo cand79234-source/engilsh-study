@@ -1247,6 +1247,10 @@ def _r_more_plural(raw, low, word=""):
     w = (word or "").strip().lower()
     if not w or w in _UNCOUNTABLE or w.endswith("s"):
         return out
+    # 目标词必须真的像可数名词才给这条建议：动词加 every / 复数就是错的了
+    # （实测出现过 "every choose" 这种建议 —— 参考建议写错等于教错）
+    if not _more_plural_likely(w):
+        return out
     plural = _plural_of(w)
     for m in re.finditer(rf"\b({_COUNT_HINT})\s+{re.escape(w)}\b", low):
         out.append((f"{m.group(1)} {w}", f"{m.group(1)} {plural}"))
@@ -1381,62 +1385,102 @@ _TAIL_DEFAULT = ("it is part of my daily routine", "it was part of my daily rout
 
 
 def _pick_tail(low, past):
-    """按句子内容挑一句「原因」，过去时句子配过去时。"""
+    """按句子内容挑一句「原因」，过去时句子配过去时。
+
+    ⚠️ 只在 _expand_samples 里「原因尾巴一定成立」的分支才会被用到。
+    """
     for keys, (pres, pastform) in _TAIL_BY_TOPIC:
         if any(re.search(r"\b" + k + r"\b", low) for k in keys):
             return pastform if past else pres
     return _TAIL_DEFAULT[1] if past else _TAIL_DEFAULT[0]
 
 
-def _expand_samples(s, low, past=False):
-    """生成 2 条「扩写」示范——每条都是完整句子，而且**看句子内容来写**。
+def _expand_samples(s, low, past=False, word=""):
+    """参考建议：**看这句话自己长什么样**，给一条能直接照着写的改法。
 
-    以前无论写什么都套 "because it is useful for my work"，看着像复读机。
-    现在：because 那半句按主题挑（工作/学习/旅行/饮食/健康），
-    第二条从「结果 / 时间 / 地点 / 目的」里随机挑一个不同结构，
-    所以同一句多提交几次、不同句子之间，都不会撞成同一句。
+    为什么要改（别删这段）：
+      旧版把固定尾巴贴到任何句子后面，2026-09-10 实测产出过一批病句——
+        · I am busy to keep everything on track.      （be 动词 + 目的状语，不成立）
+        · My colleague helped me a lot with my colleagues at the office.
+                                                      （我和我的同事？重复且拧巴）
+        · I met my manager yesterday when I have free time.
+        · I met my manager yesterday to keep everything on track.  （时态打架）
+      参考建议写错了比不给更糟：用户是照着抄的。
+
+    现在的规则：
+      ① 能贴什么，先看句子自己有没有那个成分（有没有时间、有没有连词、是不是 be 句）
+      ② 贴不上就不贴，退到最安全的「换个说法 / 加 which 从句」
+      ③ 目的类建议只在「非 be 句 + 非过去时 + 句子还短」时给，避免语法不成立
+      ④ because 兜底一律用现在时的小从句（I want to …），跟原句时态永远不冲突
+    返回 [(完整示范句, 中文说明)]，最多 2 条。
     """
     import random
     base = s.rstrip().rstrip(".!?")
     if not base:
         return []
+
+    n = len(re.findall(r"[A-Za-z']+", s))
     has_conn = any(re.search(r"\b" + c + r"\b", low) for c in _CONNECT)
     has_time = bool(re.search(
         r"\b(every\s*day|every\s*morning|every\s*evening|usually|often|"
-        r"sometimes|always|never|in\s+the\s+\w+|at\s+\w+|on\s+\w+days?|"
-        r"after\s+\w+|before\s+\w+)\b", low))
-    tail = _pick_tail(low, past)
-    n = len(re.findall(r"[A-Za-z']+", s))
-    goal = f"现在 {n} 个词，补到 10 个词以上就能练到更多结构。"
+        r"sometimes|always|never|yesterday|last\s+\w+|tomorrow|today|now|"
+        r"in\s+the\s+\w+|at\s+\w+|on\s+\w+days?|"
+        r"after\s+\w+|before\s+\w+|right\s+now)\b", low))
+    # 下面几个只做「词形判断」，不是语法解析：
+    #   句子以系动词为主 → 后面不能直接接 to + 动词原形，也别硬塞地点状语
+    #   句子已经有状语（地点/时间/同伴） → 别再加第二层同样的东西
+    #   句子已经并过句 / 有从句 → 别再叠第二个尾巴
+    is_be = bool(re.search(r"\b(am|is|are|was|were)\b", low))
+    has_place = bool(re.search(
+        r"\b(at|in|on|with|from|to)\s+(the|my|your|his|her|our|their|a|an)?\s*\w+", low))
+    has_sub = bool(re.search(r"\b(my|your|his|her|our|their|colleagues?|friends?|"
+                             r"manager|coworkers?|team)\b", low))
+    joined = bool(re.search(r"[,;]\s*(and|but|so|which|when|because)\b", low))
+    can_take_to = (not is_be) and (not past) and (not has_time) \
+                  and (not joined) and n < 14
+    goal = "现在 %d 个词，补到 10 个词以上就能练到更多结构。" % n
 
-    # 结构不同的候选池：原因 / 结果 / 时间从句 / 频率 / 目的 / 同伴
     pool = []
     if n >= 12:
-        # 已经够长了，就别再往上贴尾巴 —— 换「换个说法」/ 加从句
+        # 已经够长：别往上贴尾巴，只给「换个说法」
         pool.append((f"{base}, and it really helps me in my daily life.",
                      "句子已经够长，再加一句并列的感受会更自然。"))
         pool.append((f"{base}, which makes me feel more confident.",
                      "加一个 which 从句，长句更地道。"))
+        pool.append((base,
+                     "句子本身没问题。想更地道，把这个词换成它的固定搭配试试"
+                     "（比如 check → check up on、account → take … into account）；"
+                     "也可以把 because / so 用上，说明原因或结果。"))
     else:
-        if not has_conn:
-            pool.append((f"{base} because {tail}.",
-                         f"补一句原因（because …），信息量立刻多一半。{goal}"))
-            pool.append((f"{base}, so it saves me a lot of time.",
-                         f"也可以补结果（so …），句子更连贯。{goal}"))
-        if not has_time:
+        # ① 还没交代时间/地点 → 先给「补场景」（最安全，不碰动词）。
+        #    系动词句（I am busy.）不加时间状语：语义上说不通，只留 because 那条。
+        if not has_time and not is_be:
             pool.append((f"{base} every day after work.",
-                         f"补一个时间或频率（every day / usually），更像真实表达。{goal}"))
-            pool.append((f"{base} when I have free time.",
-                         f"补一个 when 从句，句子立刻变长。{goal}"))
-        pool.append((f"{base} to keep everything on track.",
-                     f"补一个目的（to …），说明为什么这么做。{goal}"))
-        pool.append((f"{base} with my colleagues at the office.",
-                     f"补上地点和一起做事的人。{goal}"))
-    # 打乱后取 2 条，保证每次给的都不一样
+                         f"补时间或频率（every day / usually），像真在说自己的事。{goal}"))
+        # ② 能自然接结果 → 给「加结果」
+        if not has_conn and not is_be:
+            pool.append((f"{base}, so it saves me a lot of time.",
+                         f"补结果（so …），句子更连贯。{goal}"))
+        # ③ 能接 to + 动词原形 → 给「加目的」
+        if can_take_to and not (has_place or has_sub):
+            pool.append((f"{base} to keep everything on track.",
+                         f"补目的（to + 动词原形），说明你为什么要这么做。{goal}"))
+        # ④ 句子里的动作还缺「在哪 / 和谁」→ 补状语（已经是系动词句就不给，
+        #    "I am busy at the office" 这种读起来像在说地点，容易拧巴）
+        if n >= 4 and not has_place and not has_sub and not is_be:
+            pool.append((f"{base} at the office with my colleagues.",
+                         f"补地点和一起做事的人，句子立刻具体；原结构不动，只加状语。{goal}"))
+        # ⑤ 兜底：接一句恒为真的现在时小从句 —— 原句是什么时态都不会造错
+        pool.append((f"{base} because I want to keep everything on track.",
+                     "补原因（because …），信息量立刻多一半。"
+                     "要写自己的理由时，注意 because 后半句的时态和前半句对齐。"
+                     + goal))
+
+    # 打乱后取 2 条，保证同一句多提交几次不会老看到同一条
     random.shuffle(pool)
     out, seen = [], set()
     for sample, note in pool:
-        # 用整句去重：短句的前缀容易一样，截取前缀会把不同模板误判成同一条
+        # 用整句去重：短句的前缀容易一样，截前缀会把不同模板误判成同一条
         if sample in seen:
             continue
         seen.add(sample)
@@ -1499,11 +1543,17 @@ def _optimizations(s, low, req="", word=""):
         })
     # 注：「题目要写过去的事 / 没用上目标词」这类提醒怎么展示还没定，
     #     等确认后再加回来（下面这段先留空，避免又自作主张）。
-    # 扩写线：语法没错也要提醒，否则学习者会一直停在「主谓宾」三词句上。
-    # 给满 2 条（以前被句号/频率建议挤到只剩 1 条，看着像没给）
+    #
+    # 【参考建议 = 针对这句话给一条改法】
+    # 旧写法：无脑套扩写模板。实测（2026-09-10）同一个「补目的」尾巴被贴到
+    # 任何句子上，出来的是 I am busy to keep everything on track. /
+    # My colleague helped me a lot with my colleagues at the office. 这类
+    # 语义不通、时态打架的病句 —— 比原句还差，等于教错。
+    # 现在：先按句子实际内容匹配「可以加什么」（能用才给），匹配不上就退回
+    # 通用模板里**结构正确**的那几条（换说法 / 并列 which），不再硬贴因果尾巴。
     words = re.findall(r"[A-Za-z']+", s)
     past_sentence = bool(_PAST_MARKER.search(low)) or past_task
-    for sample, note in _expand_samples(s, low, past=past_sentence):
+    for sample, note in _expand_samples(s, low, past=past_sentence, word=word):
         opts.append({
             "kind": "expand",
             "where": "整句",
@@ -1512,12 +1562,45 @@ def _optimizations(s, low, req="", word=""):
         })
     # 保底：不管多少分、不管句子长短，至少给一条可以照着写的完整句
     if not opts:
-        for sample, note in _expand_samples(s, low, past=past_sentence):
+        for sample, note in _expand_samples(s, low, past=past_sentence, word=word):
             opts.append({
                 "kind": "expand", "where": "整句", "sample": sample,
                 "note": note or "句子已经成立，想写得更地道可以照这个方向扩。",
             })
     return opts[:5]
+
+
+_POS_NOUN_MARK = "名"
+_POS_VERB_MARK = "动"
+# 词库里词性标注不整齐（很多词只标了「动词」没标「名词」，或反过来），
+# 光看 pos 会把 choose / check 这类词判错。这里补一份中文本义动词表做双保险：
+# 释义里出现这些字，就不按「可数名词」给复数建议（避免误报成错误）。
+_MEAN_VERB_HINTS = ("做", "使", "让", "把", "进行", "前往", "给予", "表示", "认为",
+                    "选择", "检查", "核对", "查看", "准备", "完成", "开始", "帮助",
+                    "参加", "提交", "记录", "支付", "购买", "收拾", "整理", "安排")
+
+
+def _more_plural_likely(word):
+    """粗略判断目标词像不像可数名词（只用来避免生成病句，不做语法判定）。
+
+    "every choose" 是错的 —— 动词不能加 every。所以这条建议只在词库
+    把它标成「名」且不是动词时才给；查不到就返回 False（宁可不给）。
+    """
+    try:
+        from db import get_conn
+        conn = get_conn()
+        row = conn.execute("SELECT pos, meaning FROM dictionary WHERE word=? LIMIT 1",
+                           ((word or "").strip().lower(),)).fetchone()
+        conn.close()
+        pos = (row["pos"] or "") if row else ""
+        meaning = (row["meaning"] or "") if row else ""
+    except Exception:
+        return False
+    if _POS_NOUN_MARK not in pos or _POS_VERB_MARK in pos:
+        return False
+    if any(h in meaning for h in _MEAN_VERB_HINTS):
+        return False
+    return True
 
 
 # =====================================================================
