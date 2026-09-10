@@ -1,0 +1,702 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>隐身学习</title>
+<style>
+/* 隐身学习模式专用样式：全部 .st- 前缀，只在 stealth.html 内生效。
+   刻意不使用任何彩色 —— 文字一律纯黑/深灰，靠字号、字重、间距分层级。
+   不引用、不覆盖主站的任何 CSS 变量或类名。
+
+   【为未来的透明桌面悬浮窗预留】
+   背景/边框/输入框底色统一走 CSS 变量（见 :root 与 body.ghost）。
+   未来用 Tauri 封装时只要做两件事就能得到真正的透明悬浮窗：
+     1) 窗口配置 transparent:true + decorations:false
+     2) 默认给 <body> 加上 ghost 类（或把 :root 变量的默认值换成半透明值）
+   本文件不需要任何改写，也不引入任何 Tauri / Electron 代码。 */
+:root{
+  /* ── 两个可调旋钮：0~100，由标题栏「◐」面板里的滑杆写入 ──
+     --st-alpha：背景不透明度。100 = 实心白窗，0 = 背景全透（只剩文字浮在桌面上）
+     --st-ink  ：文字不透明度。100 = 纯黑，  0 = 文字全隐形（真·隐身） */
+  --st-alpha:1;
+  --st-ink:1;
+
+  /* 底色：全部由 --st-alpha 驱动。
+     输入框刻意 +15%、标题栏刻意 -30%，做到「越透越隐形，但还打得进字」。
+     rgba 的 alpha 超出 [0,1] 时浏览器会自动 clamp，不用手动兜底。 */
+  --st-bg:rgba(255,255,255,var(--st-alpha));
+  --st-bar:rgba(248,248,248,calc(var(--st-alpha) - 0.30));
+  --st-field:rgba(255,255,255,calc(var(--st-alpha) + 0.15));
+  --st-quiet:rgba(244,244,244,calc(var(--st-alpha) - 0.15));
+
+  /* 文字层级：一律 rgba 纯黑 × --st-ink，不用任何彩色。
+     靠 alpha 深浅 + 字号 + 字重分层级。
+     数字对应原来的灰阶：k1≈#111 k2≈#222 k3≈#444 k4≈#555 k5≈#777 k6≈#888 k7≈#999 k8≈#bbb */
+  --st-k0:rgba(0,0,0,var(--st-ink));
+  --st-k1:rgba(0,0,0,calc(var(--st-ink)*.93));
+  --st-k2:rgba(0,0,0,calc(var(--st-ink)*.87));
+  --st-k3:rgba(0,0,0,calc(var(--st-ink)*.73));
+  --st-k4:rgba(0,0,0,calc(var(--st-ink)*.67));
+  --st-k5:rgba(0,0,0,calc(var(--st-ink)*.53));
+  --st-k6:rgba(0,0,0,calc(var(--st-ink)*.47));
+  --st-k7:rgba(0,0,0,calc(var(--st-ink)*.40));
+  --st-k8:rgba(0,0,0,calc(var(--st-ink)*.27));
+
+  --st-line:rgba(0,0,0,calc(var(--st-ink)*.16));   /* 边框 / 分隔线，跟文字一起淡 */
+  --st-line2:rgba(0,0,0,calc(var(--st-ink)*.10));
+  --st-sh:rgba(0,0,0,calc(.13 * var(--st-alpha))); /* 背景越透投影越淡，越像浮在桌面上 */
+}
+/* 透明模式（背景 <100%）：Web 版拖滑杆开启，桌面壳默认开。
+   ghost 类现在只负责「淡投影 + 显示模拟桌面」，具体数值仍走上面的变量。
+   【2026-09-09 定：去掉毛玻璃】这里原来是
+       body.ghost .st-win{backdrop-filter:blur(6px) saturate(1.1)}
+   已删除 —— 要的是**透明**不是模糊：毛玻璃会把背后的页面/桌面糊掉，
+   反而更像「盖了一层东西」，既不符合摸鱼需求，也和桌面壳的原生
+   transparent:true 对不上。现在 ghost = 纯透明，直接透出后面的页面 / 桌面。 */
+/* 假桌面：Web 版背后是白页，不铺一层底色根本看不出透明效果。
+   这是 Web 预览专用背景层（z-index:-1，压在窗口下面）。
+   未来 Tauri 封装时窗口会真透明 —— 把这整段 .st-desk 删掉即可，其余代码一行都不用改。 */
+body.ghost .st-desk{
+  position:fixed;inset:0;z-index:-1;display:block;
+  /* 偏冷的中性灰蓝，亮度压到 ~190：白窗(255) 和它差 65，透明度一变肉眼立刻能看出来。
+     刻意不用鲜艳色 —— 这是要长时间盯着的背景，不能抢注意力。 */
+  background:linear-gradient(135deg,#aab6cc 0%,#c6b9cf 45%,#b3c8c2 100%);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{background:transparent}   /* html 也透明：浮层模式下直接透出父页面 / 桌面（纯透明，无模糊） */
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif}
+.st-desk{display:none}
+.st-win{position:fixed;right:16px;bottom:16px;width:344px;max-width:calc(100vw - 24px);
+  background:var(--st-bg);border:1px solid var(--st-line);border-radius:10px;
+  box-shadow:0 4px 18px var(--st-sh);overflow:hidden;color:var(--st-k1);font-size:14px;line-height:1.6}
+.st-bar{display:flex;align-items:center;gap:8px;padding:7px 10px;background:var(--st-bar);
+  border-bottom:1px solid var(--st-line);cursor:move;user-select:none;-webkit-user-select:none}
+.st-title{font-size:12px;font-weight:700;letter-spacing:.5px;color:var(--st-k2)}
+.st-prog{font-size:11px;color:var(--st-k5);margin-left:auto;font-variant-numeric:tabular-nums}
+.st-ic{cursor:pointer;font-size:15px;line-height:1;color:var(--st-k6);padding:0 3px}
+.st-ic:hover{color:var(--st-k0)}
+.st-ic.on{color:var(--st-k0);font-weight:700}
+/* 置顶开关：实心箭头=永远置顶；空心箭头=可被其它窗口覆盖 */
+.st-pin-i{width:14px;height:14px;display:block;fill:currentColor;stroke:currentColor;stroke-width:1.4;stroke-linejoin:round}
+.st-pin:not(.on) .st-pin-i{fill:none}
+.st-body{padding:13px 14px 14px;max-height:70vh;overflow-y:auto}
+.st-word{font-size:26px;font-weight:800;letter-spacing:-.2px;color:var(--st-k0);line-height:1.25}
+.st-meta{font-size:12px;color:var(--st-k5);margin-top:2px}
+.st-sec{font-size:11px;font-weight:700;color:var(--st-k7);letter-spacing:1px;margin:13px 0 5px}
+.st-cols{font-size:14px;font-weight:500;color:var(--st-k1)}
+.st-col{padding:1px 0}
+.st-col span{color:var(--st-k6);font-weight:400;font-size:12px}
+.st-ex{font-size:13px;font-weight:400;color:var(--st-k2);padding:2px 0}
+.st-ex b{font-weight:400}
+.st-ex-tr{font-size:12px;color:var(--st-k6);padding:0 0 4px}
+.st-in{width:100%;border:1px solid var(--st-line);border-radius:7px;padding:8px 9px;font-size:14px;
+  font-family:inherit;color:var(--st-k1);resize:vertical;outline:none;background:var(--st-field)}
+.st-in::placeholder{color:var(--st-k8)}
+.st-in:focus{border-color:var(--st-k4)}
+.st-actions{display:flex;align-items:center;gap:9px;margin-top:9px}
+.st-submit{background:var(--st-k1);color:rgba(255,255,255,var(--st-ink));border:none;border-radius:7px;
+  padding:7px 17px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit}
+.st-submit:disabled{background:var(--st-k8);cursor:default}
+.st-hint{font-size:11px;color:var(--st-k7)}
+.st-sw{font-size:11px;font-weight:700;border:1px solid var(--st-k1);border-radius:20px;padding:3px 10px;
+  cursor:pointer;color:var(--st-k1);background:var(--st-field);white-space:nowrap}
+.st-sw.on{background:var(--st-k1);color:rgba(255,255,255,var(--st-ink))}
+.st-fb{margin-top:13px;border-top:1px solid var(--st-line2);padding-top:11px;font-size:13px;color:var(--st-k1)}
+.st-fb-row{margin-bottom:8px}
+.st-fb-lab{font-size:11px;font-weight:700;color:var(--st-k7);letter-spacing:1px;margin-bottom:2px}
+.st-fixed{font-weight:600;color:var(--st-k0)}
+.st-err{padding:5px 0 5px 11px;border-left:2px solid var(--st-k4);margin:6px 0}
+.st-err-hd{font-weight:700;color:var(--st-k0)}
+.st-err-hd s{color:var(--st-k5);text-decoration:line-through;font-weight:400}
+.st-err-hd em{color:var(--st-k4);font-style:normal;font-weight:400}
+.st-err-ex{font-size:12.5px;color:var(--st-k3);font-weight:400}
+.st-sum{font-size:12.5px;font-weight:400;color:var(--st-k2);background:var(--st-quiet);
+  border-radius:6px;padding:8px 9px;margin-top:9px}
+.st-nextrow{margin-top:11px}
+.st-next{width:100%;background:var(--st-field);color:var(--st-k1);border:1px solid var(--st-k1);
+  border-radius:7px;padding:8px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit}
+.st-next:hover{background:var(--st-k1);color:rgba(255,255,255,var(--st-ink))}
+.st-empty{font-size:13px;color:var(--st-k4);padding:10px 0}
+.st-empty b{display:block;font-size:15px;color:var(--st-k0);font-weight:700;margin-bottom:4px}
+.st-pill{position:fixed;right:14px;bottom:14px;background:var(--st-k1);color:rgba(255,255,255,var(--st-ink));
+  border:none;border-radius:20px;padding:8px 14px;font-size:12px;font-weight:600;cursor:pointer;
+  font-family:inherit;box-shadow:0 3px 12px var(--st-sh);display:none}
+
+/* ── 情景区（§2）：造句前先看场景，再写第一句 ──
+   刻意不用任何彩色：层级靠字号 / 字重 / 左边一道细线，跟整体黑白风一致。 */
+.st-sc{font-size:13px;color:var(--st-k1);background:var(--st-quiet);border-radius:6px;
+  border-left:2px solid var(--st-k5);padding:7px 9px;line-height:1.55}
+.st-sc-tier{font-size:10px;font-weight:700;color:var(--st-k7);letter-spacing:1px;margin-bottom:2px}
+.st-sc-txt{color:var(--st-k1)}
+.st-sc-none{font-size:12px;color:var(--st-k6);background:var(--st-quiet);border-radius:6px;padding:6px 9px}
+/* 🔁 换场景：任何分数都能点；>90 分时加 .hot 变成「反白小胶囊」高亮 */
+.st-ref{float:right;cursor:pointer;font-size:12px;color:var(--st-k6);padding:0 2px;line-height:1.6}
+.st-ref:hover{color:var(--st-k0)}
+.st-ref.hot{float:none;color:rgba(255,255,255,var(--st-ink));background:var(--st-k1);
+  border-radius:20px;padding:1px 8px;font-weight:700}
+/* 换场景后的软提示：>90 分出现，一行小字，不弹框 */
+.st-tip90{font-size:11px;color:var(--st-k6);margin-top:5px;display:none}
+.st-tip90.show{display:block}
+/* ⭐ 薄弱项讲解（§4）：原地一行，不弹 modal、不跳页。
+   用「星星 + 虚线左边框」跟下面的「更自然 / 总评」区分开。 */
+.st-weak{display:flex;gap:6px;align-items:flex-start;margin-top:9px;font-size:12.5px;
+  color:var(--st-k2);background:var(--st-quiet);border-left:2px dashed var(--st-k6);
+  border-radius:6px;padding:7px 9px;line-height:1.55}
+.st-weak-i{flex:none;font-size:12px;line-height:1.5}
+/* 分数行：AI 出分（§3），本地兜底时标「本地估算」 */
+.st-score{display:flex;align-items:baseline;gap:8px;margin-bottom:9px}
+.st-score-n{font-size:22px;font-weight:800;color:var(--st-k0);font-variant-numeric:tabular-nums;line-height:1.1}
+.st-score-lv{font-size:12px;font-weight:700;color:var(--st-k2)}
+.st-score-src{font-size:10.5px;color:var(--st-k7);margin-left:auto}
+.st-foot{font-size:10.5px;color:var(--st-k8);margin-top:9px;text-align:right;font-variant-numeric:tabular-nums}
+
+/* 覆盖在主学习页上的透明模式：由 index.html 的 openStealth() 以 iframe 浮层打开。
+   【2026-09-09 定：无毛玻璃】父页面浮层已不再模糊学习页（backdrop-filter 已删），
+   背后就是清清楚楚的真实页面；这里只需隐藏 Web 预览用的假桌面 .st-desk。 */
+.st-overlay .st-desk{display:none !important}
+/* 桌面壳（Tauri）：窗口本身 transparent:true，假桌面必须隐藏 ——
+   否则拉透明滑杆露出来的是这层彩色假桌面，而不是真实桌面（「透明变彩色」根因）。 */
+body.st-tauri .st-desk{display:none !important}
+/* 喇叭：黑色线条图标，跟随文字颜色一起淡出（贴合纯黑隐身风） */
+.st-spk{display:inline-flex;vertical-align:middle;margin-left:7px;cursor:pointer;
+  color:var(--st-k3);opacity:.5;transition:opacity .15s}
+.st-spk:hover{opacity:1}
+.st-spk-i{width:14px;height:14px;fill:none;stroke:currentColor;stroke-width:2;
+  stroke-linecap:round;stroke-linejoin:round}
+.st-ex-row{display:flex;align-items:baseline;gap:6px}
+.st-ex-t{flex:1;min-width:0}
+
+/* ── 调节面板：背景 / 文字 两条 0~100 滑杆 ── */
+.st-tune{padding:9px 13px 10px;border-bottom:1px solid var(--st-line);background:var(--st-bar);display:none}
+.st-tune.show{display:block}
+.st-tune-row{display:flex;align-items:center;gap:9px;margin:4px 0}
+.st-tune-lab{font-size:11px;font-weight:700;color:var(--st-k7);width:26px;letter-spacing:.5px;flex:none}
+.st-tune-val{font-size:11px;font-weight:700;color:var(--st-k1);width:38px;text-align:right;
+  flex:none;font-variant-numeric:tabular-nums}
+.st-tune-tip{font-size:10px;color:var(--st-k8);margin-top:5px;line-height:1.5}
+/* range 原生样式是浏览器蓝，这里改成纯黑白，跟整体一致 */
+.st-range{-webkit-appearance:none;appearance:none;flex:1;height:16px;background:transparent;cursor:pointer;margin:0}
+.st-range:focus{outline:none}
+.st-range::-webkit-slider-runnable-track{height:2px;border-radius:2px;background:rgba(0,0,0,calc(var(--st-ink)*.22))}
+.st-range::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;width:12px;height:12px;border-radius:50%;
+  background:rgba(0,0,0,var(--st-ink));border:none;margin-top:-5px}
+.st-range::-moz-range-track{height:2px;border-radius:2px;background:rgba(0,0,0,calc(var(--st-ink)*.22))}
+.st-range::-moz-range-thumb{width:12px;height:12px;border-radius:50%;background:rgba(0,0,0,var(--st-ink));border:none}
+
+/* ── Logo 永显层（独立于内容透明层）──
+   内容背景(--st-alpha)和文字(--st-ink)都调到 0 时 English OS 全部隐身，
+   只剩这个固定在角落的小 Logo 仍显示，用来重新找回控制界面。
+   颜色写死、不引用 --st-ink / --st-alpha，永远不随内容透明度消失。 */
+.st-logo{position:fixed;right:9px;bottom:9px;z-index:99;cursor:pointer;user-select:none;
+  -webkit-user-select:none;width:20px;height:20px;border-radius:50%;
+  background:rgba(0,0,0,.16);color:rgba(255,255,255,.92);
+  font-size:11px;font-weight:800;line-height:20px;text-align:center;font-family:inherit}
+.st-logo:hover{background:rgba(0,0,0,.36)}
+</style>
+</head>
+<body>
+<!-- Web 预览用的假桌面（只有 ghost 模式才显示）。未来 Tauri 封装时可整段删掉 -->
+<div class="st-desk"></div>
+
+<div class="st-win" id="win">
+  <!-- 桌面壳拖动：Tauri 环境里由 .st-bar 的 mousedown 调 Tauri API startDragging() 移动原生窗口；
+       Web 浮层（iframe / 浏览器直开）则回落到下面的 JS div 拖动。
+       窗口主体的输入框和按钮不受影响，点击/输入照常。 -->
+  <div class="st-bar" id="bar">
+    <!-- 【去标题】原来这里写着「隐身学习」—— 摸鱼时这四个字等于自报家门，
+         别人一眼就知道你在背单词。现改为不显示任何文字（只留进度数字和图标），
+         窗口看起来就是个没名字的小便签。 -->
+    <span class="st-prog" id="prog"></span>
+    <span class="st-ic" id="ghost" title="调节背景 / 文字透明度（0~100）">◐</span>
+    <span class="st-ic" id="min" title="收起">—</span>
+    <span class="st-ic st-pin on" id="pin" title="置顶开关：实心=永远置顶，空心=可被其它窗口覆盖"><svg class="st-pin-i" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4 l6.5 8 h-4 v8 h-5 v-8 h-4 z"/></svg></span>
+    <span class="st-ic" id="close" title="暂停">×</span>
+  </div>
+
+  <!-- 透明度调节面板：两条滑杆，都是 0~100 连续可调，实时生效并记在本地 -->
+  <div class="st-tune" id="tune">
+    <div class="st-tune-row">
+      <span class="st-tune-lab">背景</span>
+      <input type="range" class="st-range" id="rBg" min="0" max="100" step="1" value="100"
+             aria-label="背景不透明度">
+      <span class="st-tune-val" id="vBg">100</span>
+    </div>
+    <div class="st-tune-row">
+      <span class="st-tune-lab">文字</span>
+      <input type="range" class="st-range" id="rInk" min="0" max="100" step="1" value="100"
+             aria-label="文字不透明度">
+      <span class="st-tune-val" id="vInk">100</span>
+    </div>
+    <div class="st-tune-tip">背景 100 = 实心白窗，0 = 背景全透（只剩字浮在后面页面上）　·　文字 0 = 内容全隐形</div>
+  </div>
+
+  <div class="st-body" id="body">
+    <div class="st-empty" id="empty">正在读取今天的词…</div>
+
+    <div id="main" style="display:none">
+      <div class="st-word" id="word"></div>
+      <div class="st-meta" id="meta"></div>
+
+      <div class="st-sec">搭配</div>
+      <div class="st-cols" id="cols"></div>
+
+      <div class="st-sec">例句</div>
+      <div class="st-exs" id="exs"></div>
+
+      <!-- 情景（§2）：先看场景再造句。情景在导入时就已批量生成好，
+           这里只做展示和轮换，不现场生成，所以打开就有、不用等。 -->
+      <div class="st-sec" id="sclab" style="display:none">情景<span class="st-ref" id="ref" title="换一条同词情景">🔁</span></div>
+      <div class="st-sc" id="sc" style="display:none"></div>
+      <div class="st-tip90" id="tip90">掌握得不错，换下一个场景？</div>
+
+      <div class="st-sec" id="asklab">造句</div>
+      <textarea class="st-in" id="in" rows="2" placeholder="Write a sentence…"></textarea>
+      <div class="st-actions">
+        <button class="st-submit" id="submit">提交</button>
+        <span class="st-sw" id="aiSw" title="切换批改方式：本地（秒回，不花额度）/ AI（豆包，约 10 秒，讲得细）">本地</span>
+        <span class="st-sw" id="copy" title="复制「单词 + 我的句子」，可以粘给外部 AI">复制</span>
+        <span class="st-hint" id="hint">Enter 提交</span>
+      </div>
+      <div class="st-fb" id="fb"></div>
+      <div class="st-nextrow" id="nextrow" style="display:none">
+        <button class="st-next" id="next">下一个词 →</button>
+      </div>
+      <div class="st-foot" id="foot"></div>
+    </div>
+  </div>
+</div>
+<button class="st-pill" id="pill">▶ 继续学习</button>
+
+<!-- Logo 永显层：独立于内容透明层（不写进 .st-win，不引用 --st-ink/--st-alpha）。
+     内容全隐身时屏幕上只剩它；点击 → 一键找回 English OS 内容并打开现有调节面板。 -->
+<div class="st-logo" id="logo" title="English OS · 点击找回控制界面">E</div>
+
+<script>
+var TOKEN_KEY='eos_token';
+function getTok(){ try{ return localStorage.getItem(TOKEN_KEY)||''; }catch(e){ return ''; } }
+function setTok(v){ try{ v?localStorage.setItem(TOKEN_KEY,v):localStorage.removeItem(TOKEN_KEY); }catch(e){} }
+async function apiRaw(p,opt){
+  var h=Object.assign({},(opt&&opt.headers)||{});
+  var t=getTok(); if(t) h['X-Auth-Token']=t;
+  return fetch('/api'+p,Object.assign({},opt||{},{headers:h}));
+}
+async function api(p,opt){
+  var r=await apiRaw(p,opt);
+  if(r.status!==401) return r.json();
+  setTok('');
+  var v=window.prompt('请输入访问口令：','');
+  if(!v) return {ok:false,error:'未授权'};
+  setTok(v);
+  r=await apiRaw(p,opt);
+  if(r.status===401){ setTok(''); return {ok:false,error:'口令错误'}; }
+  return r.json();
+}
+function esc(s){return (s==null?'':String(s)).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+function $(id){return document.getElementById(id);}
+
+/* 语音朗读（Web Speech API，和主站同一套机制）：黑色线条喇叭触发，朗读英文。
+   听单词 / 听例句 / 听我的句子 都用它。 */
+var SPK='<svg class="st-spk-i" viewBox="0 0 24 24" aria-hidden="true"><path d="M11 5 6 9H2v6h4l5 4z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M19 5a9 9 0 0 1 0 14"/></svg>';
+function stSpeak(text){
+  text=(text||'').trim(); if(!text||!window.speechSynthesis) return;
+  try{ window.speechSynthesis.cancel();
+    var u=new SpeechSynthesisUtterance(text); u.lang='en-US'; u.rate=0.95;
+    window.speechSynthesis.speak(u);
+  }catch(e){}
+}
+$('body').addEventListener('click',function(e){
+  var t=e.target.closest?e.target.closest('[data-spk]'):null;
+  if(t){ e.stopPropagation(); stSpeak(t.getAttribute('data-spk')); }
+});
+
+/* 桌面壳（Tauri）集成：窗口移动 / 置顶用 Tauri API；Web 浮层模式自动回落到 div 拖动。
+   桌面壳里优先用 tauri.conf.json「withGlobalTauri」注入的 window.__TAURI__（本地可用，
+   不依赖网络），加载不到再走 CDN 动态 import；普通浏览器 / iframe 浮层静默失效。
+   这样保证在 Tauri 窗口里拖动标题栏时，执行的是原生窗口级 startDragging()，
+   而不是退化成网页内部拖 div。 */
+var tauriReady=(async function(){
+  try{ if(window.__TAURI__&&window.__TAURI__.window) return window.__TAURI__.window; }catch(e){}
+  try{ return await import('https://cdn.jsdelivr.net/npm/@tauri-apps/api@2/window.js'); }
+  catch(e){ return null; }
+})();
+async function getWin(){ try{ var m=await tauriReady; return m&&m.getCurrentWindow?m.getCurrentWindow():null; }catch(e){ return null; } }
+
+var cur=null, busy=false;
+var curSc=null;        /* 当前情景 {id, tier_label, prompt} —— 🔁 换场景时用来排除自己 */
+
+/* 渲染情景区。没有情景（没配 Key / 还没生成）就整块隐藏，不占地方、不报错。 */
+function paintSc(sc){
+  curSc = sc || null;
+  if(!sc || !sc.prompt){
+    $('sclab').style.display='none'; $('sc').style.display='none';
+    $('ref').style.display='none'; hideTip90();
+    return;
+  }
+  $('sclab').style.display='';
+  $('ref').style.display='';
+  $('sc').style.display='';
+  $('sc').innerHTML='<div class="st-sc-tier">'+esc(sc.tier_label||'情景')+'</div>'
+    +'<div class="st-sc-txt">'+esc(sc.prompt)+'</div>';
+}
+/* 🔁 换一条同词情景：只从库存轮换，不现场生成（后端保证），点了立刻换 */
+async function nextScenario(){
+  if(!cur) return;
+  var w=cur.word||'';
+  if(!w) return;
+  $('ref').style.opacity=.4;
+  try{
+    var d=await api('/scenario/next?word='+encodeURIComponent(w)+'&cur='+(curSc&&curSc.id||0));
+    if(d&&d.ok&&d.scenario){ paintSc(d.scenario); hideTip90(); }
+    else{ flashHint((d&&d.message)||'这个词还没有情景'); }
+  }catch(e){}
+  $('ref').style.opacity='';
+}
+/* >90 分软提示：提示可换场景 + 高亮 🔁。不强制、不自动跳。 */
+function showTip90(){
+  $('tip90').classList.add('show');
+  $('ref').classList.add('hot');
+}
+function hideTip90(){
+  $('tip90').classList.remove('show');
+  $('ref').classList.remove('hot');
+}
+$('ref').onclick=nextScenario;
+
+async function load(){
+  $('fb').innerHTML=''; $('nextrow').style.display='none';
+  $('in').value=''; $('hint').textContent='Enter 提交';
+  var d;
+  try{ d=await api('/stealth/next'); }catch(e){
+    $('empty').innerHTML='<b>读取失败</b>网络异常，刷新页面重试。'; return;
+  }
+  if(!d||d.error){ $('empty').innerHTML='<b>读取失败</b>'+esc((d&&d.error)||'未知错误'); return; }
+  if(d.done){
+    $('main').style.display='none'; $('empty').style.display='';
+    var pg=d.progress||{};
+    $('empty').innerHTML='<b>今天的词都过完了</b>'
+      +esc(d.message||'')
+      +(pg.total?'　进度 '+pg.done+'/'+pg.total:'');
+    $('prog').textContent=pg.total?(pg.done+'/'+pg.total):'';
+    return;
+  }
+  cur=d.word||{};
+  var pg=d.progress||{};
+  $('prog').textContent=pg.total?(pg.done+'/'+pg.total):'';
+  $('empty').style.display='none'; $('main').style.display='';
+  $('word').innerHTML=(cur.word||'')+' <span class="st-spk" data-spk="'+esc(cur.word||'')+'">'+SPK+'</span>';
+  $('meta').textContent=[cur.phonetic,cur.pos,cur.meaning].filter(Boolean).join('　');
+  var cols=cur.collocations||[];
+  $('cols').innerHTML=cols.length?cols.map(function(c){
+      return '<div class="st-col">'+esc(c.phrase||'')+(c.meaning?' <span>'+esc(c.meaning)+'</span>':'')+'</div>';
+    }).join(''):'<div class="st-col"><span>这个词暂时没有搭配数据</span></div>';
+  var exs=cur.examples||[];
+  $('exs').innerHTML=exs.length?exs.map(function(e){
+      return '<div class="st-ex"><span class="st-ex-row"><span class="st-ex-t">'+esc(e.sentence||'')
+        +'</span><span class="st-spk" data-spk="'+esc(e.sentence||'')+'">'+SPK+'</span></span>'
+        +(e.translation?'<div class="st-ex-tr">'+esc(e.translation)+'</div>':'');
+    }).join(''):'<div class="st-ex"><span style="color:var(--st-k7)">暂时没有例句</span></div>';
+  $('asklab').textContent='用 '+(cur.word||'')+' 造句';
+  paintSc(d.scenario);          /* 情景在后端已预生成，打开就有，先看场景再写第一句 */
+  hideTip90();
+  $('foot').textContent='';
+  $('in').focus();
+}
+
+/* 批改方式开关：AI = 调豆包（约 10 秒，讲得细）；本地 = 只走规则引擎（秒回，不花额度）。
+   选择记在本地，下次打开保持。两种模式都会把造句写进同一张 sentences 表。 */
+var useAI=false;   /* 默认本地：秒回、不花额度。想听 AI 讲解时点一下开关切到 AI */
+try{ useAI = localStorage.getItem('st_ai')==='1'; }catch(e){}
+function paintSw(){
+  $('aiSw').textContent = useAI?'AI':'本地';
+  $('aiSw').classList.toggle('on', useAI);
+}
+/* 置顶开关：实心箭头=永远置顶；空心箭头=可被其它窗口覆盖。选择记在本地。 */
+var winPin=true;
+try{ winPin = localStorage.getItem('st_pin')!=='0'; }catch(e){}
+function paintPin(){ $('pin').classList.toggle('on', winPin); }
+async function setPin(on){
+  winPin=on;
+  try{ localStorage.setItem('st_pin', on?'1':'0'); }catch(e){}
+  paintPin();
+  var w=await getWin();
+  if(w){ try{ await w.setAlwaysOnTop(on); }catch(_){} }
+}
+function flashHint(t){
+  $('hint').textContent=t;
+  setTimeout(function(){ $('hint').textContent='Enter 提交'; },1700);
+}
+$('aiSw').onclick=function(){
+  useAI=!useAI;
+  try{ localStorage.setItem('st_ai', useAI?'1':'0'); }catch(e){}
+  paintSw();
+  flashHint(useAI?'AI 批改 · 约 10 秒':'本地批改 · 秒回不花额度');
+};
+$('pin').onclick=function(){ setPin(!winPin); };
+/* 复制「单词 + 我的句子」，方便你直接粘给外部 AI，不用等内置批改 */
+$('copy').onclick=function(){
+  var v=($('in').value||'').trim();
+  if(!v){ flashHint('先写一个句子'); return; }
+  var ok=false;
+  try{
+    var ta=document.createElement('textarea');
+    ta.value='单词：'+(cur&&cur.word||'')+'\n我的句子：'+v;
+    ta.style.cssText='position:fixed;top:0;left:0;width:1px;height:1px;opacity:0';
+    document.body.appendChild(ta); ta.focus(); ta.select();
+    try{ ok=document.execCommand('copy'); }catch(e){}
+    ta.remove();
+  }catch(e){}
+  flashHint(ok?'已复制 ✅':'复制失败，请手动选中');
+};
+
+async function submit(){
+  if(busy||!cur) return;
+  var v=($('in').value||'').trim();
+  if(!v){ $('hint').textContent='先写一个句子'; return; }
+  window._mySentence=v;   /* 供"听我的句子"朗读 */
+  busy=true; $('submit').disabled=true;
+  $('submit').textContent = useAI?'AI 批改中…':'批改中…';
+  $('fb').innerHTML='<div class="st-hint">'+(useAI?'AI 正在批改…':'正在批改…')+'</div>';
+  $('nextrow').style.display='none';
+  try{
+    var r=await api('/stealth/submit',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({word:cur.word,sentence:v,grammar:window._grammar||'',ai:useAI?1:0})});
+    if(!r||r.ok===false){
+      $('fb').innerHTML='<div class="st-empty"><b>批改失败</b>'+esc((r&&r.error)||'请稍后再试')+'</div>';
+      $('nextrow').style.display='';
+      return;
+    }
+    render(r);
+  }catch(e){
+    $('fb').innerHTML='<div class="st-empty"><b>网络异常</b>请稍后再试。</div>';
+  }finally{
+    busy=false; $('submit').disabled=false; $('submit').textContent='提交';
+  }
+}
+
+function render(r){
+  var a=r.ai||{}, lc=r.local||{};
+  /* AI 没调（本地模式）或调用失败 → 自动回落到本地规则结果，页面不会开天窗 */
+  var byAI = !r.ai_error && a && a.corrected!==undefined;
+  var errs = byAI?(a.errors||[]):(lc.errors||[]);
+  var nat  = byAI?(a.natural||[]):[];
+  var fixed= byAI?(a.corrected||''):(lc.corrected||'');
+  var sum  = byAI?(a.summary||''):(lc.explanation||'');
+  var h='';
+  /* ── 分数（§3）：AI 配了就用 AI 的分，没配才用本地规则，并明写「本地估算」 ──
+     以前不管有没有 AI 都显示本地规则给的 90 分，出现过
+     "communicate very important base work" 这种根本不是句子的也给 90 分。 */
+  var s = byAI ? ((a.score!==undefined&&a.score!==null)?a.score:null)
+               : ((lc.score!==undefined&&lc.score!==null)?lc.score:null);
+  var lv = byAI ? (a.level||'') : (lc.verdict||lc.level||'');
+  if(s!==null||lv){
+    h+='<div class="st-score">'
+      +(s!==null?'<span class="st-score-n">'+esc(s)+'</span>':'')
+      +(lv?'<span class="st-score-lv">'+esc(lv)+'</span>':'')
+      +'<span class="st-score-src">'+(byAI?'AI 评分':'本地估算，仅供参考')+'</span>'
+      +'</div>';
+  }
+  if(byAI && a.is_sentence===0){
+    h+='<div class="st-fb-row"><div class="st-fb-lab">提示</div>'
+      +'<div style="color:var(--st-k3)">这还不算一个完整句子——英文句子要有「谁 + 干了什么」。</div></div>';
+  }
+  if(r.ai_error){
+    h+='<div class="st-fb-row"><div class="st-fb-lab">提示</div>'
+      +'<div style="color:var(--st-k4)">'+esc(r.ai_error)+'（下面用的是本地规则结果）</div></div>';
+  }
+  if(window._mySentence){
+    h+='<div class="st-fb-row"><div class="st-fb-lab">我的</div>'
+      +'<div class="st-fixed">'+esc(window._mySentence)
+      +' <span class="st-spk" data-spk="'+esc(window._mySentence)+'">'+SPK+'</span></div></div>';
+  }
+  if(fixed){
+    h+='<div class="st-fb-row"><div class="st-fb-lab">修改</div>'
+      +'<div class="st-fixed">'+esc(fixed)
+      +' <span class="st-spk" data-spk="'+esc(fixed)+'">'+SPK+'</span></div></div>';
+  }
+  if(errs.length){
+    h+='<div class="st-fb-row"><div class="st-fb-lab">要改的地方</div>';
+    errs.forEach(function(e){
+      h+='<div class="st-err"><div class="st-err-hd">■ '+esc(e.type||'问题')
+        +(e.wrong?'　<s>'+esc(e.wrong)+'</s>':'')
+        +(e.right?' → <em>'+esc(e.right)+'</em>':'')+'</div>'
+        +(e.explain?'<div class="st-err-ex">'+esc(e.explain)+'</div>':'')+'</div>';
+    });
+    h+='</div>';
+  }else{
+    h+='<div class="st-fb-row"><div class="st-fb-lab">要改的地方</div>'
+      +'<div class="st-fixed">没有明显错误，可以用。</div></div>';
+  }
+  if(nat.length){
+    h+='<div class="st-fb-row"><div class="st-fb-lab">更自然</div>';
+    nat.forEach(function(n){
+      h+='<div class="st-err" style="border-left-color:var(--st-k8)"><div class="st-err-hd">'+esc(n.better||'')+'</div>'
+        +(n.reason?'<div class="st-err-ex">'+esc(n.reason)+'</div>':'')+'</div>';
+    });
+    h+='</div>';
+  }
+  if(sum) h+='<div class="st-sum">'+esc(sum)+'</div>';
+  /* ⭐ 薄弱项讲解（§4）：同一个错反复出现时，原地加一行，不弹框不跳页 */
+  h+='<div id="weak"></div>';
+  $('fb').innerHTML=h;
+  $('nextrow').style.display='';
+  $('foot').textContent = byAI
+    ? ((a.model||'AI')+(a.elapsed_ms?'　'+((a.elapsed_ms||0)/1000).toFixed(1)+'s':''))
+    : '本地规则　未调用 AI';
+  /* >90 分软提示（§2.6）：提示换场景 + 高亮 🔁，不强制 */
+  if(s!==null && s>90) showTip90();
+  renderWeak(r.weakness);
+}
+
+/* 薄弱项讲解：后端说「这个词这个错反复出现了」才显示。
+   讲过的内容后端有缓存，第二次直接命中，不再等 AI。 */
+async function renderWeak(wk){
+  var box=$('weak');
+  if(!box) return;
+  if(!wk || !wk.tag){ box.innerHTML=''; return; }
+  var word=wk.word||(cur&&cur.word)||'';
+  if(wk.explain){ paintWeak(wk.explain); return; }
+  box.innerHTML='<div class="st-weak"><span class="st-weak-i">⭐</span>'
+    +'<span style="color:var(--st-k6)">正在分析你反复犯的这个错…</span></div>';
+  try{
+    var d=await api('/weakness/explain?word='+encodeURIComponent(word)
+      +'&tag='+encodeURIComponent(wk.tag)+'&hits='+(wk.hits||0));
+    if(d&&d.ok&&d.explain) paintWeak(d.explain);
+    else box.innerHTML='';     /* 没到阈值 / AI 不可用 → 静默收起，不打扰 */
+  }catch(e){ box.innerHTML=''; }
+}
+function paintWeak(t){
+  var box=$('weak');
+  if(!box) return;
+  box.innerHTML='<div class="st-weak"><span class="st-weak-i">⭐</span><span>'+esc(t)+'</span></div>';
+}
+
+async function nextWord(){
+  if(!cur) return;
+  $('next').disabled=true;
+  try{
+    await api('/word/master',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({word:cur.word,mastered:2,collocations:cur.collocations||[]})});
+  }catch(e){}
+  $('next').disabled=false;
+  load();
+}
+
+$('submit').onclick=submit;
+$('next').onclick=nextWord;
+$('in').addEventListener('keydown',function(e){
+  if(e.key==='Enter'&&!e.shiftKey){ e.preventDefault(); submit(); }
+});
+/* 透明度：背景 / 文字 两条 0~100 滑杆，连续可调、实时生效、记在本地。
+     背景 100 = 实心白窗，0 = 背景全透（只剩文字浮在桌面上）
+     文字 100 = 纯黑，    0 = 内容全隐形（真·隐身）
+   两条滑杆互不干扰，可以「背景 20 + 文字 90」这种只剩字的极度隐形组合。
+   桌面版默认 st_bg=30：打开即透明悬浮窗（用户拉过滑杆则以存值为准）。 */
+var IS_TAURI=false; try{ IS_TAURI=!!window.__TAURI_INTERNALS__; }catch(e){}
+if(IS_TAURI) document.body.classList.add('st-tauri');
+var stBg=100, stInk=100;
+function clamp0_100(v,d){ v=parseInt(v,10); if(isNaN(v)) v=d; return Math.max(0,Math.min(100,v)); }
+try{
+  var _b=localStorage.getItem('st_bg');
+  if(_b!==null && _b!==''){ stBg=clamp0_100(_b,100); }
+  else{
+    /* 兼容旧版：五档设置 / 开关键 */
+    var _a=localStorage.getItem('st_alpha');
+    if(_a) stBg=clamp0_100(_a,100);
+    else if(localStorage.getItem('st_ghost')==='1') stBg=80;
+    else if(IS_TAURI) stBg=30;
+  }
+  var _i=localStorage.getItem('st_ink');
+  if(_i!==null && _i!=='') stInk=clamp0_100(_i,100);
+}catch(e){}
+function applyLook(){
+  var r=document.documentElement.style;
+  r.setProperty('--st-alpha',(stBg/100).toFixed(3));
+  r.setProperty('--st-ink',(stInk/100).toFixed(3));
+  document.body.classList.toggle('ghost', stBg<100);
+  $('vBg').textContent=stBg; $('vInk').textContent=stInk;
+  if(String($('rBg').value)!==String(stBg))  $('rBg').value=stBg;
+  if(String($('rInk').value)!==String(stInk)) $('rInk').value=stInk;
+  /* 标题栏那个 ◐ 直接显示当前背景值，不打开面板也知道现在有多透 */
+  $('ghost').textContent = stBg>=100 ? '◐' : String(stBg);
+  $('ghost').classList.toggle('on', stBg<100 || $('tune').classList.contains('show'));
+  try{ localStorage.setItem('st_bg',stBg); localStorage.setItem('st_ink',stInk); }catch(e){}
+}
+$('rBg').addEventListener('input',function(){ stBg=clamp0_100(this.value,100); applyLook(); });
+$('rInk').addEventListener('input',function(){ stInk=clamp0_100(this.value,100); applyLook(); });
+$('ghost').onclick=function(){
+  $('tune').classList.toggle('show');
+  applyLook();
+};
+$('min').onclick=function(){
+  var b=$('body');
+  b.style.display = b.style.display==='none' ? '' : 'none';
+};
+function closeOverlay(){ try{ if(window.parent && window.parent!==window && window.parent.closeStealth) window.parent.closeStealth(); }catch(e){} }
+$('close').onclick=function(){
+  if(IS_OVERLAY){ closeOverlay(); return; }   // 浮层模式：关掉整个玻璃浮层
+  $('win').style.display='none'; $('pill').style.display='';   // 暂停：不标记完成，下次继续这个词
+};
+$('min').onclick=function(){
+  if(IS_OVERLAY){ closeOverlay(); return; }
+  var b=$('body'); b.style.display = b.style.display==='none' ? '' : 'none';
+};
+$('pill').onclick=function(){ $('pill').style.display='none'; $('win').style.display=''; };
+
+/* Logo 永显层（§13）：内容透明度 0%~100% 期间它一直在；
+   内容全隐（背景或文字任一为 0）时点它 → 一键恢复到可见，并打开现有的
+   ◐ 调节面板（不新造恢复页面）；内容本来可见时点它只展开调节面板。 */
+$('logo').onclick=function(){
+  if(stInk===0 || stBg===0){ stInk=100; stBg=100; applyLook(); }
+  if($('win').style.display==='none'){ $('win').style.display=''; $('pill').style.display='none'; }
+  $('tune').classList.add('show');
+  applyLook();
+};
+
+/* 拖动：鼠标 + 触摸。位置记在本地，下次打开还在老地方 */
+(function(){
+  var win=$('win'), bar=$('bar'), on=false, sx=0, sy=0, ox=0, oy=0, moved=false;
+  try{
+    var s=JSON.parse(localStorage.getItem('st_pos')||'null');
+    if(s){ win.style.left=s.left+'px'; win.style.top=s.top+'px'; win.style.right='auto'; win.style.bottom='auto'; }
+  }catch(e){}
+  function save(){
+    try{ localStorage.setItem('st_pos',JSON.stringify({left:win.offsetLeft,top:win.offsetTop})); }catch(e){}
+  }
+  function down(x,y){ on=true; sx=x; sy=y; ox=win.offsetLeft; oy=win.offsetTop; }
+  function move(x,y){
+    if(!on) return;
+    if(Math.abs(x-sx)>3||Math.abs(y-sy)>3) moved=true;
+    var nx=Math.max(0,Math.min(window.innerWidth-win.offsetWidth, ox+x-sx));
+    var ny=Math.max(0,Math.min(window.innerHeight-40, oy+y-sy));
+    win.style.left=nx+'px'; win.style.top=ny+'px'; win.style.right='auto'; win.style.bottom='auto';
+  }
+  function up(){ if(on){ on=false; save(); setTimeout(function(){ moved=false; },0); } }
+  /* 拖动结束时不要顺带触发标题栏按钮：移动超过 3px 就吃掉这次 click */
+  bar.addEventListener('click',function(e){ if(moved){ e.stopPropagation(); e.preventDefault(); } },true);
+  bar.addEventListener('mousedown',async function(e){
+    var w=await getWin();
+    if(w){ try{ await w.startDragging(); return; }catch(_){} }   // 桌面壳：移动原生窗口
+    down(e.clientX,e.clientY); e.preventDefault();               // Web 浮层：移动 div
+  });
+  document.addEventListener('mousemove',function(e){ move(e.clientX,e.clientY); });
+  document.addEventListener('mouseup',up);
+  bar.addEventListener('touchstart',function(e){ var t=e.touches[0]; down(t.clientX,t.clientY); },{passive:true});
+  document.addEventListener('touchmove',function(e){ if(on){ var t=e.touches[0]; move(t.clientX,t.clientY); e.preventDefault(); } },{passive:false});
+  document.addEventListener('touchend',up);
+})();
+
+/* 语法重点：提交时一并给 AI，和正常造句页口径一致 */
+(async function(){ try{ var d=await api('/today'); window._grammar=d&&d.grammar||''; }catch(e){} })();
+
+/* 玻璃浮层模式：由 index.html 的 openStealth() 以 iframe 浮层打开（?overlay=1），
+   背后就是用户真实的学习页，所以隐藏 Web 预览用的假桌面。 */
+var IS_OVERLAY=(location.search||'').indexOf('overlay=1')>=0;
+if(IS_OVERLAY) document.body.classList.add('st-overlay');
+paintSw(); paintPin(); applyLook();
+/* 进入桌面壳时把记忆的置顶状态同步到原生窗口（默认永远置顶） */
+(async function(){ var w=await getWin(); if(w){ try{ await w.setAlwaysOnTop(winPin); }catch(_){} } })();
+load();
+</script>
+</body>
+</html>

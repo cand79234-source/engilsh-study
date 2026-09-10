@@ -1,0 +1,25 @@
+__pycache__/
+*.pyc
+data/*.db
+data/*.db.*
+.pytest_cache/
+*.png
+tests/*.png
+.vscode/
+.DS_Store
+.env
+.venv/
+# Allow manifest + app icons
+!frontend/manifest.webmanifest
+!frontend/icon-192.png
+!frontend/icon-512.png
+!desktop/src-tauri/icons/icon.png
+
+# 摸鱼模式桌面壳（desktop/，设计方案 §11）：只入库源码，构建产物不进仓库
+desktop/src-tauri/target/
+desktop/src-tauri/gen/
+
+# 演示模式运行时产物（demo_server.py 每次启动重建，不入库）
+demo/*.db
+demo/*.log
+demo/.demo_autorun

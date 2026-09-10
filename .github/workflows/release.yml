@@ -1,0 +1,55 @@
+name: Build eos-float desktop (多平台安装包)
+
+# 触发：手动点一下（推荐），或推一个 v* 的 tag
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Release 版本号，例如 v1.0.0"
+        required: true
+        default: "v1.0.0"
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: windows-latest   # 产出 .msi
+          - platform: macos-latest     # 产出 .dmg
+          - platform: ubuntu-22.04     # 产出 .deb / .AppImage
+    runs-on: ${{ matrix.platform }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 装 Node（tauri-action 需要）
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: 装 Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: 装 Linux WebView 依赖
+        if: matrix.platform == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libssl-dev \
+            libayatana-appindicator3-dev librsvg2-dev
+
+      - name: Tauri 构建并发布到 Release
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          projectPath: desktop/src-tauri
+          tagName: ${{ github.event.inputs.version || github.ref_name }}
+          releaseName: "eos-float ${{ github.event.inputs.version || github.ref_name }}"
+          releaseDraft: true
+          prerelease: false

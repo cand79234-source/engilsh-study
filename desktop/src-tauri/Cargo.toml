@@ -1,0 +1,19 @@
+[package]
+name = "eos-float"
+version = "1.0.0"
+description = "English OS 摸鱼模式：透明常驻悬浮窗（原生 Tauri 壳，零耦合本体）"
+edition = "2021"
+rust-version = "1.77"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["macos-private-api"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[profile.release]
+strip = true
+lto = true
+codegen-units = 1

@@ -1,0 +1,717 @@
+# -*- coding: utf-8 -*-
+"""板块之间的数据打通。
+
+问题
+----
+八个板块各存各的表，只有「造句」这一条线是活的（错了会自动进错误本）。
+其余板块的数据存进去就再没人读过：
+
+  * 周测：`quizzes.detail_json` 完整记着每道题的题干、知识点标签、对错，
+    但除了算个总分之外从未被使用 —— **考砸了没人知道**。
+  * 听力：`listening_progress` 只存了分数（答对几题 / 共几题），
+    没有存具体哪道题错了，所以无法定位到知识点。
+  * 复习：`reviews` 记着每张卡累计对几次错几次，但没喂给薄弱项。
+  * 专项训练：此前压根不落库，对其它板块完全隐形。
+  * 薄弱项：`/api/weakness` 只看错误本 + 五星输出，是"半瞎"的。
+
+本模块做的事
+------------
+1. `sync_quiz_errors()`  周测 / 阶段测答错的题 → 自动进错误本（带知识点标签）
+2. `build_weakness()`    薄弱项改成综合判定，把造句 / 复习 / 周测 / 听力 /
+                         专项训练全部纳入，同时保持原有返回结构不变
+3. `word_profile()`      一个词的全息档案：学习 / 造句 / 错误 / 复习 /
+                         主动输出 / 专项训练的完整轨迹
+4. `training_summary()`  专项训练成绩汇总，让它对总结页可见
+
+原则
+----
+* **不编造**：查不到就返回 None / 空，绝不填 0 或编数字。
+* **不丢数据**：只追加，不覆盖。错误本去重按 (来源, 题号, 周) 累加 times。
+* **可重复执行**：同步函数跑多次不会产生重复条目。
+"""
+import json
+import re as _re_cap
+from datetime import timedelta
+
+from db import get_conn, ts, app_today
+
+# 周测错题进错误本时使用的来源标记（错误本靠它区分「自己写的错句」和「选错的题」）
+SRC_QUIZ = "周测"
+
+
+def _row(d):
+    """sqlite3.Row / DictRow 统一转 dict。"""
+    try:
+        return dict(d)
+    except Exception:
+        return {}
+
+
+def _scal(conn, sql, args=(), default=0):
+    """取单个标量值；查不到或出错返回 default。
+
+    注意：`sqlite3.Row` 只有 keys()、**没有 values()**，而 psycopg2 的 DictRow 有。
+    用 r[0] 下标访问是两者都支持的写法 —— 早先用 r.values() 会抛异常并被
+    except 吞掉，导致所有聚合查询静默返回 0，听力和训练汇总因此全部失效。
+    """
+    try:
+        r = conn.execute(sql, tuple(args)).fetchone()
+        if r is None:
+            return default
+        v = r[0]
+        return default if v is None else v
+    except Exception:
+        return default
+
+
+# ---------- 1. 周测错题 → 错误本 ----------
+def sync_quiz_errors(stage, week, detail, day=7):
+    """把周测 / 阶段测答错的题同步进错误本。
+
+    detail 来自 quizzes.detail_json，形如：
+        [{"id":.., "question":.., "user":.., "correct_idx":.., "ok":bool, "tag":..}]
+
+    去重口径：同一 (周, 题号) 的错题只记一条，再次考到同一题仍然答错 → times+1。
+    已经改正（fixed=1）的条目重新答错时，会重新打开（fixed 归 0）——
+    因为「又错了」说明并没有真正掌握。
+    """
+    if not detail:
+        return 0
+    conn = get_conn()
+    n = 0
+    try:
+        for d in detail:
+            if not isinstance(d, dict) or d.get("ok"):
+                continue
+            qid = str(d.get("id") or "").strip()
+            tag = str(d.get("tag") or "").strip() or "综合"
+            question = str(d.get("question") or "").strip()
+            if not question:
+                continue
+            row = conn.execute(
+                "SELECT id FROM errors WHERE source=? AND task_key=? AND stage=? AND week=? "
+                "LIMIT 1", (SRC_QUIZ, qid, stage, week)).fetchone()
+            if row:
+                eid = _row(row).get("id")
+                conn.execute(
+                    "UPDATE errors SET times=COALESCE(times,1)+1, last_at=?, fixed=0, fixed_at='' "
+                    "WHERE id=?", (ts(), eid))
+            else:
+                conn.execute(
+                    "INSERT INTO errors (error_type, original, corrected, explanation, source, "
+                    "word, task_key, error_text, sentence_text, times, first_at, last_at, "
+                    "fixed, fixed_at, stage, week, day, created_at) "
+                    "VALUES (?,?,?,?,?,?,?,?,?,1,?,?,0,'',?,?,?,?)",
+                    (tag, question, "", "周测答错 · 知识点：" + tag, SRC_QUIZ,
+                     "", qid, question, question,
+                     ts(), ts(), stage, week, day, ts()))
+            n += 1
+        conn.commit()
+    except Exception as e:
+        print("[link.sync_quiz_errors] 失败（不影响周测成绩）:", e)
+    finally:
+        conn.close()
+    return n
+
+
+# ---------- 2. 薄弱项：综合判定 ----------
+def _weak_from_sentences(conn, limit=5):
+    """造句得分低的词。"""
+    try:
+        rows = conn.execute(
+            "SELECT word, COUNT(*) n, AVG(score) avg, MAX(created_at) last "
+            "FROM sentences WHERE word IS NOT NULL AND word <> '' "
+            "GROUP BY word HAVING n >= 2 AND avg < 75 "
+            "ORDER BY avg ASC, n DESC LIMIT ?", (limit,)).fetchall()
+    except Exception:
+        return []
+    return [{"word": _row(r).get("word"), "count": _row(r).get("n") or 0,
+             "avg": round(float(_row(r).get("avg") or 0), 1),
+             "last_at": _row(r).get("last")} for r in rows]
+
+
+def _weak_from_expression(conn, limit=5):
+    """「表达丰富度」薄弱项 —— 语法没错，但一直在说很短、很单调的句子。
+
+    语法批改只能判对错，判不出「你这三个月一直在写 I like ... 三词句」。
+    可这两件事同样该进薄弱项，否则学习者会一直停在舒适区：
+    每句都 PASS，但永远长不出从句。
+
+    两个信号（都要求该词造够 3 句才统计，样本太少不冤枉人）：
+      - 短句占比 >= 60%（少于 10 个词）  → 表达过于单一
+      - I 开头占比 >= 70%                → 句式单一
+    """
+    try:
+        rows = conn.execute(
+            "SELECT word, original, created_at FROM sentences "
+            "WHERE word IS NOT NULL AND word <> '' "
+            "AND original IS NOT NULL AND original <> '' "
+            "ORDER BY created_at DESC LIMIT 2000").fetchall()
+    except Exception:
+        return []
+
+    import re as _re
+    buckets = {}
+    for r in rows:
+        d = _row(r)
+        w = (d.get("word") or "").strip()
+        if not w:
+            continue
+        b = buckets.setdefault(w, {"n": 0, "short": 0, "i_head": 0})
+        s = (d.get("original") or "").strip()
+        b["n"] += 1
+        if len(_re.findall(r"[A-Za-z']+", s)) < 10:
+            b["short"] += 1
+        if _re.match(r"^\s*i['\s]", s.lower()):
+            b["i_head"] += 1
+
+    out = []
+    for w, b in buckets.items():
+        if b["n"] < 3:
+            continue
+        short_rate = round(b["short"] / b["n"] * 100)
+        i_rate = round(b["i_head"] / b["n"] * 100)
+        if short_rate >= 60 and i_rate >= 70:
+            kind, detail = "both", f"{b['n']} 句里有 {b['short']} 句不到 10 个词、{b['i_head']} 句用 I 开头"
+        elif short_rate >= 60:
+            kind, detail = "short", f"{b['n']} 句里有 {b['short']} 句不到 10 个词"
+        elif i_rate >= 70:
+            kind, detail = "i_head", f"{b['n']} 句里有 {b['i_head']} 句用 I 开头"
+        else:
+            continue
+        out.append({"word": w, "count": b["n"], "kind": kind,
+                    "short_rate": short_rate, "i_head_rate": i_rate,
+                    "detail": detail})
+    out.sort(key=lambda x: (-max(x["short_rate"], x["i_head_rate"]), -x["count"]))
+    return out[:limit]
+
+
+def _weak_from_reviews(conn, limit=5):
+    """复习里反复答错的卡（按错误率排序）。"""
+    try:
+        rows = conn.execute(
+            "SELECT kind, ref_key, prompt, total_correct, total_wrong "
+            "FROM reviews WHERE (total_correct + total_wrong) >= 2 "
+            "ORDER BY (total_wrong * 1.0 / (total_correct + total_wrong)) DESC, "
+            "total_wrong DESC LIMIT ?", (limit,)).fetchall()
+    except Exception:
+        return []
+    out = []
+    for r in rows:
+        d = _row(r)
+        c, w = int(d.get("total_correct") or 0), int(d.get("total_wrong") or 0)
+        tot = c + w
+        out.append({"kind": d.get("kind"), "ref_key": d.get("ref_key"),
+                    "prompt": (d.get("prompt") or "")[:60],
+                    "correct": c, "wrong": w,
+                    "wrong_rate": round(w / tot * 100) if tot else None})
+    return [x for x in out if (x["wrong_rate"] or 0) >= 40]
+
+
+def _weak_from_quizzes(conn, limit=5):
+    """没通过的周测及其中答错的知识点。"""
+    try:
+        rows = conn.execute(
+            "SELECT stage, week, score, passed, detail_json, created_at FROM quizzes "
+            "ORDER BY id DESC LIMIT 20").fetchall()
+    except Exception:
+        return []
+    failed = []
+    tag_hits = {}
+    for r in rows:
+        d = _row(r)
+        if int(d.get("passed") or 0):
+            continue
+        failed.append({"stage": d.get("stage"), "week": d.get("week"),
+                       "score": d.get("score"), "at": d.get("created_at")})
+        for q in (json.loads(d.get("detail_json") or "[]") or []):
+            if not isinstance(q, dict) or q.get("ok"):
+                continue
+            t = str(q.get("tag") or "").strip() or "综合"
+            tag_hits[t] = tag_hits.get(t, 0) + 1
+    tags = [{"type": t, "count": c} for t, c in
+            sorted(tag_hits.items(), key=lambda kv: -kv[1])[:limit]]
+    return {"failed": failed[:limit], "tags": tags}
+
+
+def _weak_from_listening(conn):
+    """听力正确率。明细没存，所以只能给整体水平，不编造具体错题。"""
+    done = _scal(conn, "SELECT SUM(listening_done) FROM listening_progress", default=0)
+    total = _scal(conn, "SELECT SUM(listening_total) FROM listening_progress", default=0)
+    if not total:
+        return None
+    return {"answered": int(done or 0), "total": int(total or 0),
+            "rate": round(int(done or 0) / int(total) * 100)}
+
+
+def _weak_from_training(conn, limit=5):
+    """专项训练里一直没达标的项目。"""
+    try:
+        rows = conn.execute(
+            "SELECT project_key, COUNT(*) n, "
+            "SUM(CASE WHEN final_status='PASS' THEN 1 ELSE 0 END) passed, "
+            "SUM(valid_attempts) valid, SUM(correct_count) correct "
+            "FROM training_sessions WHERE project_key IS NOT NULL AND project_key <> '' "
+            "GROUP BY project_key ORDER BY passed ASC, n DESC LIMIT ?", (limit,)).fetchall()
+    except Exception:
+        return []
+    out = []
+    for r in rows:
+        d = _row(r)
+        n = int(d.get("n") or 0)
+        passed = int(d.get("passed") or 0)
+        valid = int(d.get("valid") or 0)
+        correct = int(d.get("correct") or 0)
+        out.append({"project_id": d.get("project_key"), "sessions": n, "passed": passed,
+                    "rate": round(correct / valid * 100) if valid else None})
+    return [x for x in out if x["passed"] == 0]
+
+
+# ---------------------------------------------------------------------
+# 能力项（capabilities）
+# 前端 WEAK_CATALOG 是「5 大类 17 条能力项」的固定清单，靠
+# capabilities.categories[].items[] 里的 {key, count} 点亮。
+# 以前后端从没返回过这个字段，导致薄弱项永远显示「共 0 项需关注」。
+# 这里只输出**有据可查**的项；系统没采集过数据的（阅读 3 条、连读等）
+# 保持缺失，由前端按「暂无数据」显示 —— 不编造、不填 0。
+# ---------------------------------------------------------------------
+_CAP_ORDER = ["grammar", "structure", "expression", "listening", "reading"]
+
+_PAST_MARK = _re_cap.compile(
+    r"\b(yesterday|ago|last\s+\w+|was|were|did|went|had|过去时|一般过去)\b", _re_cap.I)
+_TOINF_MARK = _re_cap.compile(
+    r"\b(want|wants|wanted|need|needs|needed|decide|decides|decided|"
+    r"hope|hopes|plan|plans|try|tries|tried|would\s+like)\b", _re_cap.I)
+_CMP_MARK = _re_cap.compile(
+    r"\bmore\s+\w+|\b(better|worse|easier|harder|bigger|smaller|faster|slower|"
+    r"cheaper|older|younger|longer|shorter)\b|比较级", _re_cap.I)
+
+
+def _build_capabilities(conn, expr=None, listen=None):
+    """把已有数据映射成前端需要的能力项计数（近 30 天口径）。"""
+    cats = {}
+
+    def add(cat, key, n):
+        n = int(n or 0)
+        if n <= 0:
+            return
+        bucket = cats.setdefault(cat, {})
+        bucket[key] = bucket.get(key, 0) + n
+
+    # —— 造句 / 错误本：近 30 天明细归类 ——
+    try:
+        since = (app_today() - timedelta(days=30)).isoformat()
+        rows = conn.execute(
+            "SELECT error_type, original, corrected, explanation FROM errors "
+            "WHERE created_at >= ?", (since,)).fetchall()
+    except Exception:
+        rows = []
+    for r in rows:
+        d = _row(r)
+        t = (d.get("error_type") or "").strip()
+        txt = " ".join([str(d.get("original") or ""),
+                        str(d.get("corrected") or ""),
+                        str(d.get("explanation") or "")])
+        if t == "时态":
+            # 只归「过去时」这一类：「时态混用」的 key 是 tense_mix，
+            # 而 past_tense 里含 "tense" 子串会被它顺带命中，两条会重复计同一条错误。
+            if _PAST_MARK.search(txt):
+                add("grammar", "past_tense", 1)
+        elif t == "主谓一致":
+            add("grammar", "third_person", 1)
+        elif t in ("单复数", "词性"):
+            add("grammar", "countable", 1)
+        elif t == "固定搭配":
+            if _TOINF_MARK.search(txt):
+                add("structure", "want_to", 1)
+            if _CMP_MARK.search(txt):
+                add("structure", "comparative", 1)
+        elif t == "词序":
+            add("structure", "cn_order", 1)
+        elif t == "句型":
+            add("structure", "reason", 1)
+
+    # —— 表达丰富度：句子太短 / 全是 I 开头 ——
+    for x in (expr or []):
+        kind, n = x.get("kind"), int(x.get("count") or 0)
+        if kind in ("short", "both"):
+            add("expression", "monotonous", n)
+        elif kind == "i_head":
+            add("expression", "same_structure", n)
+
+    # —— 听力：只存了总题数 / 答对数，细分不出知识点，只能给「整体没听懂」——
+    try:
+        if listen and listen.get("total"):
+            wrong = int(listen["total"]) - int(listen["answered"] or 0)
+            if wrong > 0:
+                add("listening", "pattern", wrong)
+    except Exception:
+        pass
+
+    categories = []
+    for k in _CAP_ORDER:
+        if k in cats:
+            categories.append({
+                "key": k,
+                "items": [{"key": key, "count": n}
+                          for key, n in sorted(cats[k].items(),
+                                               key=lambda kv: -kv[1])],
+            })
+    return {"categories": categories}
+
+
+def build_weakness():
+    """综合薄弱项。返回结构向后兼容（error_types / low_star_words / recommendations），
+    另附 sources 分板块明细。"""
+    import services as svc
+    import srs
+
+    conn = get_conn()
+    try:
+        errs = svc.error_breakdown()
+    except Exception:
+        errs = []
+    try:
+        low = srs.weak_output_words(threshold=3)
+    except Exception:
+        low = []
+
+    sents = _weak_from_sentences(conn)
+    revs = _weak_from_reviews(conn)
+    quiz = _weak_from_quizzes(conn)
+    listen = _weak_from_listening(conn)
+    train = _weak_from_training(conn)
+    expr = _weak_from_expression(conn)
+    # 必须在 conn.close() 之前算：能力项要查 errors 近 30 天明细
+    try:
+        caps = _build_capabilities(conn, expr=expr, listen=listen)
+    except Exception as e:
+        print("[link] 能力项统计失败(已跳过): %s" % e)
+        caps = {"categories": []}
+    conn.close()
+
+    recs = []
+    for e in (errs or [])[:3]:
+        if (e.get("count_30d") or 0) > 0:
+            recs.append({"kind": "error", "label": "错误类型 · " + str(e.get("type")),
+                         "detail": f"近30天 {e['count_30d']} 次，累计 {e['total']} 次",
+                         "advice": e.get("remedy") or ""})
+    for w in (low or [])[:3]:
+        recs.append({"kind": "output", "label": "主动输出 · " + str(w.get("word")),
+                     "detail": f"五星 {w.get('stars')}/5，最近表现 {w.get('last_result') or '—'}",
+                     "advice": "建议用该词再造一句关于你自己的话，把熟练度拉到 3 星以上。"})
+    # 新增来源：造句
+    for w in sents[:3]:
+        recs.append({"kind": "sentence", "label": "造句均分偏低 · " + str(w.get("word")),
+                     "detail": f"造了 {w.get('count')} 句，均分 {w.get('avg')}",
+                     "advice": "回看这几句的批改说明，重点注意反复被指出的问题。"})
+    # 新增来源：复习
+    for w in revs[:3]:
+        recs.append({"kind": "review", "label": "复习反复出错 · " + str(w.get("ref_key") or w.get("prompt") or "—"),
+                     "detail": f"对 {w.get('correct')} 次、错 {w.get('wrong')} 次（错 {w.get('wrong_rate')}%）",
+                     "advice": "这张卡总是记不住，建议用它在句子里再造一次。"})
+    # 新增来源：周测
+    for t in (quiz or {}).get("tags", [])[:3]:
+        recs.append({"kind": "quiz", "label": "周测知识点 · " + str(t.get("type")),
+                     "detail": f"近期周测错了 {t.get('count')} 次",
+                     "advice": "已在错误本里生成对应条目，去错误本按知识点过一遍。"})
+    # 新增来源：专项训练
+    for t in train[:3]:
+        recs.append({"kind": "training", "label": "专项训练未达标 · " + str(t.get("project_id")),
+                     "detail": f"练了 {t.get('sessions')} 次仍未通过" +
+                               (f"，正确率 {t.get('rate')}%" if t.get("rate") is not None else ""),
+                     "advice": "换个角度重新练，或先回错误本把基础知识点补上。"})
+    # 新增来源：表达丰富度（语法没错，但一直在写很短 / 很单调的句子）
+    for x in expr[:3]:
+        if x["kind"] == "both":
+            label = "表达过于单一 · " + str(x["word"])
+            advice = ("这个词的句子又短又全是 I 开头。试着换个主语（My team / "
+                      "The work），再加个 because 说清原因，写到 10 个词以上。")
+        elif x["kind"] == "short":
+            label = "表达过于单一 · " + str(x["word"])
+            advice = ("句子本身没错，但一直很短。加个 because 说原因，"
+                      "或补上时间 / 地点，一句话就能带出两段信息。")
+        else:
+            label = "句式单一 · " + str(x["word"])
+            advice = ("几乎每句都用 I 开头。换成 My team / The work / It 当主语，"
+                      "句式立刻丰富起来，也更像真实的职场表达。")
+        recs.append({"kind": "expression", "label": label,
+                     "detail": x["detail"], "advice": advice})
+
+    return {
+        # 向后兼容：前端原有的三个字段一个不少
+        "error_types": errs,
+        "low_star_words": low,
+        "recommendations": recs,
+        # 前端 WEAK_CATALOG 依赖它点亮「5 大类 17 条能力项」。
+        # 以前后端没返回这个字段，薄弱项永远显示「共 0 项需关注」。
+        "capabilities": caps,
+        # 新增：分板块明细，供总结页 / 后续页面使用
+        "sources": {
+            "sentences": sents,
+            "reviews": revs,
+            "quizzes": quiz,
+            "listening": listen,
+            "training": train,
+            "expression": expr,
+        },
+    }
+
+
+# ---------- 3. 词全息档案 ----------
+def word_profile(word):
+    """一个词在系统里留下的全部痕迹。
+
+    返回 None 表示查不到任何相关记录（前端按「还没接触过」处理）。
+    """
+    w = (word or "").strip().lower()
+    if not w:
+        return None
+    conn = get_conn()
+    try:
+        # 词典基本信息
+        drow = conn.execute(
+            "SELECT phonetic, meaning, pos, tag FROM dictionary WHERE word=? LIMIT 1",
+            (w,)).fetchone()
+        info = _row(drow) if drow else {}
+
+        # 学习记录
+        lrow = conn.execute(
+            "SELECT stage, week, day, mastered, created_at FROM day_items "
+            "WHERE LOWER(ref_key)=? ORDER BY id DESC LIMIT 1", (w,)).fetchone()
+        learned = _row(lrow) if lrow else None
+
+        # 造句
+        try:
+            srows = conn.execute(
+                "SELECT original, corrected, score, verdict, good, created_at "
+                "FROM sentences WHERE LOWER(word)=? ORDER BY id DESC LIMIT 20", (w,)).fetchall()
+        except Exception:
+            srows = []
+        sents = [_row(r) for r in srows]
+        s_avg = round(sum(int(r.get("score") or 0) for r in sents) / len(sents), 1) if sents else None
+
+        # 错误
+        try:
+            erows = conn.execute(
+                "SELECT error_type, original, corrected, explanation, source, times, "
+                "fixed, first_at, last_at FROM errors WHERE LOWER(word)=? "
+                "ORDER BY id DESC LIMIT 20", (w,)).fetchall()
+        except Exception:
+            erows = []
+        errs = [_row(r) for r in erows]
+
+        # 复习
+        try:
+            rrow = conn.execute(
+                "SELECT reps, total_correct, total_wrong, next_due, last_score, last_reviewed "
+                "FROM reviews WHERE LOWER(ref_key)=? ORDER BY id DESC LIMIT 1", (w,)).fetchone()
+        except Exception:
+            rrow = None
+        rev = _row(rrow) if rrow else None
+
+        # 主动输出
+        try:
+            orow = conn.execute(
+                "SELECT stars, total_attempts, last_result, last_score, first_at, last_at "
+                "FROM word_output WHERE LOWER(word)=? LIMIT 1", (w,)).fetchone()
+        except Exception:
+            orow = None
+        outp = _row(orow) if orow else None
+
+        # 专项训练
+        try:
+            trows = conn.execute(
+                "SELECT session_id, is_correct, used_hint, question_id, created_at "
+                "FROM training_attempts WHERE LOWER(word)=? ORDER BY id DESC LIMIT 20",
+                (w,)).fetchall()
+        except Exception:
+            trows = []
+        trains = [_row(r) for r in trows]
+    finally:
+        conn.close()
+
+    has_any = any([info, learned, sents, errs, rev, outp, trains])
+    if not has_any:
+        return None
+
+    t_correct = sum(1 for r in trains if r.get("is_correct"))
+    return {
+        "ok": True,
+        "word": w,
+        "dict": {"phonetic": info.get("phonetic") or "", "meaning": info.get("meaning") or "",
+                 "pos": info.get("pos") or "", "tag": info.get("tag") or ""} if info else None,
+        "learned": learned,
+        "sentences": {
+            "count": len(sents),
+            "good": sum(1 for r in sents if r.get("good")),
+            "avg": s_avg,
+            "latest": [{"text": r.get("original"), "corrected": r.get("corrected"),
+                        "score": r.get("score"), "verdict": r.get("verdict"),
+                        "at": r.get("created_at")} for r in sents[:5]],
+        },
+        "errors": {
+            "count": len(errs),
+            "times": sum(int(r.get("times") or 1) for r in errs),
+            "fixed": sum(1 for r in errs if r.get("fixed")),
+            "types": sorted({r.get("error_type") for r in errs if r.get("error_type")}),
+            "latest": [{"type": r.get("error_type"), "original": r.get("original"),
+                        "corrected": r.get("corrected"), "explanation": r.get("explanation"),
+                        "source": r.get("source"), "fixed": r.get("fixed"),
+                        "at": r.get("last_at") or r.get("first_at")} for r in errs[:5]],
+        },
+        "reviews": rev,
+        "output": outp,
+        "training": {
+            "count": len(trains),
+            "correct": t_correct,
+            "rate": round(t_correct / len(trains) * 100) if trains else None,
+        } if trains else None,
+    }
+
+
+# ---------- 4. 专项训练汇总 ----------
+def training_summary():
+    """专项训练整体成绩，让总结页能看见这块数据（此前完全隐形）。"""
+    conn = get_conn()
+    try:
+        n_proj = _scal(conn, "SELECT COUNT(*) FROM training_projects "
+                             "WHERE project_key IS NOT NULL AND project_key <> ''", default=0)
+        n_sess = _scal(conn, "SELECT COUNT(*) FROM training_sessions", default=0)
+        passed = _scal(conn, "SELECT COUNT(*) FROM training_sessions WHERE final_status='PASS'",
+                       default=0)
+        valid = _scal(conn, "SELECT SUM(valid_attempts) FROM training_sessions", default=0)
+        correct = _scal(conn, "SELECT SUM(correct_count) FROM training_sessions", default=0)
+        indep = _scal(conn, "SELECT SUM(independent_correct_count) FROM training_sessions",
+                      default=0)
+        n_att = _scal(conn, "SELECT COUNT(*) FROM training_attempts "
+                            "WHERE attempt_id IS NOT NULL AND attempt_id <> ''", default=0)
+    finally:
+        conn.close()
+    if not n_sess and not n_att:
+        return None
+    return {
+        "projects": int(n_proj or 0),
+        "sessions": int(n_sess or 0),
+        "passed": int(passed or 0),
+        "valid_attempts": int(valid or 0),
+        "correct": int(correct or 0),
+        "independent_correct": int(indep or 0),
+        "attempts": int(n_att or 0),
+        "rate": round(int(correct or 0) / int(valid) * 100) if valid else None,
+    }
+
+
+# ---------- 5. 薄弱项每日快照 → 落库 ----------
+#
+# 为什么必须有这张表：
+# `/api/weakness` 给的是「近 30 天累计次数」——一个**会随时间滚动的当前值**。
+# 「昨天这个薄弱项是 5 次还是 8 次」今天无论如何都重算不出来（30 天窗口已经滑走了）。
+# 而趋势图、本周 vs 上周、连续周这三个功能要的恰恰是**历史序列**，只能每天存一份。
+#
+# 所以清单 5「不再需要前端快照」这条指示是自相矛盾的：不建表就做不到，
+# 建表又撞清单 4.2「不需要新建的数据表」。这里选择建表 —— 数据不丢优先。
+#
+# 前端保留 localStorage 作为降级：后端不可用（离线 / 未部署）时行为与改造前完全一致，
+# 趋势图会老实显示「待观察」，绝不编造趋势。
+
+SNAP_KEEP_DAYS = 60     # 最多保留多少天的快照
+SNAP_MAX_KEYS = 500     # 单日最多多少个维度键，防止异常数据把表灌爆
+
+
+def _valid_day(d):
+    """只接受 YYYY-MM-DD，别的格式一律拒绝 —— 日期是主键的一部分，
+    放进来脏数据会让「本周 vs 上周」的 ISO 周聚合算出荒唐结果。"""
+    import re
+    s = str(d or "").strip()
+    return s if re.match(r"^\d{4}-\d{2}-\d{2}$", s) else None
+
+
+def save_snapshots(day, snap_map):
+    """写入某一天的薄弱项快照（同一天重复调用覆盖为最新值）。
+
+    day: 'YYYY-MM-DD'；snap_map: {'@grammar': 3, 'grammar|tense': 5, ...}
+    返回写入的键数量；参数不合法返回 0。
+    """
+    d = _valid_day(day)
+    if not d or not isinstance(snap_map, dict) or not snap_map:
+        return 0
+
+    # 清洗：key 统一成字符串并限长，val 只接受数字（非数字记 0，不让它污染聚合）
+    items = []
+    for k, v in snap_map.items():
+        key = str(k or "").strip()[:120]
+        if not key:
+            continue
+        try:
+            val = float(v)
+        except (TypeError, ValueError):
+            val = 0.0
+        if val != val or val in (float("inf"), float("-inf")):   # NaN / Inf 挡掉
+            val = 0.0
+        items.append((key, val))
+        if len(items) >= SNAP_MAX_KEYS:
+            break
+
+    if not items:
+        return 0
+
+    now = ts()
+    conn = get_conn()
+    try:
+        for key, val in items:
+            conn.execute(
+                "INSERT INTO weak_snapshots (d, item_key, val, updated_at) VALUES (?,?,?,?) "
+                "ON CONFLICT(d, item_key) DO UPDATE SET val=excluded.val, updated_at=excluded.updated_at",
+                (d, key, val, now),
+            )
+        # 老快照清理：只保留最近 SNAP_KEEP_DAYS 个「有数据的日期」
+        try:
+            rows = conn.execute(
+                "SELECT DISTINCT d FROM weak_snapshots ORDER BY d DESC"
+            ).fetchall()
+            keep = [r[0] for r in rows[:SNAP_KEEP_DAYS]]
+            if len(rows) > SNAP_KEEP_DAYS:
+                if keep:
+                    ph = ",".join(["?"] * len(keep))
+                    conn.execute(
+                        f"DELETE FROM weak_snapshots WHERE d NOT IN ({ph})", list(keep)
+                    )
+                else:
+                    conn.execute("DELETE FROM weak_snapshots")
+        except Exception as e:
+            print("[link.save_snapshots] 旧快照清理失败（不影响写入）:", e)
+        conn.commit()
+    finally:
+        conn.close()
+    return len(items)
+
+
+def load_snapshots():
+    """读出全部快照，按日期升序返回 [{'d':'2026-09-05','map':{k:v}}, ...]。
+
+    形状与前端 localStorage `eos_weak_snap_v1` 完全一致，前端可以直接替换数据源。
+    """
+    conn = get_conn()
+    out = []
+    try:
+        rows = conn.execute(
+            "SELECT d, item_key, val FROM weak_snapshots ORDER BY d ASC"
+        ).fetchall()
+    except Exception as e:
+        print("[link.load_snapshots] 读取失败:", e)
+        return []
+    finally:
+        conn.close()
+
+    by_day = {}
+    for r in rows:
+        d = str(r[0])
+        try:
+            v = float(r[2])
+        except (TypeError, ValueError):
+            v = 0.0
+        by_day.setdefault(d, {})[str(r[1])] = v
+    for d in sorted(by_day.keys()):
+        out.append({"d": d, "map": by_day[d]})
+    return out
