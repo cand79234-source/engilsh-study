@@ -80,29 +80,37 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Micr
 /* 置顶开关：实心箭头=永远置顶；空心箭头=可被其它窗口覆盖 */
 .st-pin-i{width:14px;height:14px;display:block;fill:currentColor;stroke:currentColor;stroke-width:1.4;stroke-linejoin:round}
 .st-pin:not(.on) .st-pin-i{fill:none}
-.st-body{padding:13px 14px 14px;max-height:70vh;overflow-y:auto}
+/* 便签化：不再滚动（去掉 max-height / overflow），整张便签一屏装下 */
+.st-body{padding:11px 13px 13px}
 .st-word{font-size:26px;font-weight:800;letter-spacing:-.2px;color:var(--st-k0);line-height:1.25}
 .st-meta{font-size:12px;color:var(--st-k5);margin-top:2px}
-.st-sec{font-size:11px;font-weight:700;color:var(--st-k7);letter-spacing:1px;margin:13px 0 5px}
-.st-cols{font-size:14px;font-weight:500;color:var(--st-k1)}
-.st-col{padding:1px 0}
-.st-col span{color:var(--st-k6);font-weight:400;font-size:12px}
+/* 搭配并进单词区：没有小标题，一行跟在释义后面 */
+.st-coll{font-size:12.5px;color:var(--st-k3);margin-top:3px}
+.st-coll b{font-weight:600;color:var(--st-k1)}
+.st-coll span{color:var(--st-k6);font-size:11.5px}
+/* 区块小标题统一变细变小（便签化：只留下必要的「情景」这种） */
+.st-sec{font-size:10.5px;font-weight:600;color:var(--st-k7);letter-spacing:1px;margin:9px 0 4px}
+.st-exs{margin-top:6px}
+/* 例句：无标题，按「例句1 / 例句2」编号 */
 .st-ex{font-size:13px;font-weight:400;color:var(--st-k2);padding:2px 0}
+.st-ex-no{color:var(--st-k7);font-size:11.5px;margin-right:2px}
 .st-ex b{font-weight:400}
 .st-ex-tr{font-size:12px;color:var(--st-k6);padding:0 0 4px}
 .st-in{width:100%;border:1px solid var(--st-line);border-radius:7px;padding:8px 9px;font-size:14px;
   font-family:inherit;color:var(--st-k1);resize:vertical;outline:none;background:var(--st-field)}
 .st-in::placeholder{color:var(--st-k8)}
 .st-in:focus{border-color:var(--st-k4)}
-.st-actions{display:flex;align-items:center;gap:9px;margin-top:9px}
-.st-submit{background:var(--st-k1);color:rgba(255,255,255,var(--st-ink));border:none;border-radius:7px;
-  padding:7px 17px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit}
-.st-submit:disabled{background:var(--st-k8);cursor:default}
-.st-hint{font-size:11px;color:var(--st-k7)}
-.st-sw{font-size:11px;font-weight:700;border:1px solid var(--st-k1);border-radius:20px;padding:3px 10px;
-  cursor:pointer;color:var(--st-k1);background:var(--st-field);white-space:nowrap}
-.st-sw.on{background:var(--st-k1);color:rgba(255,255,255,var(--st-ink))}
-.st-fb{margin-top:13px;border-top:1px solid var(--st-line2);padding-top:11px;font-size:13px;color:var(--st-k1)}
+/* 造句行：输入框 + 提交小按钮同一行，Enter 直接批改 */
+.st-actions{display:flex;align-items:flex-end;gap:8px;margin-top:9px}
+.st-actions .st-in{flex:1;min-width:0}
+/* 提交：线条小按钮（透明底 + 细边框 + 细字），hover 才反白 —— 便签化后不要黑块 */
+.st-submit{background:transparent;color:var(--st-k3);border:1px solid var(--st-line);
+  border-radius:20px;padding:4px 14px;font-size:12px;font-weight:500;cursor:pointer;font-family:inherit;
+  white-space:nowrap}
+.st-submit:hover{border-color:var(--st-k4);color:var(--st-k0)}
+.st-submit:disabled{color:var(--st-k8);border-color:var(--st-line2);cursor:default}
+.st-muted{font-size:11px;color:var(--st-k7)}
+.st-fb{margin-top:11px;border-top:1px solid var(--st-line2);padding-top:9px;font-size:13px;color:var(--st-k1)}
 .st-fb-row{margin-bottom:8px}
 .st-fb-lab{font-size:11px;font-weight:700;color:var(--st-k7);letter-spacing:1px;margin-bottom:2px}
 .st-fixed{font-weight:600;color:var(--st-k0)}
@@ -113,10 +121,12 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Micr
 .st-err-ex{font-size:12.5px;color:var(--st-k3);font-weight:400}
 .st-sum{font-size:12.5px;font-weight:400;color:var(--st-k2);background:var(--st-quiet);
   border-radius:6px;padding:8px 9px;margin-top:9px}
-.st-nextrow{margin-top:11px}
-.st-next{width:100%;background:var(--st-field);color:var(--st-k1);border:1px solid var(--st-k1);
-  border-radius:7px;padding:8px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit}
-.st-next:hover{background:var(--st-k1);color:rgba(255,255,255,var(--st-ink))}
+.st-nextrow{margin-top:9px}
+/* 下一个词：同样走线条风，细字细边框 */
+.st-next{width:100%;background:transparent;color:var(--st-k3);border:1px solid var(--st-line);
+  border-radius:20px;padding:5px;font-size:12px;font-weight:500;cursor:pointer;font-family:inherit}
+.st-next:hover{border-color:var(--st-k4);color:var(--st-k0)}
+.st-next:disabled{color:var(--st-k8);border-color:var(--st-line2);cursor:default}
 .st-empty{font-size:13px;color:var(--st-k4);padding:10px 0}
 .st-empty b{display:block;font-size:15px;color:var(--st-k0);font-weight:700;margin-bottom:4px}
 .st-pill{position:fixed;right:14px;bottom:14px;background:var(--st-k1);color:rgba(255,255,255,var(--st-ink));
@@ -149,7 +159,6 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Micr
 .st-score-n{font-size:22px;font-weight:800;color:var(--st-k0);font-variant-numeric:tabular-nums;line-height:1.1}
 .st-score-lv{font-size:12px;font-weight:700;color:var(--st-k2)}
 .st-score-src{font-size:10.5px;color:var(--st-k7);margin-left:auto}
-.st-foot{font-size:10.5px;color:var(--st-k8);margin-top:9px;text-align:right;font-variant-numeric:tabular-nums}
 
 /* 覆盖在主学习页上的透明模式：由 index.html 的 openStealth() 以 iframe 浮层打开。
    【2026-09-09 定：无毛玻璃】父页面浮层已不再模糊学习页（backdrop-filter 已删），
@@ -237,11 +246,10 @@ body.st-tauri .st-desk{display:none !important}
     <div id="main" style="display:none">
       <div class="st-word" id="word"></div>
       <div class="st-meta" id="meta"></div>
+      <!-- 搭配并进单词区：不再单独占一个「搭配」标题行 -->
+      <div class="st-coll" id="cols"></div>
 
-      <div class="st-sec">搭配</div>
-      <div class="st-cols" id="cols"></div>
-
-      <div class="st-sec">例句</div>
+      <!-- 例句：无标题，直接 例句1 / 例句2 编号列出 -->
       <div class="st-exs" id="exs"></div>
 
       <!-- 情景（§2）：先看场景再造句。情景在导入时就已批量生成好，
@@ -251,18 +259,15 @@ body.st-tauri .st-desk{display:none !important}
       <div class="st-tip90" id="tip90">掌握得不错，换下一个场景？</div>
 
       <div class="st-sec" id="asklab">造句</div>
-      <textarea class="st-in" id="in" rows="2" placeholder="Write a sentence…"></textarea>
       <div class="st-actions">
+        <textarea class="st-in" id="in" rows="2" placeholder="Write a sentence…"></textarea>
         <button class="st-submit" id="submit">提交</button>
-        <span class="st-sw" id="aiSw" title="切换批改方式：本地（秒回，不花额度）/ AI（豆包，约 10 秒，讲得细）">本地</span>
-        <span class="st-sw" id="copy" title="复制「单词 + 我的句子」，可以粘给外部 AI">复制</span>
-        <span class="st-hint" id="hint">Enter 提交</span>
+      </div>
       </div>
       <div class="st-fb" id="fb"></div>
       <div class="st-nextrow" id="nextrow" style="display:none">
         <button class="st-next" id="next">下一个词 →</button>
       </div>
-      <div class="st-foot" id="foot"></div>
     </div>
   </div>
 </div>
@@ -348,7 +353,7 @@ async function nextScenario(){
   try{
     var d=await api('/scenario/next?word='+encodeURIComponent(w)+'&cur='+(curSc&&curSc.id||0));
     if(d&&d.ok&&d.scenario){ paintSc(d.scenario); hideTip90(); }
-    else{ flashHint((d&&d.message)||'这个词还没有情景'); }
+    else{ flashSubmit((d&&d.message)||'这个词还没有情景'); }
   }catch(e){}
   $('ref').style.opacity='';
 }
@@ -365,7 +370,7 @@ $('ref').onclick=nextScenario;
 
 async function load(){
   $('fb').innerHTML=''; $('nextrow').style.display='none';
-  $('in').value=''; $('hint').textContent='Enter 提交';
+  $('in').value='';
   var d;
   try{ d=await api('/stealth/next'); }catch(e){
     $('empty').innerHTML='<b>读取失败</b>网络异常，刷新页面重试。'; return;
@@ -386,31 +391,32 @@ async function load(){
   $('empty').style.display='none'; $('main').style.display='';
   $('word').innerHTML=(cur.word||'')+' <span class="st-spk" data-spk="'+esc(cur.word||'')+'">'+SPK+'</span>';
   $('meta').textContent=[cur.phonetic,cur.pos,cur.meaning].filter(Boolean).join('　');
+  /* 搭配：全部列出、并进单词区（每条一行），不再单独占「搭配」标题 */
   var cols=cur.collocations||[];
-  $('cols').innerHTML=cols.length?cols.map(function(c){
-      return '<div class="st-col">'+esc(c.phrase||'')+(c.meaning?' <span>'+esc(c.meaning)+'</span>':'')+'</div>';
-    }).join(''):'<div class="st-col"><span>这个词暂时没有搭配数据</span></div>';
+  $('cols').innerHTML = cols.length
+    ? cols.map(function(c){
+        return '<div class="st-coll">搭配：<b>'+esc(c.phrase||'')+'</b>'
+          +(c.meaning?' <span>'+esc(c.meaning)+'</span>':'')+'</div>';
+      }).join('')
+    : '';
+  $('cols').style.display = cols.length?'':'none';
+  /* 例句：无标题，按「例句1 / 例句2」编号 */
   var exs=cur.examples||[];
-  $('exs').innerHTML=exs.length?exs.map(function(e){
-      return '<div class="st-ex"><span class="st-ex-row"><span class="st-ex-t">'+esc(e.sentence||'')
+  $('exs').innerHTML=exs.length?exs.map(function(e,i){
+      return '<div class="st-ex"><span class="st-ex-row"><span class="st-ex-t">'
+        +'<span class="st-ex-no">例句'+(i+1)+'：</span>'+esc(e.sentence||'')
         +'</span><span class="st-spk" data-spk="'+esc(e.sentence||'')+'">'+SPK+'</span></span>'
         +(e.translation?'<div class="st-ex-tr">'+esc(e.translation)+'</div>':'');
     }).join(''):'<div class="st-ex"><span style="color:var(--st-k7)">暂时没有例句</span></div>';
   $('asklab').textContent='用 '+(cur.word||'')+' 造句';
   paintSc(d.scenario);          /* 情景在后端已预生成，打开就有，先看场景再写第一句 */
   hideTip90();
-  $('foot').textContent='';
   $('in').focus();
 }
 
-/* 批改方式开关：AI = 调豆包（约 10 秒，讲得细）；本地 = 只走规则引擎（秒回，不花额度）。
-   选择记在本地，下次打开保持。两种模式都会把造句写进同一张 sentences 表。 */
-var useAI=false;   /* 默认本地：秒回、不花额度。想听 AI 讲解时点一下开关切到 AI */
-try{ useAI = localStorage.getItem('st_ai')==='1'; }catch(e){}
-function paintSw(){
-  $('aiSw').textContent = useAI?'AI':'本地';
-  $('aiSw').classList.toggle('on', useAI);
-}
+/* 批改方式：便签化后不再给开关 —— 固定走 AI 批改（讲得细）。
+   没配 Key / AI 失败时后端自动回落到本地规则结果，页面一样有反馈，不会开天窗。 */
+var useAI=true;
 /* 置顶开关：实心箭头=永远置顶；空心箭头=可被其它窗口覆盖。选择记在本地。 */
 var winPin=true;
 try{ winPin = localStorage.getItem('st_pin')!=='0'; }catch(e){}
@@ -422,41 +428,24 @@ async function setPin(on){
   var w=await getWin();
   if(w){ try{ await w.setAlwaysOnTop(on); }catch(_){} }
 }
-function flashHint(t){
-  $('hint').textContent=t;
-  setTimeout(function(){ $('hint').textContent='Enter 提交'; },1700);
+/* 软提示：便签上没有独立的提示行了，直接借提交按钮显示 1.7 秒再复原 */
+var SUBMIT_TXT='提交';
+function flashSubmit(t){
+  var b=$('submit');
+  if(!b) return;
+  b.textContent=t;
+  setTimeout(function(){ if(!busy) b.textContent=SUBMIT_TXT; },1700);
 }
-$('aiSw').onclick=function(){
-  useAI=!useAI;
-  try{ localStorage.setItem('st_ai', useAI?'1':'0'); }catch(e){}
-  paintSw();
-  flashHint(useAI?'AI 批改 · 约 10 秒':'本地批改 · 秒回不花额度');
-};
 $('pin').onclick=function(){ setPin(!winPin); };
-/* 复制「单词 + 我的句子」，方便你直接粘给外部 AI，不用等内置批改 */
-$('copy').onclick=function(){
-  var v=($('in').value||'').trim();
-  if(!v){ flashHint('先写一个句子'); return; }
-  var ok=false;
-  try{
-    var ta=document.createElement('textarea');
-    ta.value='单词：'+(cur&&cur.word||'')+'\n我的句子：'+v;
-    ta.style.cssText='position:fixed;top:0;left:0;width:1px;height:1px;opacity:0';
-    document.body.appendChild(ta); ta.focus(); ta.select();
-    try{ ok=document.execCommand('copy'); }catch(e){}
-    ta.remove();
-  }catch(e){}
-  flashHint(ok?'已复制 ✅':'复制失败，请手动选中');
-};
 
 async function submit(){
   if(busy||!cur) return;
   var v=($('in').value||'').trim();
-  if(!v){ $('hint').textContent='先写一个句子'; return; }
+  if(!v){ flashSubmit('先写一个句子'); return; }
   window._mySentence=v;   /* 供"听我的句子"朗读 */
   busy=true; $('submit').disabled=true;
-  $('submit').textContent = useAI?'AI 批改中…':'批改中…';
-  $('fb').innerHTML='<div class="st-hint">'+(useAI?'AI 正在批改…':'正在批改…')+'</div>';
+  $('submit').textContent='批改中…';
+  $('fb').innerHTML='<div class="st-muted">正在批改…</div>';
   $('nextrow').style.display='none';
   try{
     var r=await api('/stealth/submit',{method:'POST',headers:{'Content-Type':'application/json'},
@@ -470,7 +459,7 @@ async function submit(){
   }catch(e){
     $('fb').innerHTML='<div class="st-empty"><b>网络异常</b>请稍后再试。</div>';
   }finally{
-    busy=false; $('submit').disabled=false; $('submit').textContent='提交';
+    busy=false; $('submit').disabled=false; $('submit').textContent=SUBMIT_TXT;
   }
 }
 
@@ -540,9 +529,6 @@ function render(r){
   h+='<div id="weak"></div>';
   $('fb').innerHTML=h;
   $('nextrow').style.display='';
-  $('foot').textContent = byAI
-    ? ((a.model||'AI')+(a.elapsed_ms?'　'+((a.elapsed_ms||0)/1000).toFixed(1)+'s':''))
-    : '本地规则　未调用 AI';
   /* >90 分软提示（§2.6）：提示换场景 + 高亮 🔁，不强制 */
   if(s!==null && s>90) showTip90();
   renderWeak(r.weakness);
@@ -647,9 +633,12 @@ $('pill').onclick=function(){ $('pill').style.display='none'; $('win').style.dis
    内容全隐（背景或文字任一为 0）时点它 → 一键恢复到可见，并打开现有的
    ◐ 调节面板（不新造恢复页面）；内容本来可见时点它只展开调节面板。 */
 $('logo').onclick=function(){
+  /* 内容全隐时先一键恢复可见 */
   if(stInk===0 || stBg===0){ stInk=100; stBg=100; applyLook(); }
   if($('win').style.display==='none'){ $('win').style.display=''; $('pill').style.display='none'; }
-  $('tune').classList.add('show');
+  /* 开合：面板开着就收起，收着就展开（以前只开不收，点第二下没反应） */
+  var t=$('tune'), open=t.classList.contains('show');
+  if(open) t.classList.remove('show'); else t.classList.add('show');
   applyLook();
 };
 
@@ -663,6 +652,10 @@ $('logo').onclick=function(){
   function save(){
     try{ localStorage.setItem('st_pos',JSON.stringify({left:win.offsetLeft,top:win.offsetTop})); }catch(e){}
   }
+  /* 标题栏按钮优先：点在 ◐ / — / 置顶 / × 上时**完全不启动拖动**。
+     以前是「移动超过 3px 就吃掉这次 click」，手指微微一动（甚至只是按下去的抖动）
+     就把 click 吞了，按钮看起来像失灵 —— 现在从源头让位。 */
+  function isBtn(t){ return !!(t && t.closest && t.closest('.st-ic')); }
   function down(x,y){ on=true; sx=x; sy=y; ox=win.offsetLeft; oy=win.offsetTop; }
   function move(x,y){
     if(!on) return;
@@ -675,13 +668,17 @@ $('logo').onclick=function(){
   /* 拖动结束时不要顺带触发标题栏按钮：移动超过 3px 就吃掉这次 click */
   bar.addEventListener('click',function(e){ if(moved){ e.stopPropagation(); e.preventDefault(); } },true);
   bar.addEventListener('mousedown',async function(e){
+    if(isBtn(e.target)) return;          // 点在标题栏按钮上 → 不拖动，把 click 留给按钮
     var w=await getWin();
     if(w){ try{ await w.startDragging(); return; }catch(_){} }   // 桌面壳：移动原生窗口
     down(e.clientX,e.clientY); e.preventDefault();               // Web 浮层：移动 div
   });
   document.addEventListener('mousemove',function(e){ move(e.clientX,e.clientY); });
   document.addEventListener('mouseup',up);
-  bar.addEventListener('touchstart',function(e){ var t=e.touches[0]; down(t.clientX,t.clientY); },{passive:true});
+  bar.addEventListener('touchstart',function(e){
+    if(isBtn(e.target)) return;
+    var t=e.touches[0]; down(t.clientX,t.clientY);
+  },{passive:true});
   document.addEventListener('touchmove',function(e){ if(on){ var t=e.touches[0]; move(t.clientX,t.clientY); e.preventDefault(); } },{passive:false});
   document.addEventListener('touchend',up);
 })();
@@ -693,7 +690,7 @@ $('logo').onclick=function(){
    背后就是用户真实的学习页，所以隐藏 Web 预览用的假桌面。 */
 var IS_OVERLAY=(location.search||'').indexOf('overlay=1')>=0;
 if(IS_OVERLAY) document.body.classList.add('st-overlay');
-paintSw(); paintPin(); applyLook();
+paintPin(); applyLook();
 /* 进入桌面壳时把记忆的置顶状态同步到原生窗口（默认永远置顶） */
 (async function(){ var w=await getWin(); if(w){ try{ await w.setAlwaysOnTop(winPin); }catch(_){} } })();
 load();

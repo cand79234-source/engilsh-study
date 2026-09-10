@@ -1,6 +1,7 @@
 """进度、错误分析、周测 业务逻辑。"""
 import json
 import re
+import zlib
 from datetime import date, datetime, timedelta
 from db import get_conn, ts, today_str, ERROR_TYPES, app_today
 import srs
@@ -565,26 +566,38 @@ def week_word_count(stage, week):
 # 目的：5 星是「当前稳定」而非「永久毕业」，忘了写错要能掉星回常规循环。
 FIVE_STAR_RECYCLE_DAYS = 14
 
+# 6 个功能/主题类别：名称、单句指令模板、中英文关键词
+#
+# 【2026-09 改：任务句全部简化】
+#   原来每类都带一句任务描述（"写一句关于你自己的话（名字/身份/来自哪里）"
+#   "写你打算/周末要做的事"…），结果是同一个词被它的词义锁死在一种句式上，
+#   还容易和页面统一追加的语法打架（自带"（一般过去时）" vs 本周语法"一般现在时"）。
+#   现在模板一律简化成「用「词」」——**写什么由后面的 AI 情景决定**，
+#   类别只剩一个内部标签：它决定这条练习从哪个角度（自我介绍/描述日常/…）出。
+#   关键词仍保留，用于给词打分类作为参考，不再直接决定句式。
 FUNC_CATEGORIES = [
-    ("自我介绍", "用「{w}」写一句关于你自己的话（名字/身份/来自哪里）",
+    ("自我介绍", "用「{w}」",
      ["name", "family", "friend", "meet", "hello", "student", "job", "home",
       "名字", "来自", "家人", "朋友", "认识", "学生", "工作", "家", "我是"]),
-    ("描述日常", "用「{w}」写你现在/每天都做的事",
+    ("描述日常", "用「{w}」",
      ["always", "usually", "morning", "every", "habit", "start", "work", "study",
       "每天", "经常", "习惯", "通常", "早上", "开始", "工作", "学习", "日常"]),
-    ("过去经历", "用「{w}」写一件你昨天或上周做过的事（一般过去时）",
+    ("过去经历", "用「{w}」",
      ["yesterday", "ago", "last", "went", "visited", "finished",
-      "昨天", "上周", "以前", "曾经", "过去", "完成", "去了"]),
-    ("计划安排", "用「{w}」写你打算/周末要做的事",
+      "曾经", "以前", "过去", "完成", "去了", "经历"]),
+    ("计划安排", "用「{w}」",
      ["plan", "will", "going", "weekend", "tomorrow", "next",
       "计划", "周末", "明天", "下次", "将要", "打算"]),
-    ("喜好偏好", "用「{w}」写你喜欢或不喜欢做的事（like/enjoy/hate+doing）",
+    ("喜好偏好", "用「{w}」",
      ["like", "enjoy", "hate", "love", "favorite", "hobby",
       "喜欢", "讨厌", "爱好", "最爱", "享受", "厌恶"]),
-    ("建议看法", "用「{w}」给一个建议或表达你的看法",
+    ("建议看法", "用「{w}」",
      ["should", "must", "advice", "think", "because", "good", "better",
       "应该", "建议", "因为", "看法", "最好", "认为", "意见"]),
 ]
+
+
+CAT_NAME_TO_INDEX = {name: i for i, (name, _, _) in enumerate(FUNC_CATEGORIES)}
 
 
 def _classify_word(word_obj):
@@ -627,6 +640,139 @@ def _deterministic_shuffle(seq, seed):
         j = seed % (i + 1)
         seq[i], seq[j] = seq[j], seq[i]
     return seq
+
+
+# ---------- 练习角度轮换：随机分配 + 薄弱角度后台加权 ----------
+#
+# 【为什么改】原来每条基础句的角度由「词义关键词打分」决定（_classify_word），
+#   结果是同一个词被它的中文释义永久锁死在一个角度上，6 个角度分布严重不均
+#   （实测某天：9 条落在「描述日常」，0 条落在「过去经历」）。
+#
+# 【现在怎么做】角度 = f(词, 日期)
+#   - 同一个词今天永远是这个角度，明天自动换一个；
+#   - 词源（当天新词 + 到期复习词）**完全不动**，只换提问角度；
+#   - 前端不新增任何类别按钮/数据，用户全程无感；
+#   - 每条作答把这个角度记进 sentences.category，后台据此给弱项加权重。
+#
+# 【为什么统计截止到昨天】当天每提交一次，统计数字就会变；
+#   若权重当天跟着变，用户刷新页面题就跳了。所以窗口取最近 N 天但**不含今天**：
+#   当天完全稳定，隔天自动带上最新薄弱信号。
+
+ANGLE_HISTORY_DAYS = 30      # 统计窗口（天）
+ANGLE_MIN_SAMPLES = 4        # 某个角度样本不足这么多就不判断强弱，一律等权
+ANGLE_WEIGHT_MAX = 3.0       # 最弱角度最多拿到 3 倍曝光
+
+
+def _angle_u01(word, seed_date):
+    """词 + 日期 → 稳定的 [0,1) 随机数。同一天同一词恒定，隔天自动换。"""
+    raw = "%s|%s" % (seed_date.isoformat(), str(word or "").strip().lower())
+    return (zlib.crc32(raw.encode("utf-8")) & 0xFFFFFFFF) / float(0x100000000)
+
+
+def angle_weights(days=ANGLE_HISTORY_DAYS):
+    """读最近 days 天（不含今天）的作答，算出每个练习角度的强弱权重。
+
+    返回 {角度下标: weight}，weight ∈ [1.0, ANGLE_WEIGHT_MAX]。
+    低于平均正确率的角度权重变高 → 之后被抽到的概率变大。
+    没数据 / 样本不足 / 查询失败一律 1.0 —— 数据不够就不猜，
+    且绝不让「记账」这件事把出题拖垮。
+    """
+    base = {i: 1.0 for i in range(len(FUNC_CATEGORIES))}
+    try:
+        start = (app_today() - timedelta(days=int(days))).isoformat()
+        conn = get_conn()
+        try:
+            rows = conn.execute(
+                "SELECT category, COUNT(*) n,"
+                " COALESCE(SUM(CASE WHEN good=1 THEN 1 ELSE 0 END),0) ok"
+                " FROM sentences"
+                " WHERE COALESCE(category,'')<>'' AND created_at>=? AND created_at<?"
+                " GROUP BY category",
+                (start, today_str())).fetchall()
+        finally:
+            conn.close()
+    except Exception as e:          # 老库还没迁移出 category 列等，退回等权
+        print("[angle] 难度统计不可用，按等权出题: %s" % e)
+        return base
+
+    stat, tot_n, tot_ok = {}, 0, 0
+    for r in rows:
+        idx = CAT_NAME_TO_INDEX.get((r["category"] or "").strip())
+        if idx is None:
+            continue
+        n = int(r["n"] or 0)
+        ok = int(r["ok"] or 0)
+        stat[idx] = (n, ok)
+        tot_n += n
+        tot_ok += ok
+    if tot_n <= 0:
+        return base
+    avg = tot_ok / float(tot_n)
+    for idx, (n, ok) in stat.items():
+        if n < ANGLE_MIN_SAMPLES:
+            continue                       # 样本太少，不评价强弱
+        acc = ok / float(n)
+        if acc >= avg:
+            continue                       # 不比平均差 → 不加餐
+        gap = (avg - acc) / max(avg, 0.05)
+        base[idx] = round(min(ANGLE_WEIGHT_MAX,
+                              1.0 + gap * (ANGLE_WEIGHT_MAX - 1.0)), 3)
+    return base
+
+
+def angle_of_word(word, seed_date=None, weights=None):
+    """这个词今天被分到哪个练习角度。返回 FUNC_CATEGORIES 的下标。
+
+    用词本身做哈希的好处：三处（出题 / AI 情景 / 批改入库）各自算都得到同一个值，
+    不需要同步状态，也不依赖词在列表里的位置。
+    """
+    if seed_date is None:
+        seed_date = app_today()
+    if weights is None:
+        weights = angle_weights()
+    k = len(FUNC_CATEGORIES)
+    ws = [float(weights.get(i, 1.0) or 1.0) for i in range(k)]
+    total = sum(ws)
+    if total <= 0:
+        ws, total = [1.0] * k, float(k)
+    r, cum = _angle_u01(word, seed_date) * total, 0.0
+    for i, w in enumerate(ws):
+        cum += w
+        if r < cum:
+            return i
+    return k - 1
+
+
+def angle_name_of_word(word, seed_date=None, weights=None):
+    """角度下标 → 中文名。批改入库时用它写 sentences.category。"""
+    return FUNC_CATEGORIES[angle_of_word(word, seed_date, weights)][0]
+
+
+def category_report(days=ANGLE_HISTORY_DAYS):
+    """分角度台账：练了多少、错了多少、当前权重。**不进任何 UI**，只给后台/调试看。"""
+    try:
+        start = (app_today() - timedelta(days=int(days))).isoformat()
+        conn = get_conn()
+        try:
+            rows = conn.execute(
+                "SELECT category, COUNT(*) n,"
+                " COALESCE(SUM(CASE WHEN good=1 THEN 1 ELSE 0 END),0) ok"
+                " FROM sentences WHERE COALESCE(category,'')<>'' AND created_at>=?"
+                " GROUP BY category", (start,)).fetchall()
+        finally:
+            conn.close()
+    except Exception as e:
+        return {"days": days, "error": str(e), "items": [], "weights": {}}
+    got = {(r["category"] or "").strip(): (int(r["n"] or 0), int(r["ok"] or 0))
+           for r in rows}
+    weights = angle_weights(days)
+    items = []
+    for i, (name, _, _) in enumerate(FUNC_CATEGORIES):
+        n, ok = got.get(name, (0, 0))
+        items.append({"category": name, "total": n, "correct": ok, "wrong": n - ok,
+                      "acc": round(ok / float(n), 3) if n else None,
+                      "weight": weights.get(i, 1.0)})
+    return {"days": days, "items": items, "weights": weights}
 
 
 def build_sentence_prompts(today_new, due_vocab, grammar, stage, week, day, seed_date=None):
@@ -709,7 +855,7 @@ def build_sentence_prompts(today_new, due_vocab, grammar, stage, week, day, seed
     # 若不足 10 条，用语法通用句回填
     grammar_fillers = [
         "用今天学的一个词，写一句关于你自己的话",
-        "用今天学的一个词，写一句你昨天做过的事",
+        "用今天学的一个词，写一句你真实经历过的事",
         "用今天学的一个词，写一句你明天或周末要做的事",
         "用今天学的一个词，写一句你喜欢做的事",
         "用今天学的一个词，给一个建议或表达看法",
@@ -792,15 +938,23 @@ def _pick_focus_words(today_new, due_vocab, n=5):
     return [(w, is_review) for _, _, w, is_review in scored[:n]]
 
 
-def _build_basic(today_new, grammar):
-    """① 基础：当天每个词各一句，给一个功能场景（会用）。"""
+def _build_basic(today_new, grammar, seed_date=None, weights=None):
+    """① 基础：当天每个词各一句，给一个练习角度（会用）。
+
+    角度**不再由词义决定** —— 词义打分会让同一个词永久锁死在一个句式上，
+    6 个角度分布也严重不均（实测某天 9:0）。现在角度 = f(词, 当天日期)：
+    今天这个词从这个角度写，明天自动换；词源一个字不动。
+    """
+    if seed_date is None:
+        seed_date = app_today()
+    if weights is None:
+        weights = angle_weights()
     out = []
     for i, w in enumerate(today_new, 1):
         key = _word_key(w)
         if not key:
             continue
-        scores = _classify_word(w)
-        cat_idx = max(scores, key=scores.get) if scores else 0
+        cat_idx = angle_of_word(key, seed_date, weights)
         cat_name, instr_tmpl, _ = FUNC_CATEGORIES[cat_idx]
         task = instr_tmpl.format(w=_display(w))
         if grammar:
@@ -935,7 +1089,10 @@ def build_sentence_plan(today_new, due_vocab, grammar, stage, week, day,
             due_vocab = [w for w in (due_vocab or [])
                          if w.get("word", "").strip().lower() not in cooldown]
 
-    basic = _build_basic(today_new, grammar)
+    # 角度权重：计划在本次生成里只查一次，传给各个环节共用（口径一致）
+    weights = angle_weights()
+
+    basic = _build_basic(today_new, grammar, seed_date, weights)
     upgrade = _build_upgrade(today_new, due_vocab, grammar, seed, n_upgrade)
     combo = _build_combos(today_new, due_vocab, grammar, seed, n_combo)
 

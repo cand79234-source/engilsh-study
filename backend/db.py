@@ -544,6 +544,7 @@ def init_db():
         day INTEGER NOT NULL,
         word TEXT DEFAULT '',           -- 本题对应的单词（组合题为多个词，空格分隔）
         task_key TEXT DEFAULT '',       -- 前端题目标识：'basic:0' / 'up:2' / 'combo:3'
+        category TEXT DEFAULT '',       -- 练习角度（自我介绍/描述日常/过去经历/计划安排/喜好偏好/建议看法）
         attempt INTEGER DEFAULT 1,      -- 第几次作答（同一 task_key 内递增）
         original TEXT NOT NULL,
         corrected TEXT DEFAULT '',
@@ -825,6 +826,8 @@ def init_db():
     _ensure_columns(conn, "sentences", {
         "word": "TEXT DEFAULT ''",
         "task_key": "TEXT DEFAULT ''",
+        # 练习角度：哪一类错得多就在后续出题里多给几次，纯后台权重，不给 UI
+        "category": "TEXT DEFAULT ''",
         "attempt": "INTEGER DEFAULT 1",
         "score": "INTEGER DEFAULT 0",
         "verdict": "TEXT DEFAULT ''",

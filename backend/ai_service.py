@@ -1645,6 +1645,13 @@ def analyze(sentence, word="", task_grammar="", task_prompt=""):
 
 _ATTEMPT_RETRY = 10
 
+# 参与「练习角度」记账的题目前缀：
+#   basic:N   —— 当天每个词一句，真正的角度练习（账本主体）
+#   stealth:X —— 隐身页单目标词造句，同样是"从某个角度写一句话"
+# combo（多词连续表达）/ up（改写升级）不在此列：它们不是按角度出题的，
+# 记进去只会把「哪个角度薄弱」的统计冲淡（详见 correct_sentence 里的说明）。
+ANGLE_TASK_PREFIXES = ("basic:", "stealth:")
+
 
 def _begin_write(conn):
     """SQLite 下立刻拿写锁；PG 用默认事务即可（行级锁 + 唯一索引）。"""
@@ -1677,10 +1684,18 @@ def _lock_task_attempt(conn, stage, week, day, task_key):
         pass
 
 
-def _insert_sentence_with_attempt(conn, stage, week, day, word, task_key, res, now):
-    """插入一条 sentences 并返回 (id, attempt)。"""
+def _insert_sentence_with_attempt(conn, stage, week, day, word, task_key, res, now,
+                                  category=""):
+    """插入一条 sentences 并返回 (id, attempt)。
+
+    category 是这条练习的「角度」（自我介绍/描述日常/过去经历/…），
+    只做后台记账：累计哪个角度错得多，之后就多出那个角度。不参与批改、不进 UI。
+    老库万一没迁移出这一列（写不进去），退回不带列的 INSERT —— 记账失败
+    不能连批改记录一起丢。
+    """
     last_exc = None
     tried = 0
+    with_cat = bool(category)
     for _ in range(_ATTEMPT_RETRY):
         try:
             row = conn.execute(
@@ -1692,26 +1707,42 @@ def _insert_sentence_with_attempt(conn, stage, week, day, word, task_key, res, n
             if attempt <= tried:
                 attempt = tried + 1
             tried = attempt
-            sid = insert_get_id(
-                conn,
-                "INSERT INTO sentences (stage, week, day, word, task_key, attempt,"
-                " original, corrected, error_type, explanation, ai_source, good, score,"
-                " verdict, errors_json, opts_json, created_at)"
-                " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                (stage, week, day, word, task_key, attempt, res["original"],
-                 res["corrected"], res["error_type"], res["explanation"], "rule",
-                 1 if res["ok"] else 0, res["score"], res["verdict"],
-                 json.dumps(res["errors"], ensure_ascii=False),
-                 json.dumps(res["optimizations"], ensure_ascii=False), now))
+            head = ("stage, week, day, word, task_key,"
+                    + (" category," if with_cat else "")
+                    + " attempt, original, corrected, error_type, explanation,"
+                      " ai_source, good, score, verdict, errors_json, opts_json, created_at")
+            marks = ",".join(["?"] * (17 + (1 if with_cat else 0)))
+            args = [stage, week, day, word, task_key]
+            if with_cat:
+                args.append(category)
+            args += [attempt, res["original"],
+                     res["corrected"], res["error_type"], res["explanation"], "rule",
+                     1 if res["ok"] else 0, res["score"], res["verdict"],
+                     json.dumps(res["errors"], ensure_ascii=False),
+                     json.dumps(res["optimizations"], ensure_ascii=False), now]
+            sid = insert_get_id(conn, f"INSERT INTO sentences ({head}) VALUES ({marks})",
+                                tuple(args))
             return sid, attempt
-        except Exception as ex:      # 撞上 ux_sentences_attempt
+        except Exception as ex:      # 撞上 ux_sentences_attempt / 列不存在
             last_exc = ex
             try:
                 conn.rollback()
             except Exception:
                 pass
+            if _missing_column(ex, "category") and with_cat:
+                with_cat = False     # 老库没迁移：丢掉记账，重插一次
+                tried = 0
+                continue
             _begin_write(conn)
     raise last_exc
+
+
+def _missing_column(ex, col):
+    """这次报错是不是「某个列不存在」？老库未迁移时用它安全降级。"""
+    msg = str(ex or "").lower()
+    return ("no column named %s" % col.lower()) in msg \
+        or ("column \"%s\" of relation" % col.lower()) in msg \
+        or ("does not exist" in msg and col.lower() in msg)
 
 
 def _bump_error(conn, eid, sentence_text, now):
@@ -1772,13 +1803,14 @@ def _merge_error(conn, word, etype, norm, where, e, task_key, original, now):
 # =====================================================================
 
 def correct_sentence(sentence, stage=0, week=3, day=1, word="", task_key="",
-                     task_grammar="", task_prompt=""):
+                     task_grammar="", task_prompt="", category=""):
     """纯本地批改主入口。
 
     - sentences：每次作答追加一行，attempt 递增，**绝不覆盖上一次答案**。
     - errors（错题本）：只有真错才写；同一个 word + 错误片段累加 times；
       该词后来写对了只把 fixed 标成 1，**不删除**历史记录。
     - task_issues（任务未完成，如缺频率副词）：只展示、不进错题本、不污染 SRS。
+    - category：这条练习的角度（后台记账用，决定以后哪类多出；不参与批改）。
     全程无任何 AI 参与。
     """
     res = analyze(sentence, word, task_grammar, task_prompt)
@@ -1789,6 +1821,21 @@ def correct_sentence(sentence, stage=0, week=3, day=1, word="", task_key="",
     task_key = (task_key or "").strip()
     now = ts()
 
+    # 角度记账：没传就自己按「词 + 今天」算，保证每条造句都带上类别，
+    # 不需要每个调用点（造句页 / 隐身页 / 将来别的入口）各自记得传。
+    #
+    # 只给 **单目标词的造句** 记（basic 基础句 / stealth 隐身页）。
+    # combo 组题是「2-3 个词的连续表达」、up 是「改写升级」——它们不是
+    # "从某个角度写一句话"的练习，硬算出来的角度不是用户真练过的东西，
+    # 混进账本会把「哪个角度薄弱」冲淡，所以一律留空。
+    if not category and word and task_key.startswith(ANGLE_TASK_PREFIXES):
+        try:
+            import services as _svc
+            category = _svc.angle_name_of_word(word)
+        except Exception as e:
+            print("[sentence] 练习角度记账失败（不影响批改）: %s" % e)
+            category = ""
+
     conn = get_conn()
     try:
         _begin_write(conn)
@@ -1796,7 +1843,7 @@ def correct_sentence(sentence, stage=0, week=3, day=1, word="", task_key="",
         _lock_task_attempt(conn, stage, week, day, task_key)
 
         sentence_id, attempt = _insert_sentence_with_attempt(
-            conn, stage, week, day, word, task_key, res, now)
+            conn, stage, week, day, word, task_key, res, now, category)
 
         # 错题本：只有真错才写入；同一个 (词 + 错误类型 + 归一化错误片段) 合并成一条，只累加次数
         bank_ids = []
