@@ -3804,11 +3804,11 @@ function _sumPeriod(){
    其余指标（学习天数 / 新学词汇 / 计划完成率等）后端未提供统计接口，按 docx「不编造」原则显示 —。 */
 pages.sum=async function(el){
   refreshProg();
-  let weakData=null, errData=null;
-  try{
-    const r=await Promise.all([api('/weakness'), api('/errors')]);
-    weakData=r[0]; errData=r[1];
-  }catch(e){ /* 不崩：用空数据渲染结构，缺失指标一律 — */ }
+  let weakData=null, errData=null, repData=null;  
+  try{  
+    const r=await Promise.all([api('/weakness'), api('/errors'), api('/report')]);  
+    weakData=r[0]; errData=r[1]; repData=r[2];  
+  }catch(e){ /\* 不崩：缺失指标一律 — \*/ }
   let errTypes=(errData&&errData.error_types)||(weakData&&weakData.error_types)||[];
   const lowWords=(weakData&&weakData.low_star_words)||[];
   // 已确认薄弱项：仅取 🔴 / 🟡（拼写/句型等 🔵 属记忆项，不在此列，交闪卡处理）
@@ -3821,6 +3821,11 @@ pages.sum=async function(el){
   const tab=state.sumTab||'week';
   const tabBtn=(k,label)=>`<button class="btn ${tab===k?'':'ghost'} sm" style="flex:1" data-act="sumTab" data-val="${k}">${label}</button>`;
   const dash=`<span style="color:var(--muted)">—</span>`;
+  const RW=(repData&\&repData.week)||{}, RM=(repData&\&repData.month)||{};  
+  const wSent=RW.sentences||{}, wListen=RW.listening||{}, wCmp=(RW.compare&\&RW.compare.items)||[];  
+  const mSent=RM.sentences||{}, mListen=RM.listening||{};  
+  const cmpCur=k=>{const it=wCmp.find(x=>x.name===k);return it?it.cur:null;};  
+  const mCmpCur=k=>{const it=(RM.compare&\&RM.compare.items||[]).find(x=>x.name===k);return it?it.cur:null;};
   const noDataNote=`<div class="sub" style="margin-top:6px;color:var(--muted)">注：学习天数 / 新学词汇 / 计划完成率等指标需后端统计接口提供，当前后端未返回，按“不编造”原则显示 —。</div>`;
 
   const errOverview = errTypes.length ? errTypes.map(e=>{
@@ -3836,19 +3841,20 @@ pages.sum=async function(el){
   const weekHtml=`
     <div class="card" style="border:1.5px solid var(--primary)">
       <h2>📚 本周学习</h2>
-      ${_anaMetric('本周主题', dash)} ${_anaMetric('学习天数', dash)} ${_anaMetric('计划完成率', dash)}
-      ${_anaMetric('新学词汇', dash)} ${_anaMetric('单词复习', dash)} ${_anaMetric('造句', dash)}
-      ${_anaMetric('听力', dash)} ${_anaMetric('周测', dash)} ${noDataNote}
+       ${\_anaMetric('本周主题', esc(RW.title)||dash)} ${\_anaMetric('学习天数', cmpCur('学习天数')??dash)} ${\_anaMetric('计划完成率', dash)}  
+      ${\_anaMetric('新学词汇', cmpCur('新学词汇')??dash)} ${\_anaMetric('单词复习', RW.reviews??dash)} ${\_anaMetric('造句', wSent.total??dash)}  
+      ${\_anaMetric('听力', wListen.answered??dash)} ${\_anaMetric('周测', RW.quiz_count??dash)} ${noDataNote}
+
     </div>
     <div class="card"><h2>📈 学习效果</h2>
-      ${_anaMetric('听力正确率', dash)} ${_anaMetric('周测平均分', dash)} ${_anaMetric('造句正确率', dash)} ${_anaMetric('错误率', dash)}
-    </div>
-    <div class="card"><h2>🆚 本周 vs 上周</h2>
-      <div class="sub" style="margin-top:4px">绿色=向好，红色=向差。以下指标需后端统计接口提供，当前显示 —。</div>
-      ${_anaTrend('学习天数', null, null, ' 天')}
-      ${_anaTrend('新学词汇', null, null, ' 个')}
-      ${_anaTrend('单词复习', null, null, ' 次')}
-      ${_anaTrend('错误率', null, null, '%', true)}
+  ${\_anaMetric('听力正确率', wListen.answered?Math.round(wListen.correct/wListen.answered\*100)+'%':dash)} ${\_anaMetric('周测平均分', RW.quiz_avg??dash)} ${\_anaMetric('造句正确率', wSent.total?Math.round(wSent.good/wSent.total\*100)+'%':dash)} ${\_anaMetric('错误率', cmpCur('错误率')??dash)}
+ </div>
+        <div class="card"><h2>🆚 本周 vs 上周</h2>
+      <div class="sub" style="margin-top:4px">绿色=向好，红色=向差。</div>
+      ${_anaTrend('学习天数', wkCmpVal('学习天数'), wkCmpPrev('学习天数'), ' 天')}
+      ${_anaTrend('新学词汇', wkCmpVal('新学词汇'), wkCmpPrev('新学词汇'), ' 个')}
+      ${_anaTrend('单词复习', wkCmpVal('单词复习'), wkCmpPrev('单词复习'), ' 次')}
+      ${_anaTrend('错误率', wkCmpVal('错误率'), wkCmpPrev('错误率'), '%', true)}
     </div>
     <div class="card"><h2>❌ 错误概览</h2>
       <div class="sub" style="margin-top:4px">仅展示错误事实，不代表能力薄弱；错误 ≠ 薄弱项。</div>
@@ -3869,8 +3875,8 @@ pages.sum=async function(el){
 
   const monthHtml=`
     <div class="card" style="border:1.5px solid var(--primary)"><h2>📚 本月概况</h2>
-      ${_anaMetric('学习天数', dash)} ${_anaMetric('已到期计划完成率', dash)} ${_anaMetric('新学词汇', dash)}
-      ${_anaMetric('单词复习', dash)} ${_anaMetric('造句', dash)} ${_anaMetric('听力', dash)} ${_anaMetric('周测', dash)} ${noDataNote}
+      ${\_anaMetric('学习天数', mCmpCur('学习天数')??dash)} ${\_anaMetric('已到期计划完成率', dash)} ${\_anaMetric('新学词汇', mCmpCur('新学词汇')??dash)}  
+      ${\_anaMetric('单词复习', mCmpCur('单词复习')??dash)} ${\_anaMetric('造句', mSent.total??dash)} ${\_anaMetric('听力', mListen.answered??dash)} ${\_anaMetric('周测', RM.quiz_count??dash)} ${noDataNote}
     </div>
     <div class="card"><h2>📈 近四周趋势</h2>
       <div class="sub" style="margin-top:4px">近四周趋势需要后端统计接口支持；当前未返回，按“不编造”原则不绘制曲线。</div>
