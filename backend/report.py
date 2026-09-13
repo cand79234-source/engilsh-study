@@ -186,7 +186,7 @@ def build_report():
 
         srow = conn.execute(
             "SELECT COUNT(*) AS n, SUM(good) AS good, AVG(score) AS avg "
-            "FROM sentences WHERE stage=? AND week=?", (stage, week)).fetchone()
+            "FROM sentences WHERE created_at >= ?", (_days_ago(7),)).fetchone()
 
         # SRS 复习次数：reviews 表没有每次复习的历史行，只有累计的
         # total_correct / total_wrong，因此取本周词汇上的累计复习作答次数。
@@ -197,7 +197,7 @@ def build_report():
 
         qrow = conn.execute(
             "SELECT COUNT(*) AS n, AVG(score) AS avg FROM quizzes "
-            "WHERE stage=? AND week=?", (stage, week)).fetchone()
+            "WHERE created_at >= ?", (_days_ago(7),)).fetchone()
 
         lrow = conn.execute(
             "SELECT SUM(listening_total) AS t, SUM(listening_done) AS d "
