@@ -290,6 +290,7 @@ _CMP_MARK = _re_cap.compile(
 def _build_capabilities(conn, expr=None, listen=None):
     """把已有数据映射成前端需要的能力项计数（近 30 天口径）。"""
     cats = {}
+    inner_err = None
 
     def add(cat, key, n):
         n = int(n or 0)
@@ -299,14 +300,15 @@ def _build_capabilities(conn, expr=None, listen=None):
         bucket[key] = bucket.get(key, 0) + n
 
     # —— 造句 / 错误本：近 30 天明细归类 ——
-    # 注意：线上 errors.created_at 是 TEXT 列，Postgres 上直接 WHERE created_at >= ? 会崩。
-    # 改为全量取出、Python 端按日期字符串过滤（与 error_breakdown 同路），不再被 except 吞成空。
+    # 与 error_breakdown 同路：created_at 是 TEXT 列，用参数做字符串比较（Postgres 上正常）。
+    # 只取 error_type/original/corrected/created_at（不依赖 explanation 列，避免旧库缺列时整段崩）。
     try:
         since = (app_today() - timedelta(days=30)).isoformat()
         rows = conn.execute(
-            "SELECT error_type, original, corrected, explanation, created_at FROM errors").fetchall()
-        rows = [r for r in rows if str(_row(r).get("created_at") or "") >= since]
+            "SELECT error_type, original, corrected, created_at FROM errors "
+            "WHERE created_at >= ?", (since,)).fetchall()
     except Exception as e:
+        inner_err = "query: %s" % e
         print("[link] 能力项明细查询失败(归零):", e)
         rows = []
     for r in rows:
@@ -360,7 +362,7 @@ def _build_capabilities(conn, expr=None, listen=None):
                           for key, n in sorted(cats[k].items(),
                                                key=lambda kv: -kv[1])],
             })
-    return {"categories": categories}
+    return {"categories": categories, "_inner_err": inner_err}
 
 
 def group_error_types(errs):
