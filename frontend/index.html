@@ -3826,6 +3826,9 @@ pages.sum=async function(el){
   const mSent=RM.sentences||{}, mListen=RM.listening||{};  
   const cmpCur=k=>{const it=wCmp.find(x=>x.name===k);return it?it.cur:null;};  
   const mCmpCur=k=>{const it=(RM.compare&\&RM.compare.items||[]).find(x=>x.name===k);return it?it.cur:null;};
+    const wkCmpItems=(repData&&repData.week&&repData.week.compare&&repData.week.compare.items)||[];
+  const wkCmpVal=n=>{const it=wkCmpItems.find(x=>x.name===n);return it?it.cur:null;};
+  const wkCmpPrev=n=>{const it=wkCmpItems.find(x=>x.name===n);return it?it.prev:null;};
   const noDataNote=`<div class="sub" style="margin-top:6px;color:var(--muted)">注：学习天数 / 新学词汇 / 计划完成率等指标需后端统计接口提供，当前后端未返回，按“不编造”原则显示 —。</div>`;
 
   const errOverview = errTypes.length ? errTypes.map(e=>{
@@ -3843,7 +3846,24 @@ pages.sum=async function(el){
       <h2>📚 本周学习</h2>
        ${\_anaMetric('本周主题', esc(RW.title)||dash)} ${\_anaMetric('学习天数', cmpCur('学习天数')??dash)} ${\_anaMetric('计划完成率', dash)}  
       ${\_anaMetric('新学词汇', cmpCur('新学词汇')??dash)} ${\_anaMetric('单词复习', RW.reviews??dash)} ${\_anaMetric('造句', wSent.total??dash)}  
-      ${\_anaMetric('听力', wListen.answered??dash)} ${\_anaMetric('周测', RW.quiz_count??dash)} ${noDataNote}
+       const recs=(repData&&repData.week&&repData.week.sentence_list)||[];
+  const recHtml=recs.length?`
+    <div style="margin-top:10px">
+      <div class="sub" style="font-weight:700;margin:6px 0 4px">📝 本周造句记录（${recs.length} 条，点开看批改）</div>
+      ${recs.map(s=>`
+        <details style="border:1px solid var(--border);border-radius:8px;padding:6px 8px;margin:5px 0">
+          <summary style="cursor:pointer">
+            ${esc(s.original||'(空)')} <b style="color:${s.good?'var(--ok)':'var(--bad)'}">${s.good?'✓':'✗'}</b>
+            <span style="color:var(--muted);font-size:12px">${esc(s.created_at||'')}</span>
+          </summary>
+          <div style="font-size:13px;line-height:1.7;margin-top:4px">
+            原句：${esc(s.original||'')}<br>
+            改正：${esc(s.corrected||s.original||'')}<br>
+            错误：${esc(s.error_type||'无')}　分数：${s.score==null?'—':s.score}
+          </div>
+        </details>`).join('')}
+    </div>`:'<div class="sub" style="margin-top:6px">本周还没有造句记录。</div>';
+      ${\_anaMetric('听力', wListen.answered??dash)} ${\_anaMetric('周测', RW.quiz_count??dash)} ${recHtml}${noDataNote}
 
     </div>
     <div class="card"><h2>📈 学习效果</h2>
