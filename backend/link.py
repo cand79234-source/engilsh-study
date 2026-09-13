@@ -287,10 +287,9 @@ _CMP_MARK = _re_cap.compile(
     r"cheaper|older|younger|longer|shorter)\b|比较级", _re_cap.I)
 
 
-def _build_capabilities(conn, expr=None, listen=None):
+def _build_capabilities(expr=None, listen=None):
     """把已有数据映射成前端需要的能力项计数（近 30 天口径）。"""
     cats = {}
-    inner_err = None
 
     def add(cat, key, n):
         n = int(n or 0)
@@ -302,21 +301,25 @@ def _build_capabilities(conn, expr=None, listen=None):
     # —— 造句 / 错误本：近 30 天明细归类 ——
     # 与 error_breakdown 同路：created_at 是 TEXT 列，用参数做字符串比较（Postgres 上正常）。
     # 只取 error_type/original/corrected/created_at（不依赖 explanation 列，避免旧库缺列时整段崩）。
+    # 单独开连接：build_weakness 里共用同一条 conn 的某条查询一旦报错，
+    # Postgres 会把整段事务标成 aborted，导致后面所有查询（含本函数）全部失败、归零。
+    # 这里独立开一条连接，把能力项计算和那条被污染的事务彻底隔离，确保 capability 永远能算。
+    conn = get_conn()
     try:
         since = (app_today() - timedelta(days=30)).isoformat()
         rows = conn.execute(
             "SELECT error_type, original, corrected, created_at FROM errors "
             "WHERE created_at >= ?", (since,)).fetchall()
     except Exception as e:
-        inner_err = "query: %s" % e
         print("[link] 能力项明细查询失败(归零):", e)
         rows = []
+    finally:
+        conn.close()
     for r in rows:
         d = _row(r)
         t = (d.get("error_type") or "").strip()
         txt = " ".join([str(d.get("original") or ""),
-                        str(d.get("corrected") or ""),
-                        str(d.get("explanation") or "")])
+                        str(d.get("corrected") or "")])
         if t == "时态":
             # 只归「过去时」这一类：「时态混用」的 key 是 tense_mix，
             # 而 past_tense 里含 "tense" 子串会被它顺带命中，两条会重复计同一条错误。
@@ -362,7 +365,7 @@ def _build_capabilities(conn, expr=None, listen=None):
                           for key, n in sorted(cats[k].items(),
                                                key=lambda kv: -kv[1])],
             })
-    return {"categories": categories, "_inner_err": inner_err}
+    return {"categories": categories}
 
 
 def group_error_types(errs):
@@ -419,13 +422,12 @@ def build_weakness():
     listen = _weak_from_listening(conn)
     train = _weak_from_training(conn)
     expr = _weak_from_expression(conn)
-    # 必须在 conn.close() 之前算：能力项要查 errors 近 30 天明细
+    # 能力项独立开连接计算（见 _build_capabilities 内注释），不再依赖上面共用的 conn
     try:
-        caps = _build_capabilities(conn, expr=expr, listen=listen)
+        caps = _build_capabilities(expr=expr, listen=listen)
     except Exception as e:
-        import traceback as _tb
         print("[link] 能力项统计失败(已跳过): %s" % e)
-        caps = {"categories": [], "_diag": str(e), "_tb": _tb.format_exc()[-800:]}
+        caps = {"categories": []}
     conn.close()
 
     recs = []
