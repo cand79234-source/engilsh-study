@@ -421,8 +421,9 @@ def build_weakness():
     try:
         caps = _build_capabilities(conn, expr=expr, listen=listen)
     except Exception as e:
+        import traceback as _tb
         print("[link] 能力项统计失败(已跳过): %s" % e)
-        caps = {"categories": []}
+        caps = {"categories": [], "_diag": str(e), "_tb": _tb.format_exc()[-800:]}
     conn.close()
 
     recs = []
