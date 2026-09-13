@@ -121,7 +121,7 @@ def _weak_from_sentences(conn, limit=5):
         rows = conn.execute(
             "SELECT word, COUNT(*) n, AVG(score) avg, MAX(created_at) last "
             "FROM sentences WHERE word IS NOT NULL AND word <> '' "
-            "GROUP BY word HAVING n >= 2 AND avg < 75 "
+            "GROUP BY word HAVING COUNT(*) >= 2 AND AVG(score) < 75 "
             "ORDER BY avg ASC, n DESC LIMIT ?", (limit,)).fetchall()
     except Exception:
         return []

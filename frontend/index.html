@@ -3837,7 +3837,7 @@ pages.sum=async function(el){
   const errOverview = errGroups.length ? errGroups.map(e=>{
     const lv=String(e.level||'');
     const dot = lv.indexOf('🔴')>=0?'🔴':lv.indexOf('🟡')>=0?'🟡':lv.indexOf('🔵')>=0?'🔵':'●';
-    return `<div class="sumrow"><span><b>${esc(e.type)}</b></span><span style="color:var(--muted)">近30天 ${e.count_30d??0} · 累计 ${e.total??0}</span></div>`;
+    return `<div class="sumrow"><span><b>${esc(e.type)}</b> <span class="sdot">${dot}</span></span><span style="color:var(--muted)">近30天 ${e.count_30d??0} · 累计 ${e.total??0}</span></div>`;
   }).join('') : '<div class="sub" style="margin:6px 0">本期暂无错误记录。</div>';
   const errTrend = _errTrendLine(byDay);
   const notice = confirmed.length ? confirmed.map(e=>`<div class="sumrow"><span><b>${esc(e.type)}</b></span><span style="color:var(--muted)">${esc(e.level||'')} · 已确认</span></div>`).join('')
@@ -3888,6 +3888,11 @@ pages.sum=async function(el){
       <div class="sub" style="margin-top:4px">近四周每周错误数（按真实记录聚合）。</div>
       <div id="trend4" style="margin-top:8px"></div>
     </div>
+    <div class="card"><h2>❌ 本月错误概览</h2>
+      <div class="sub" style="margin-top:4px">仅展示错误事实，不代表能力薄弱；错误 ≠ 薄弱项。</div>
+      <div class="legend"><span>🔴 阻塞</span><span>🟡 薄弱</span><span>🔵 记忆</span></div>
+      ${errOverview}
+    </div>
     <div class="card"><h2>📚 本月完成情况</h2>
       ${_anaProgress('词汇', ppM.vocab[0], ppM.vocab[1])} ${_anaProgress('造句', ppM.sentence[0], ppM.sentence[1])} ${_anaProgress('听力', ppM.listen[0], ppM.listen[1])}
     </div>
@@ -3937,10 +3942,11 @@ pages.sum=async function(el){
 
   fetch('/api/errors/trend?bucket=week&days=28').then(r=>r.json()).then(d=>{
     const weeks=(d.weeks||[]);
-    if(!weeks.length){ const el4=document.getElementById('trend4'); if(el4) el4.innerHTML='<div class="sub">近四周暂无错误记录。</div>'; return; }
     const box=document.getElementById('trend4');
-    if(box) box.innerHTML = weeks.map(w=>
-      `<div class="sumrow"><span>${esc(w.week)}</span><span style="color:var(--muted)">${w.count} 条</span></div>`).join('');
+    if(!box) return;
+    if(!weeks.length){ box.innerHTML='<div class="sub">近四周暂无错误记录。</div>'; return; }
+    const arr=weeks.map(w=>({label:String(w.week||''), v:Number(w.count||0)}));
+    box.innerHTML=_anaMiniLine(arr, '近四周每周错误数');
   }).catch(()=>{});
 };
 function _recentActivityHtml(){

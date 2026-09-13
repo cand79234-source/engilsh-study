@@ -40,7 +40,7 @@ def app_now():
 
 
 def ensure_plan_goals(conn):
-    """计划目标表（纯新增，不碰任何现有表）。首次写入周目标：词汇20 / 造句20 / 听力6。"""
+    """计划目标表（纯新增，不碰任何现有表）。周目标：词汇120 / 造句120 / 听力6（一天20×6个学习日）。"""
     conn.execute("""CREATE TABLE IF NOT EXISTS plan_goals (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         scope TEXT NOT NULL DEFAULT 'week',
@@ -51,7 +51,14 @@ def ensure_plan_goals(conn):
     )""")
     if not conn.execute("SELECT id FROM plan_goals WHERE scope='week'").fetchone():
         conn.execute(
-            "INSERT INTO plan_goals (scope,vocab,sentence,listen,updated_at) VALUES ('week',20,20,6,?)",
+            "INSERT INTO plan_goals (scope,vocab,sentence,listen,updated_at) VALUES ('week',120,120,6,?)",
+            (app_now().isoformat(),))
+        conn.commit()
+    else:
+        # 修正历史误存的周目标（曾误写成 20）：一天 20 × 6 个学习日 = 120
+        conn.execute(
+            "UPDATE plan_goals SET vocab=120, sentence=120, listen=6, updated_at=? "
+            "WHERE scope='week' AND (vocab<>120 OR sentence<>120 OR listen<>6)",
             (app_now().isoformat(),))
         conn.commit()
 
