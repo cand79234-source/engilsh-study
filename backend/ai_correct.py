@@ -87,7 +87,16 @@ _SYS_PROMPT = """你是一名严谨、耐心的英语写作批改老师，学生
   "natural": [
     {"original": "原文片段", "better": "更自然的说法", "reason": "一句中文说明为什么这样说更自然"}
   ],
-  "summary": "中文总体评价，2-3 句：先说整体印象，再点出最该优先改的一两个点，最后一句鼓励。"
+  "summary": "中文总体评价，2-3 句：先说整体印象，再点出最该优先改的一两个点，最后一句鼓励。",
+  "expand": [
+    "基于学生原句中已经正确使用或经过 corrected 修正后的核心表达，提供 1-2 个可迁移到其他真实场景的英文句子，帮助学生把这个表达真正迁移出去。",
+    "优先复用学生原句中的核心词、短语或句型，只改变场景、人物、时间、原因、结果等信息，不要为了扩写而引入大量新词。",
+    "扩写句必须与学生原句存在明确的语言联系，而不是另起一个无关的新知识点。",
+    "每条只能是 1 个完整英文句子，每句不超过 25 个词。",
+    "不得直接重复 corrected，也不得把 natural 中的 better 原样复制到 expand。",
+    "如果原句过短、错误严重到无法提取稳定表达，则返回空数组 []。",
+    "如果原句已经完整且自然，但核心表达仍然可以迁移到其他真实场景，仍然应该扩写；只有当原句已经足够完整、自然且具有明确场景信息时，才返回空数组 []。"
+  ]
 }
 
 error_tags 固定表（只能从里面挑，不要自造）：
@@ -103,18 +112,38 @@ error_tags 固定表（只能从里面挑，不要自造）：
   并把 is_sentence 置 0、error_tags 里带上「不是完整句子」。
 
 规则：
+
 1. errors 只列确定是错误的地方；拿不准的不要列，宁可少说也别误判。
-   但「明显句子结构错误」（不是完整句子、缺主语、缺谓语）必须指出，
-   不能因为「意思大概能猜」就放过 —— 这类错误不指出等于没批改。
+   但「明显句子结构错误」等确定影响语法正确性的错误必须指出，否则等于没批改。
+
 2. natural 只放「语法没错但不够地道/生硬」的改写建议；原句已经很自然就给空数组 []。
-3. 学生可能写一句，也可能写几段，逐句检查。
-4. explain / reason / summary 全部用简体中文，语气像老师当面讲，平实、具体。
-5. 如果文本不是英文、或空到无法判断，输出 {"error": "无法批改：请输入一句英文"}。
-6. 除 JSON 外不要输出任何内容。
-7. 【句号 / 大小写彻底不提】句末标点缺失、首字母没大写属于书写习惯，不是语法错误：
-   - 不因此扣分，不写进 error_tags，不影响 level 判定；
-   - 也不要在 errors / natural / summary 里单列一行提醒「加个句号」「首字母要大写」这类话。
-   唯一例外：题目明确要求练书写规范时才按题目要求处理。"""
+
+3. expand 是「额外场景句」：
+   - 与 errors / natural 不重复；
+   - 不是重新批改学生原句，而是把学生已经写对、或修正后掌握的核心表达迁移到新的真实场景；
+   - 优先复用学生原句或 corrected 中的核心单词、短语、句型；
+   - 可以更换人物、时间、地点、原因、结果等场景，但不要无关地引入大量新词汇或新知识；
+   - 每条都必须是可以直接拿去说的完整、自然的英语句子；
+   - 最多 2 条；
+   - 每条不超过 25 个英文单词；
+   - 不得直接重复 corrected 或 natural 中的 better；
+   - 如果无法从学生表达中提取出稳定、可迁移的表达，返回 []。
+
+4. 学生可能写一句，也可能写几段，逐句检查。
+
+5. explain / reason / summary 全部用简体中文，语气像老师当面讲，平实、具体。
+
+6. 如果文本不是英文、或空到无法判断，输出：
+   {"error": "无法批改：请输入一句英文"}
+
+7. 除 JSON 外不要输出任何内容。
+
+8. 【句号 / 大小写彻底不提】句末标点缺失、首字母没大写属于书写习惯，不是语法错误：
+   - 不因此扣分；
+   - 不写进 error_tags；
+   - 不影响 level 判定；
+   - 也不要在 errors / natural / summary 里单列一行提醒。
+     唯一例外：题目明确要求练书写规范时，才按题目要求处理。"""
 
 
 def _user_prompt(text, word=""):
@@ -225,7 +254,7 @@ def correct(text, client_ip="", context="", word=""):
 
     # ③ 请求豆包（HTTP / 解析 / 错误翻译全部复用 ark_json）
     data, err = ark_json(_SYS_PROMPT, _user_prompt(text, word),
-                         max_tokens=1200, temperature=0.2, tag="ai_correct")
+                         max_tokens=1600, temperature=0.2, tag="ai_correct")
     if err:
         return None, err
     elapsed = int(data.pop("_elapsed_ms", 0) or 0)
@@ -245,6 +274,8 @@ def correct(text, client_ip="", context="", word=""):
         "better": str(n.get("better") or "")[:200],
         "reason": str(n.get("reason") or "")[:400],
     } for n in natural][:10]
+
+    expand = _norm_expand(data.get("expand"))
 
     # ⑤ AI 出分（设计方案 §3）：分数 / 判定 / 是否完整句 / 错误标签
     #    句号、大小写缺失不计入 error_tags（§3.3）：下面过滤时直接丢掉这类标签，
@@ -274,6 +305,7 @@ def correct(text, client_ip="", context="", word=""):
         "error_tags": tags[:8],
         "errors": errors,
         "natural": natural,
+        "expand": expand,
         "summary": str(data.get("summary") or "")[:600],
         "model": ARK_MODEL,
         "elapsed_ms": elapsed,
@@ -293,6 +325,21 @@ def _norm_score(v):
     except (TypeError, ValueError):
         return None
     return max(0, min(100, s))
+
+
+def _norm_expand(v):
+    """收成最多 2 条、每条截断到 400 字的列表；给不出就返回 []。"""
+    if not isinstance(v, list):
+        return []
+    out = []
+    for item in v:
+        s = str(item or "").strip()
+        if not s:
+            continue
+        out.append(s[:400])
+        if len(out) >= 2:
+            break
+    return out
 
 
 def _extract_json(s):
