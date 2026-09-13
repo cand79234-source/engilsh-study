@@ -39,6 +39,23 @@ def app_now():
     return datetime.now(APP_TZ).replace(tzinfo=None)
 
 
+def ensure_plan_goals(conn):
+    """计划目标表（纯新增，不碰任何现有表）。首次写入周目标：词汇20 / 造句20 / 听力6。"""
+    conn.execute("""CREATE TABLE IF NOT EXISTS plan_goals (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        scope TEXT NOT NULL DEFAULT 'week',
+        vocab INTEGER NOT NULL DEFAULT 0,
+        sentence INTEGER NOT NULL DEFAULT 0,
+        listen INTEGER NOT NULL DEFAULT 0,
+        updated_at TEXT DEFAULT ''
+    )""")
+    if not conn.execute("SELECT id FROM plan_goals WHERE scope='week'").fetchone():
+        conn.execute(
+            "INSERT INTO plan_goals (scope,vocab,sentence,listen,updated_at) VALUES ('week',20,20,6,?)",
+            (app_now().isoformat(),))
+        conn.commit()
+
+
 def app_today():
     """应用时区下的「今天」（date 对象）。"""
     return datetime.now(APP_TZ).date()

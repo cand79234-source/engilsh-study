@@ -299,12 +299,15 @@ def _build_capabilities(conn, expr=None, listen=None):
         bucket[key] = bucket.get(key, 0) + n
 
     # —— 造句 / 错误本：近 30 天明细归类 ——
+    # 注意：线上 errors.created_at 是 TEXT 列，Postgres 上直接 WHERE created_at >= ? 会崩。
+    # 改为全量取出、Python 端按日期字符串过滤（与 error_breakdown 同路），不再被 except 吞成空。
     try:
         since = (app_today() - timedelta(days=30)).isoformat()
         rows = conn.execute(
-            "SELECT error_type, original, corrected, explanation FROM errors "
-            "WHERE created_at >= ?", (since,)).fetchall()
-    except Exception:
+            "SELECT error_type, original, corrected, explanation, created_at FROM errors").fetchall()
+        rows = [r for r in rows if str(_row(r).get("created_at") or "") >= since]
+    except Exception as e:
+        print("[link] 能力项明细查询失败(归零):", e)
         rows = []
     for r in rows:
         d = _row(r)
@@ -360,6 +363,36 @@ def _build_capabilities(conn, expr=None, listen=None):
     return {"categories": categories}
 
 
+def group_error_types(errs):
+    """总结页「错误概览」五大类归并。返回结构与 error_types 一致：
+    [{type, level, count_30d, total}]，仅含非空大类；不修改入参。"""
+    GROUPS = [
+        ("时态混乱",     ["时态"]),
+        ("语法错误",     ["主谓一致", "单复数", "冠词", "词性", "介词"]),
+        ("句型结构错误", ["句型", "词序", "固定搭配"]),
+        ("方式表达单一", ["其他"]),
+        ("综合理解能力", ["听力", "阅读"]),
+    ]
+    out = []
+    for gname, members in GROUPS:
+        c30 = tot = 0
+        levels = set()
+        for e in errs or []:
+            t = str(e.get("type", ""))
+            if t in members:
+                c30 += int(e.get("count_30d", 0) or 0)
+                tot += int(e.get("total", 0) or 0)
+                lv = str(e.get("level", "") or "")
+                if lv:
+                    levels.add(lv)
+        if c30 or tot:
+            order = ["🔴", "🟡", "🔵"]
+            level = next((o for o in order if o in levels), "")
+            out.append({"type": gname, "level": level,
+                        "count_30d": c30, "total": tot})
+    return out
+
+
 def build_weakness():
     """综合薄弱项。返回结构向后兼容（error_types / low_star_words / recommendations），
     另附 sources 分板块明细。"""
@@ -371,6 +404,8 @@ def build_weakness():
         errs = svc.error_breakdown()
     except Exception:
         errs = []
+    # 总结页「错误概览」五大类归并（独立于 error_types，不影响「本周需要注意」）
+    err_groups = group_error_types(errs)
     try:
         low = srs.weak_output_words(threshold=3)
     except Exception:
@@ -441,6 +476,8 @@ def build_weakness():
     return {
         # 向后兼容：前端原有的三个字段一个不少
         "error_types": errs,
+        # 总结页「错误概览」五大类归并结果（前端只读此字段，原 error_types 不动）
+        "error_groups": err_groups,
         "low_star_words": low,
         "recommendations": recs,
         # 前端 WEAK_CATALOG 依赖它点亮「5 大类 17 条能力项」。

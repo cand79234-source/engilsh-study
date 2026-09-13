@@ -734,10 +734,10 @@ def errors_trend(days: int = 90, bucket: str = "week", only_unfixed: int = 0):
         # 时间桶表达式：两种引擎各一套，输出形状统一为 'YYYY-Www' / 'YYYY-MM-DD'
         if _using_pg():
             if bucket == "day":
-                bucket_expr = "to_char(created_at, 'YYYY-MM-DD')"
+                bucket_expr = "to_char(created_at::timestamp, 'YYYY-MM-DD')"
             else:
                 # IYYY/IW 取 ISO 周（周一为一周起点），并用 "W" 字面量保持与 SQLite 同形状
-                bucket_expr = "to_char(date_trunc('week', created_at), 'IYYY-\"W\"IW')"
+                bucket_expr = "to_char(date_trunc('week', created_at::timestamp), 'IYYY-\"W\"IW')"
         else:
             if bucket == "day":
                 bucket_expr = "strftime('%Y-%m-%d', created_at)"
@@ -748,7 +748,7 @@ def errors_trend(days: int = 90, bucket: str = "week", only_unfixed: int = 0):
         cutoff = (app_now() - timedelta(days=days)).strftime("%Y-%m-%d %H:%M:%S")
 
         sql = ("SELECT " + bucket_expr + " AS bucket_label, COUNT(*) AS cnt "
-               "FROM errors WHERE created_at >= ?")
+               "FROM errors WHERE created_at::timestamp >= ?")
         args = [cutoff]
         if only_unfixed:
             sql += " AND fixed=0"

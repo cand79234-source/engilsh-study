@@ -15,8 +15,9 @@
   * 算不出的指标一律返回 None（前端显示 —），绝不填 0 或编数字。
 """
 from datetime import date, timedelta
+import calendar
 
-from db import get_conn, app_today
+from db import get_conn, app_today, ensure_plan_goals
 import services as svc
 
 
@@ -294,11 +295,36 @@ def build_report():
             "compare": month_cmp,
         }
 
+        # ===== 计划完成情况（周目标 + 月目标 = 周目标 × 当月周数）=====
+        ensure_plan_goals(conn)
+        grow = conn.execute(
+            "SELECT vocab, sentence, listen FROM plan_goals WHERE scope='week'").fetchone()
+        gv = _i(grow["vocab"]) if grow else 0
+        gs = _i(grow["sentence"]) if grow else 0
+        gl = _i(grow["listen"]) if grow else 0
+        ym_now = _ym()
+        dim = calendar.monthrange(int(ym_now[:4]), int(ym_now[5:7]))[1]
+        weeks_in_month = (dim - 1) // 7 + 1
+        mv, ms, ml = gv * weeks_in_month, gs * weeks_in_month, gl * weeks_in_month
+        plan_progress = {
+            "week": {
+                "vocab": [_i(cur_w["new_words"]) if cur_w else 0, gv],
+                "sentence": [week_out["sentences"]["total"], gs],
+                "listen": [week_out["listening"]["answered"], gl],
+            },
+            "month": {
+                "vocab": [month_out["words_output"], mv],
+                "sentence": [month_out["sentences"]["total"], ms],
+                "listen": [month_out["listening"]["answered"], ml],
+            },
+        }
+
         return {
             "ok": True,
             "progress": {"stage": stage, "week": week},
             "week": week_out,
             "month": month_out,
+            "plan_progress": plan_progress,
         }
     finally:
         conn.close()

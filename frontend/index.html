@@ -3810,6 +3810,7 @@ pages.sum=async function(el){
     weakData=r[0]; errData=r[1]; repData=r[2];  
   }catch(e){ /* 不崩：缺失指标一律 — */ }
   let errTypes=(errData&&errData.error_types)||(weakData&&weakData.error_types)||[];
+  let errGroups=(weakData&&weakData.error_groups)||(errData&&errData.error_groups)||[];
   const lowWords=(weakData&&weakData.low_star_words)||[];
   // 已确认薄弱项：仅取 🔴 / 🟡（拼写/句型等 🔵 属记忆项，不在此列，交闪卡处理）
   let confirmed=errTypes.filter(e=>{const lv=String(e.level||''); return lv.indexOf('🔴')>=0||lv.indexOf('🟡')>=0;});
@@ -3822,6 +3823,8 @@ pages.sum=async function(el){
   const tabBtn=(k,label)=>`<button class="btn ${tab===k?'':'ghost'} sm" style="flex:1" data-act="sumTab" data-val="${k}">${label}</button>`;
   const dash=`<span style="color:var(--muted)">—</span>`;
   const RW=(repData&&repData.week)||{}, RM=(repData&&repData.month)||{};  
+  const ppW=(repData&&repData.plan_progress&&repData.plan_progress.week)||{vocab:[0,0],sentence:[0,0],listen:[0,0]};
+  const ppM=(repData&&repData.plan_progress&&repData.plan_progress.month)||{vocab:[0,0],sentence:[0,0],listen:[0,0]};
   const wSent=RW.sentences||{}, wListen=RW.listening||{}, wCmp=(RW.compare&&RW.compare.items)||[];  
   const mSent=RM.sentences||{}, mListen=RM.listening||{};  
   const cmpCur=k=>{const it=wCmp.find(x=>x.name===k);return it?it.cur:null;};  
@@ -3831,40 +3834,22 @@ pages.sum=async function(el){
   const wkCmpPrev=n=>{const it=wkCmpItems.find(x=>x.name===n);return it?it.prev:null;};
   const noDataNote=`<div class="sub" style="margin-top:6px;color:var(--muted)">注：学习天数 / 新学词汇 / 计划完成率等指标需后端统计接口提供，当前后端未返回，按“不编造”原则显示 —。</div>`;
 
-  const errOverview = errTypes.length ? errTypes.map(e=>{
-    const lv=(e.level||'').match(/^(\S+)/);
-    return `<div class="sumrow"><span class="srl"><b>${esc(e.type)}</b><span class="sdot" style="margin-left:6px">${esc(lv?lv[1]:'')}</span></span><span class="srr">近30天 ${e.count_30d||0} · 累计 ${e.total||0}</span></div>`;
-  }).join('')
-    : '<div class="sub" style="margin:6px 0">本周暂无错误记录。</div>';
+  const errOverview = errGroups.length ? errGroups.map(e=>{
+    const lv=String(e.level||'');
+    const dot = lv.indexOf('🔴')>=0?'🔴':lv.indexOf('🟡')>=0?'🟡':lv.indexOf('🔵')>=0?'🔵':'●';
+    return `<div class="sumrow"><span><b>${esc(e.type)}</b></span><span style="color:var(--muted)">近30天 ${e.count_30d??0} · 累计 ${e.total??0}</span></div>`;
+  }).join('') : '<div class="sub" style="margin:6px 0">本期暂无错误记录。</div>';
   const errTrend = _errTrendLine(byDay);
   const notice = confirmed.length ? confirmed.map(e=>`<div class="sumrow"><span><b>${esc(e.type)}</b></span><span style="color:var(--muted)">${esc(e.level||'')} · 已确认</span></div>`).join('')
     : '<div class="sub" style="margin:6px 0">本周暂无已确认的重点薄弱项。</div>';
   const monthSummary = `本月共记录 ${totalErr} 条错误，涉及 ${errTypes.length} 类：\n` + (errTypes.length?errTypes.map(e=>e.type+' '+e.count_30d+'次').join('\n'):'（无）') + '\n错误统计用于记录学习表现，不直接代表能力薄弱。';
-
-  const recs=(repData&&repData.week&&repData.week.sentence_list)||[];
-  const recHtml=recs.length?`
-    <div style="margin-top:10px">
-      <div class="sub" style="font-weight:700;margin:6px 0 4px">📝 本周造句记录（${recs.length} 条，点开看批改）</div>
-      ${recs.map(s=>`
-        <details style="border:1px solid var(--border);border-radius:8px;padding:6px 8px;margin:5px 0">
-          <summary style="cursor:pointer">
-            ${esc(s.original||'(空)')} <b style="color:${s.good?'var(--ok)':'var(--bad)'}">${s.good?'✓':'✗'}</b>
-            <span style="color:var(--muted);font-size:12px">${esc(s.created_at||'')}</span>
-          </summary>
-          <div style="font-size:13px;line-height:1.7;margin-top:4px">
-            原句：${esc(s.original||'')}<br>
-            改正：${esc(s.corrected||s.original||'')}<br>
-            错误：${esc(s.error_type||'无')}　分数：${s.score==null?'—':s.score}
-          </div>
-        </details>`).join('')}
-    </div>`:'<div class="sub" style="margin-top:6px">本周还没有造句记录。</div>';
 
   const weekHtml=`
     <div class="card" style="border:1.5px solid var(--primary)">
       <h2>📚 本周学习</h2>
        ${_anaMetric('本周主题', esc(RW.title)||dash)} ${_anaMetric('学习天数', cmpCur('学习天数')??dash)} ${_anaMetric('计划完成率', dash)}  
       ${_anaMetric('新学词汇', cmpCur('新学词汇')??dash)} ${_anaMetric('单词复习', RW.reviews??dash)} ${_anaMetric('造句', wSent.total??dash)}  
-      ${_anaMetric('听力', wListen.answered??dash)} ${_anaMetric('周测', RW.quiz_count??dash)} ${recHtml}${noDataNote}
+      ${_anaMetric('听力', wListen.answered??dash)} ${_anaMetric('周测', RW.quiz_count??dash)} ${noDataNote}
 
     </div>
     <div class="card"><h2>📈 学习效果</h2>
@@ -3887,7 +3872,7 @@ pages.sum=async function(el){
       ${notice}
     </div>
     <div class="card"><h2>🎯 计划完成情况</h2>
-      ${_anaMetric('词汇计划完成', dash)} ${_anaMetric('造句计划完成', dash)} ${_anaMetric('听力计划完成', dash)} ${noDataNote}
+      ${_anaMetric('词汇计划完成', (ppW.vocab[0])+'/'+(ppW.vocab[1]))} ${_anaMetric('造句计划完成', (ppW.sentence[0])+'/'+(ppW.sentence[1]))} ${_anaMetric('听力计划完成', (ppW.listen[0])+'/'+(ppW.listen[1]))}
     </div>
     <div class="card"><h2>📈 错误率趋势</h2>
       <div class="sub" style="margin-top:4px">按真实错误记录的自然日统计；无记录日不显示、不补 0。</div>
@@ -3900,10 +3885,11 @@ pages.sum=async function(el){
       ${_anaMetric('单词复习', mCmpCur('单词复习')??dash)} ${_anaMetric('造句', mSent.total??dash)} ${_anaMetric('听力', mListen.answered??dash)} ${_anaMetric('周测', RM.quiz_count??dash)} ${noDataNote}
     </div>
     <div class="card"><h2>📈 近四周趋势</h2>
-      <div class="sub" style="margin-top:4px">近四周趋势需要后端统计接口支持；当前未返回，按“不编造”原则不绘制曲线。</div>
+      <div class="sub" style="margin-top:4px">近四周每周错误数（按真实记录聚合）。</div>
+      <div id="trend4" style="margin-top:8px"></div>
     </div>
     <div class="card"><h2>📚 本月完成情况</h2>
-      ${_anaProgress('词汇', 0, 0)} ${_anaProgress('造句', 0, 0)} ${_anaProgress('听力', 0, 0)} ${noDataNote}
+      ${_anaProgress('词汇', ppM.vocab[0], ppM.vocab[1])} ${_anaProgress('造句', ppM.sentence[0], ppM.sentence[1])} ${_anaProgress('听力', ppM.listen[0], ppM.listen[1])}
     </div>
     <div class="card"><h2>❌ 本月错误趋势</h2>
       <div class="sub" style="margin-top:4px">仅展示错误事实与趋势，不进行能力诊断。</div>
@@ -3948,6 +3934,14 @@ pages.sum=async function(el){
   ${bodyHtml}
   ${recentActs}
   `;
+
+  fetch('/api/errors/trend?bucket=week&days=28').then(r=>r.json()).then(d=>{
+    const weeks=(d.weeks||[]);
+    if(!weeks.length){ const el4=document.getElementById('trend4'); if(el4) el4.innerHTML='<div class="sub">近四周暂无错误记录。</div>'; return; }
+    const box=document.getElementById('trend4');
+    if(box) box.innerHTML = weeks.map(w=>
+      `<div class="sumrow"><span>${esc(w.week)}</span><span style="color:var(--muted)">${w.count} 条</span></div>`).join('');
+  }).catch(()=>{});
 };
 function _recentActivityHtml(){
   const d=historyData();
