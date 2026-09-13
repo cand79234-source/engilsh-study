@@ -3840,13 +3840,9 @@ pages.sum=async function(el){
   const notice = confirmed.length ? confirmed.map(e=>`<div class="sumrow"><span><b>${esc(e.type)}</b></span><span style="color:var(--muted)">${esc(e.level||'')} · 已确认</span></div>`).join('')
     : '<div class="sub" style="margin:6px 0">本周暂无已确认的重点薄弱项。</div>';
   const monthSummary = `本月共记录 ${totalErr} 条错误，涉及 ${errTypes.length} 类：\n` + (errTypes.length?errTypes.map(e=>e.type+' '+e.count_30d+'次').join('\n'):'（无）') + '\n错误统计用于记录学习表现，不直接代表能力薄弱。';
+  const monthSummary=`本月共记录 ${totalErr} 条错误，涉及 ${errTypes.length} 类：\n` + (...);
 
-  const weekHtml=`
-    <div class="card" style="border:1.5px solid var(--primary)">
-      <h2>📚 本周学习</h2>
-       ${\_anaMetric('本周主题', esc(RW.title)||dash)} ${\_anaMetric('学习天数', cmpCur('学习天数')??dash)} ${\_anaMetric('计划完成率', dash)}  
-      ${\_anaMetric('新学词汇', cmpCur('新学词汇')??dash)} ${\_anaMetric('单词复习', RW.reviews??dash)} ${\_anaMetric('造句', wSent.total??dash)}  
-       const recs=(repData&&repData.week&&repData.week.sentence_list)||[];
+  const recs=(repData&&repData.week&&repData.week.sentence_list)||[];
   const recHtml=recs.length?`
     <div style="margin-top:10px">
       <div class="sub" style="font-weight:700;margin:6px 0 4px">📝 本周造句记录（${recs.length} 条，点开看批改）</div>
@@ -3863,7 +3859,9 @@ pages.sum=async function(el){
           </div>
         </details>`).join('')}
     </div>`:'<div class="sub" style="margin-top:6px">本周还没有造句记录。</div>';
-      ${\_anaMetric('听力', wListen.answered??dash)} ${\_anaMetric('周测', RW.quiz_count??dash)} ${recHtml}${noDataNote}
+
+  const weekHtml=`
+    <div class="card" style="border:1.5px solid var(--primary)">
 
     </div>
     <div class="card"><h2>📈 学习效果</h2>
