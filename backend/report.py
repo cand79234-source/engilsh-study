@@ -220,6 +220,20 @@ def build_report():
         prev_w = _week_metrics(conn, stage, week - 1) if week > 1 else None
         week_cmp = _compare_block(cur_w, prev_w, "🆚 本周 vs 上周", "上周")
 
+        srecs = conn.execute(
+            "SELECT original, corrected, good, score, verdict, error_type, created_at "
+            "FROM sentences WHERE created_at >= ? ORDER BY created_at DESC LIMIT 50",
+            (_days_ago(7),)).fetchall()
+        sentence_list = [{
+            "original": (r["original"] or "")[:500],
+            "corrected": (r["corrected"] or "")[:500],
+            "good": _i(r["good"]),
+            "score": _avg(r["score"]),
+            "verdict": (r["verdict"] or "")[:10],
+            "error_type": (r["error_type"] or "")[:20],
+            "created_at": (r["created_at"] or "")[:16],
+        } for r in srecs]
+
         week_out = {
             "title": title,
             "grammar": grammar,
@@ -235,6 +249,7 @@ def build_report():
             "listening": {"answered": _i(lrow["t"]), "correct": _i(lrow["d"])},
             "err_types": err_types,
             "compare": week_cmp,
+            "sentence_list": sentence_list,
         }
 
         # ===== 本月（自然月）=====
