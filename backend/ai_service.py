@@ -2156,7 +2156,8 @@ def _merge_ai_expand_into_opts(opts, ai_expand, ai_natural=None):
     做法（方案 B —— 后端合并，前端一行不用改）：
       · 保留本地模板的润色类建议（where/suggestion/reason，有用且稳）；
       · 用 AI 的扩写**替换**本地模板的 expand 条目（AI 的更自然）；
-      · AI 没给扩写时，本地模板的 expand 原样保留（兜底，不至于空白）。
+      · AI 没给扩写时，**不再用本地模板的 expand 兜底**（学生要求「只用 AI」，
+        本地模板扩写会拿学生的错句去改，等于教学生继续写错；宁可这一块空着）。
     返回新的列表，不原地改。
     """
     out = [o for o in (opts or []) if not (isinstance(o, dict)
@@ -2175,11 +2176,8 @@ def _merge_ai_expand_into_opts(opts, ai_expand, ai_natural=None):
             "kind": "expand", "where": "整句", "sample": sample,
             "note": note or "这是 AI 给的更地道说法，可以参考着写。",
         })
-    if ai_items and out:
-        return out
-    # AI 没给扩写 → 本地模板的 expand 补回来（兜底）
-    if not ai_items:
-        return list(opts or [])
+    # #60 无论 AI 有没有给扩写，都**只用 AI**：本地模板的 expand 一律不补回来。
+    #     （本地扩写是拿学生原句硬拼的，会把错误表达带进扩写，学生明确不要本地。）
     return out
 
 
@@ -2224,8 +2222,21 @@ def _row_to_attempt(r):
         ai_corr = (r["ai_corrected"] if "ai_corrected" in keys else "") or ""
         ai_verdict = (r["ai_verdict"] if "ai_verdict" in keys else "") or ""
         score = int(ai_score)
+        # #58 字段名对齐：库里存的是 AI 的**原始结构**（wrong/right/explain），
+        #     而前端 attemptCard 读的是 where/correct/explanation。
+        #     提交时前端翻译过一次（index.html 1244），但『从库回填』这条路没人翻译，
+        #     导致「哪里错了 / 正确写法 / 为什么错」整块空白。这里补齐翻译，
+        #     让『当场提交』与『刷新回填』两条路输出完全一致。
+        ai_errors = [{
+            "where": str(e.get("where") or e.get("wrong") or ""),
+            "type": str(e.get("type") or "其它"),
+            "explanation": str(e.get("explanation") or e.get("explain") or ""),
+            "correct": str(e.get("correct") or e.get("right") or ""),
+        } for e in ai_errors if isinstance(e, dict)]
         out.update({
-            "corrected": ai_corr or r["corrected"],
+            # #59 AI 没给 corrected 就留空 —— 不再退回本地规则那句。
+            #     学生要求「只用 AI」：宁可这一栏空着，也不把本地结果混成 AI 的。
+            "corrected": ai_corr,
             "score": score,
             "verdict": ai_verdict or ("基本掌握" if score >= 85 else "需要改进"),
             "ok": (score >= 85) and (len(ai_errors) == 0),
