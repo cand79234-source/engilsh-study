@@ -1213,10 +1213,13 @@ async function submitSentence(tk){
         grammar:meta.grammar||'', prompt:meta.task||'', ai:1})});
     if(!r||r.error){toast((r&&r.error)||'批改失败');return;}
     /* ⚠️ 服务端已经**一次写入**就带上了 AI 结果（r.score 就是 AI 分，r.ai_saved=true）。
-       所以提交后**先刷新一次**：直接以库里读回的数据为准，再往上追加这一条。
+       所以提交后**先刷新一次**：直接以库里读回的数据为准。
        为什么不能只在内存里改：连点两次时后端两次 response 顺序可能颠倒，
        内存里就会显示上一次的分数；而且这样"批改时看到的"与"刷新后看到的"
-       走的完全是同一条读取路径，天然一致。刷新失败才退回内存结果。 */
+       走的完全是同一条读取路径，天然一致。
+       refreshOk：记录这次回填有没有真的成功。成功 → 后面**不再**往 state.hist 追加内存副本
+       （否则同一条会被画两遍、且内存那张缺 ai 字段）；失败 → 才用内存副本兜底。 */
+    let refreshOk=false;
     if(r.sentence_id){
       try{
         const h=await api('/sentence/attempts');
@@ -1225,6 +1228,7 @@ async function submitSentence(tk){
           if(g&&g.attempts&&g.attempts.length){
             state.hist=state.hist||{}; state.hist[tk]=g.attempts;
             renderAttempts(tk); planProgress();
+            refreshOk=true;
           }
         }
       }catch(e){ /* 拉不回来就用下面的内存结果兜底 */ }
@@ -1249,20 +1253,23 @@ async function submitSentence(tk){
       f.source='ai'; f.ai_pending=false;
     }
     if(localIssues.length) f.task_issues=(f.task_issues||[]).concat(localIssues);
-    state.hist=state.hist||{}; state.hist[tk]=state.hist[tk]||[];
-    state.hist[tk].push({
-      id:f.sentence_id, attempt:f.attempt, sentence:f.original, corrected:f.corrected,
-      score:f.score, verdict:f.verdict, ok:!!f.ok, error_type:f.error_type,
-      status:f.status||'', errors:f.errors||[], task_issues:f.task_issues||[],
-      optimizations:f.optimizations||[], created_at:f.created_at, _local:f._local||0,
-      /* 来源标记：AI 批改成功=ai；否则为本地估算（与刷新后后端返回的字段一致，
-         保证「批改时看到的」与「刷新后看到的」来源标注完全一致）。 */
-      source:f.source||(byAI?'ai':'rule'), ai_pending:(f.ai_pending!==undefined?f.ai_pending:!byAI),
-      /* ai：只留「更地道说法」这一项带进历史。
-         ① 刷新页面后 attemptCard 还能渲染出 AI 建议（不然刷一次就没了）；
-         ② 只存 natural，不存 errors/score —— 那些已经拍平成上面的字段了，
-            整包 ai 存进去会让本地存储白白变大。 */
-      ai:(byAI&&f.ai)?{natural:(f.ai.natural||[])}:null});
+    /* ⚠️ 2026-09-11 修「一句显示两张卡、刷新后 AI 区消失」：
+       上面「服务端回填」成功时（refreshOk=true），state.hist[tk] 已经是库里的权威数据，
+       且已含刚提交这条、字段口径与刷新后完全一致 → **这里绝不能再 push 一次**，
+       否则同一条 attempt 画两遍（两张卡），且内存那张缺 ai 字段（"更地道说法"刷完就没）。
+       只有回填失败（refreshOk=false）才用内存副本兜底，避免断网时整条结果不显示。 */
+    if(!refreshOk){
+      state.hist=state.hist||{}; state.hist[tk]=state.hist[tk]||[];
+      state.hist[tk].push({
+        id:f.sentence_id, attempt:f.attempt, sentence:f.original, corrected:f.corrected,
+        score:f.score, verdict:f.verdict, ok:!!f.ok, error_type:f.error_type,
+        status:f.status||'', errors:f.errors||[], task_issues:f.task_issues||[],
+        optimizations:f.optimizations||[], created_at:f.created_at, _local:f._local||0,
+        source:f.source||(byAI?'ai':'rule'), ai_pending:(f.ai_pending!==undefined?f.ai_pending:!byAI),
+        /* 补齐 ai 字段，保证这张兜底卡与「服务端回填」的卡片形状一致
+           （否则 attemptCard 取不到 ai.natural，AI 建议会空一块）。 */
+        ai:(f.ai)?{natural:(f.ai.natural||[]), expand:(f.ai.expand||[])}:null});
+    }
     renderAttempts(tk);
     planProgress();
     /* ⭐ 薄弱项讲解（§4）：同词同错累计 ≥3 次才由后端给出，
@@ -3884,8 +3891,9 @@ function _sumPeriod(repPeriod){
 function _daysInMonth(ym){ const p=String(ym||'').split('-'); if(p.length<2) return '28';
   return ('0'+new Date(+p[0],+p[1],0).getDate()).slice(-2); }
 /* 总结页：周报 / 月报 / 复制报告
-   数据来源：真实后端 /api/weakness、/api/errors（含错误时间戳，可算每日分布）。
-   其余指标（学习天数 / 新学词汇 / 计划完成率等）后端未提供统计接口，按 docx「不编造」原则显示 —。 */
+   数据来源：真实后端 /api/report（本周/本月核心指标 + 环比 + plan_progress）、
+   /api/weakness、/api/errors（含错误时间戳，可算每日分布）。
+   学习天数 / 新学词汇 / 计划完成率 均由 /api/report 真实返回；暂无记录的项按 docx「不编造」原则显示 —。 */
 pages.sum=async function(el){
   refreshProg();
   let weakData=null, errData=null, repData=null;  
@@ -3909,6 +3917,15 @@ pages.sum=async function(el){
   const RW=(repData&&repData.week)||{}, RM=(repData&&repData.month)||{};  
   const ppW=(repData&&repData.plan_progress&&repData.plan_progress.week)||{vocab:[0,0],sentence:[0,0],listen:[0,0]};
   const ppM=(repData&&repData.plan_progress&&repData.plan_progress.month)||{vocab:[0,0],sentence:[0,0],listen:[0,0]};
+  /* 计划完成率 = 三个分项的**加权合计**：(词汇已完成+造句已完成+听力已完成) / (三者目标之和)。
+     为什么不能直接平均三项：单位不同（个/句/题），平均会失真，按"总量比"才反映真实进度。
+     没有目标（和=0）时返回 null → 前端显示 —，绝不编数字。 */
+  const ppRate=pp=>{
+    const parts=[pp.vocab,pp.sentence,pp.listen];
+    let done=0,total=0;
+    parts.forEach(p=>{ done+=Number((p&&p[0])||0); total+=Number((p&&p[1])||0); });
+    return total>0 ? Math.round(done/total*100)+'%' : null;
+  };
   const wSent=RW.sentences||{}, wListen=RW.listening||{}, wCmp=(RW.compare&&RW.compare.items)||[];  
   const mSent=RM.sentences||{}, mListen=RM.listening||{};  
   const cmpCur=k=>{const it=wCmp.find(x=>x.name===k);return it?it.cur:null;};  
@@ -3916,7 +3933,7 @@ pages.sum=async function(el){
     const wkCmpItems=(repData&&repData.week&&repData.week.compare&&repData.week.compare.items)||[];
   const wkCmpVal=n=>{const it=wkCmpItems.find(x=>x.name===n);return it?it.cur:null;};
   const wkCmpPrev=n=>{const it=wkCmpItems.find(x=>x.name===n);return it?it.prev:null;};
-  const noDataNote=`<div class="sub" style="margin-top:6px;color:var(--muted)">注：学习天数 / 新学词汇 / 计划完成率等指标需后端统计接口提供，当前后端未返回，按“不编造”原则显示 —。</div>`;
+  const noDataNote=`<div class="sub" style="margin-top:6px;color:var(--muted)">注：学习天数、新学词汇、计划完成率均已按后端统计口径展示；暂无记录的项显示 —（不编造）。</div>`;
 
   const errOverview = errGroups.length ? errGroups.map(e=>{
     const lv=String(e.level||'');
@@ -3931,7 +3948,7 @@ pages.sum=async function(el){
   const weekHtml=`
     <div class="card" style="border:1.5px solid var(--primary)">
       <h2>📚 本周学习</h2>
-       ${_anaMetric('本周主题', esc(RW.title)||dash)} ${_anaMetric('学习天数', cmpCur('学习天数')??dash)} ${_anaMetric('计划完成率', dash)}  
+       ${_anaMetric('本周主题', esc(RW.title)||dash)} ${_anaMetric('学习天数', cmpCur('学习天数')??dash)} ${_anaMetric('计划完成率', ppRate(ppW)??dash)}  
       ${_anaMetric('新学词汇', cmpCur('新学词汇')??dash)} ${_anaMetric('单词复习', RW.reviews??dash)} ${_anaMetric('造句', wSent.total??dash)}  
       ${_anaMetric('听力', wListen.answered??dash)} ${_anaMetric('周测', RW.quiz_count??dash)} ${noDataNote}
 
@@ -3965,7 +3982,7 @@ pages.sum=async function(el){
 
   const monthHtml=`
     <div class="card" style="border:1.5px solid var(--primary)"><h2>📚 本月概况</h2>
-      ${_anaMetric('学习天数', mCmpCur('学习天数')??dash)} ${_anaMetric('已到期计划完成率', dash)} ${_anaMetric('新学词汇', mCmpCur('新学词汇')??dash)}  
+      ${_anaMetric('学习天数', mCmpCur('学习天数')??dash)} ${_anaMetric('已到期计划完成率', ppRate(ppM)??dash)} ${_anaMetric('新学词汇', mCmpCur('新学词汇')??dash)}  
       ${_anaMetric('单词复习', mCmpCur('单词复习')??dash)} ${_anaMetric('造句', mSent.total??dash)} ${_anaMetric('听力', mListen.answered??dash)} ${_anaMetric('周测', RM.quiz_count??dash)} ${noDataNote}
     </div>
     <div class="card"><h2>📈 近四周趋势</h2>
@@ -4059,7 +4076,7 @@ function _buildSumText(kind, period, errTypes, confirmed, byDay, totalErr, month
   L.push('','—— 需要注意（只读已确认薄弱项）——');
   L.push(confirmed.length?confirmed.map(e=>`· ${e.type}（${e.level||''} · 已确认）`).join('\n'):'· 本周暂无已确认的重点薄弱项');
   if(kind==='月报'){ L.push('','—— 本月总结 ——', monthSummary); }
-  L.push('','（学习天数 / 新学词汇 / 计划完成率等需后端统计接口；当前未提供，按“不编造”原则未显示。）');
+  L.push('','（学习天数 / 新学词汇 / 计划完成率均为后端统计口径的真实值，暂无记录的项显示 —，不做编造。）');
   return L.join('\n');
 }
 

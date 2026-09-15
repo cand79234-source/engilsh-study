@@ -11,9 +11,12 @@
             高频错误，全部落在本自然周内。
             修复前用的是「今天往前 7×24 小时」（_days_ago(7)），跨周时会把
             上周数据算进本周、也会漏掉本周一，统计边界是错的。
-  * 本周 vs 上周（环比）：用**课程周**（progress.stage + progress.week）——
-            课程周是学习进度的单位（第 N 周），与自然周不是一回事，
-            环比就该按课程周来，这里明确区分并在返回体里标注口径。
+  * 本周 vs 上周（环比）：也用**自然周**（本周一~周日 vs 上周一~周日）。
+            修复前这里用**课程周**（progress.stage + progress.week）统计，而
+            `history.week` 是「第 N 周课程」不是自然周 —— 同一课程周可跨越很多
+            自然日，导致「学习天数」虚高（本周才周二却显示 4 天、上周显示 11 天）。
+            现在本周 = 今天所在自然周、上周 = 今天往前 7 天所在自然周，
+            与上面的自然周指标口径完全一致。
   * 本月  = 自然月，按 created_at 的 'YYYY-MM' 前缀过滤。
             用参数化 LIKE 而不是 strftime()，因为 strftime 在 PostgreSQL 上不存在，
             而本项目 SQLite / Neon(PG) 双兼容。
@@ -92,22 +95,52 @@ def _demo_filter():
 
 
 # ---------------- 环比四项（本周vs上周 / 本月vs上月）----------------
-def _week_metrics(conn, stage, week):
-    """某一课程周的四项核心指标：学习天数 / 新学词汇 / 单词复习 / 错误率。"""
-    if week is None or week < 1:
-        return None
+def _week_metrics(conn, stage, week, anchor=None):
+    """某一**自然周**的四项核心指标：学习天数 / 新学词汇 / 单词复习 / 错误率。
+
+    ⚠️ 2026-09-11 修「学习天数虚高」（周报显示 4 天 / 上周显示 11 天）：
+       旧实现用 `WHERE stage=? AND week=?` 统计 —— 这里的 `week` 是**课程周序号**
+       （第 N 周课程，1…96），**不是自然周**。而一个人可以在同一个课程周里
+       跨越很多个自然日（课程周推进慢，复习/补学都记在同一课程周），
+       于是 `COUNT(DISTINCT date)` 会 > 7（实测能到 11）。
+       现在统一改成**中国自然周**（周一 00:00:00 ~ 周日 23:59:59，Asia/Shanghai）：
+       用 anchor（默认中国今天）算出本周一~周日，再按 created_at / date 过滤。
+       stage 仍用于限定阶段；week 参数保留但**不再用于日期过滤**（兼容旧调用签名）。
+
+    anchor：该"周"里任意一天（date 或 'YYYY-MM-DD'）。传 None = 中国今天。
+        "上周" = anchor 往前 7 天所在的自然周（由调用方传入）。
+    """
+    from db import china_week_range, get_china_date
+    from datetime import date as _date, timedelta as _timedelta
+    # 解析 anchor → 该自然周的 [周一00:00:00, 周日23:59:59]
+    if anchor is None:
+        a = get_china_date()
+    elif isinstance(anchor, _date):
+        a = anchor
+    else:
+        try:
+            a = _date.fromisoformat(str(anchor)[:10])
+        except Exception:
+            a = get_china_date()
+    wk_start, wk_end = china_week_range(a)
+    wsd, wed = wk_start[:10], wk_end[:10]
+
     d = conn.execute(
-        "SELECT COUNT(DISTINCT date) AS n FROM history WHERE stage=? AND week=?",
-        (stage, week)).fetchone()
+        "SELECT COUNT(DISTINCT date) AS n FROM history "
+        "WHERE stage=? AND date>=? AND date<=?",
+        (stage, wsd, wed)).fetchone()
     w = conn.execute(
-        "SELECT COUNT(*) AS n FROM word_output WHERE stage=? AND week=?",
-        (stage, week)).fetchone()
+        "SELECT COUNT(*) AS n FROM word_output "
+        "WHERE stage=? AND first_at>=? AND first_at<=?",
+        (stage, wk_start, wk_end)).fetchone()
     r = conn.execute(
         "SELECT SUM(total_correct) AS c, SUM(total_wrong) AS w FROM reviews "
-        "WHERE stage=? AND week=?", (stage, week)).fetchone()
+        "WHERE stage=? AND created_at>=? AND created_at<=?",
+        (stage, wk_start, wk_end)).fetchone()
     s = conn.execute(
         "SELECT COUNT(*) AS n, SUM(good) AS good FROM sentences "
-        "WHERE stage=? AND week=?", (stage, week)).fetchone()
+        "WHERE stage=? AND created_at>=? AND created_at<=?",
+        (stage, wk_start, wk_end)).fetchone()
     total, good = _i(s["n"]), _i(s["good"])
     return {
         "days": _i(d["n"]),
@@ -229,11 +262,12 @@ def build_report():
                 (wk_start, wk_end)).fetchall():
             err_types.append({"type": r["t"], "current": _i(r["n"])})
 
-        # 🆚 本周 vs 上周：这是**课程周**（stage+week）环比，与上面的自然周指标口径不同，
-        # 在返回体 period 里明确标注，避免被误解成同一口径。
-        # 第 1 周没有「上周」，prev 全为 None，前端显示 —。
-        cur_w = _week_metrics(conn, stage, week)
-        prev_w = _week_metrics(conn, stage, week - 1) if week > 1 else None
+        # 🆚 本周 vs 上周：统一用**中国自然周**口径（周一~周日），与上面的
+        # 造句/周测/错误指标口径一致。
+        # 本周 = 今天所在自然周；上周 = 今天往前 7 天所在自然周。
+        _today = app_today()
+        cur_w = _week_metrics(conn, stage, week, anchor=_today)
+        prev_w = _week_metrics(conn, stage, week, anchor=_today - timedelta(days=7))
         week_cmp = _compare_block(cur_w, prev_w, "🆚 本周 vs 上周", "上周")
 
         srecs = conn.execute(
@@ -346,7 +380,7 @@ def build_report():
                          "label": "%s ~ %s" % (wk_start[:10], wk_end[:10]),
                          "rule": "natural_week_mon_sun"},
                 "month": {"label": _ym(), "rule": "natural_month"},
-                "week_compare_rule": "course_week(stage+week)",
+                "week_compare_rule": "natural_week_mon_sun",
             },
             "week": week_out,
             "month": month_out,
