@@ -276,6 +276,14 @@ def correct(text, client_ip="", context="", word=""):
         return None, err
     elapsed = int(data.pop("_elapsed_ms", 0) or 0)
 
+    # 诊断日志（只打印，不改任何逻辑）：把 AI 的原始返回打出来，
+    # 便于确认「AI 是没给 errors/corrected/natural/expand，还是给了但被漏读」。
+    # 不含 Key / 无隐私风险；确认完可整段撤掉。
+    try:
+        print("[ai_correct] AI 原始返回: %s" % (str(data)[:1000],))
+    except Exception:
+        pass
+
     # ④ 整理输出
     errors = [e for e in (data.get("errors") or []) if isinstance(e, dict)]
     errors = [{
