@@ -106,6 +106,143 @@ _SYS = """你是英语情景设计师，专门给中国成年英语自学者设�
 
 
 # ------------------------------------------------------------------
+# 学习阶段 → 英语语言难度（CEFR）绑定
+# ------------------------------------------------------------------
+# 用户是 A2 起步的中国成年自学者，但 AI 默认会按"更真实/更专业"的方向
+# 自动抬高语言难度，生成出 B1/B2 级情景，远超当前水平。所以这里把
+# **阶段**和**英语难度**硬绑定，并在每次生成时明确写进 Prompt。
+#
+# ⚠️ 最核心的一条：**场景复杂度 ≠ 英语语言难度**。
+#   场景可以是真实、连续、具体的（比如"行李在机场丢了"），
+#   但用词和句式必须匹配用户当前阶段（Stage 0-1 就用 A2 初期的短句表达）。
+#   AI 不许因为"场景看起来更真实"就自动提高语言难度。
+#
+# 阶段不是让 AI 去解释 CEFR，而是**直接控制生成出来的英语语言难度**。
+STAGE_CEFR = {
+    0: ("A2 early", "A2 初期"),
+    1: ("A2 early", "A2 初期"),
+    2: ("A2 late", "A2 后期"),
+    3: ("A2 late", "A2 后期"),
+    4: ("B1", "B1"),
+    5: ("B1 late", "B1 后期"),
+}
+# Stage 0-1 的推荐生活场景（给 AI 一个明确的范围，避免它自由发挥到超纲题材）
+_STAGE01_SCENES = ("ordering food / buying something / talking about work / "
+                   "talking about hobbies / daily routine / asking for directions / "
+                   "making simple plans / talking with a friend / going to a cafe / "
+                   "shopping / travel basics")
+
+
+# ------------------------------------------------------------------
+# 【场景难度硬性规则】（用户逐条给定，2026-09 加入）
+# ------------------------------------------------------------------
+# 用户明确要求这段必须写死进 Prompt，并且**按 Phase 分档**给死规矩，
+# 而不是笼统说一句"别太难"。Phase 与 STAGE_CEFR 一一对应：
+#     Phase 0-1 → A2 初期    Phase 2-3 → A2 后期
+#     Phase 4   → B1         Phase 5   → B1 后期
+# 这段话**原样**取自用户的表述，尽量不改写 —— 改写了 AI 就容易放松执行。
+PHASE_RULES = """【场景难度硬性规则】
+
+Phase 0–1：
+必须使用 A2 初期水平的英语。
+句子短、结构简单、词汇以高频日常词为主。
+主要使用一般现在时、一般过去时、一般将来时和基础情态动词。
+避免复杂从句、抽象表达、低频词汇和高级连接词。
+场景应当让初级学习者可以直接理解。
+
+Phase 2–3：
+使用 A2 后期水平。
+可以出现稍长的句子、更多日常表达、简单原因/结果和时间关系。
+允许使用 because, so, when, if 等基础连接词。
+仍然避免 B1+ 的复杂表达。
+
+Phase 4：
+使用 B1 水平。
+可以出现较自然的完整对话、较长句子、简单从句、
+表达观点、原因、计划、经历和感受。
+
+Phase 5：
+使用 B1 后期水平。
+场景可以更加完整和自然，可以包含连续对话、
+稍复杂的表达、观点和解释，但不得进入 B2 难度。"""
+
+
+def cefr_for_stage(stage):
+    """阶段 → (CEFR 代码, 中文名)。未知阶段按最保守的 A2 初期处理。"""
+    try:
+        s = int(stage)
+    except (TypeError, ValueError):
+        s = 0
+    return STAGE_CEFR.get(s, STAGE_CEFR[0])
+
+
+def stage_difficulty_block(stage):
+    """把「本阶段英语难度」拼成一段明确的 Prompt 指令（中英双语，AI 更不容易忽略）。
+
+    AI 拿到的不是干巴巴的 "stage: 0"，而是明写的：
+        Learner stage: Stage 0
+        Target CEFR: A2 early
+    以及这个等级**具体**允许/禁止什么。
+    """
+    code, name = cefr_for_stage(stage)
+    try:
+        s = int(stage)
+    except (TypeError, ValueError):
+        s = 0
+    head = ("\n\n【本阶段英语难度（最高优先级，覆盖上面所有关于「真实感」的暗示）】\n"
+            "Learner stage: Stage %d\n"
+            "Target CEFR: %s\n"
+            "目标英语等级：%s（请直接按这个难度生成情景文字，不要去解释 CEFR）\n"
+            % (s, code, name))
+    if s <= 1:
+        body = (
+            "- 只用**短句**、**高频常用词**；主要用一般现在时，可以少量出现简单过去时。\n"
+            "- 禁止复杂从句（because/although/when 可以极少量，但不要套两层以上）。\n"
+            "- 禁止高级词汇、书面语、抽象话题；不加生僻搭配。\n"
+            "- 常见生活场景（推荐：%s）。\n"
+            "- 情景要短，能让 A1→A2 的学习者看懂；**不要要求长篇回答**。\n"
+            % _STAGE01_SCENES)
+    elif s <= 3:
+        body = (
+            "- 仍然以短句和高频词为主，但可用 because / but / so / when / if 等常见连接词。\n"
+            "- 可以有简单过去时、简单将来表达，句子可以稍长一点、更完整。\n"
+            "- 仍然**禁止**明显的 B1/B2 级表达、复杂从句嵌套、高级/抽象词汇。\n")
+    elif s == 4:
+        body = (
+            "- 可以用更自然的日常对话、原因解释、观点表达、经历描述、简单比较、计划与选择。\n"
+            "- 允许 because / although / however 等常见连接词，句子可以明显比 A2 长。\n"
+            "- 场景可涉及工作 / 旅行 / 生活中的实际问题，但仍以日常英语为主，**不要学术语体**。\n")
+    else:
+        body = (
+            "- 可以用更复杂的日常交流：表达观点、解释原因、描述经历、讨论工作/学习/旅行/人际关系。\n"
+            "- 允许更自然的连续表达。\n"
+            "- 但**仍然不要**生成明显的 B2/C1 学术英语、长难句堆砌、专业术语连篇。\n")
+    body += ("\n【最重要的一条】AI **不允许**因为「场景看起来更真实」就自动提高语言难度。\n"
+             "场景内容可以是真实、具体、连续的，但**英语语言必须匹配用户阶段**。\n"
+             "请分清「场景复杂度」和「英语语言难度」——它们是两回事。\n"
+             "反例（Stage 0 太难的写法，禁止）：\n"
+             "  \"You recently encountered an unexpected issue with your reservation and need to\n"
+             "   negotiate an alternative arrangement with the hotel receptionist.\"\n"
+             "正例（Stage 0 该有的写法）：\n"
+             "  \"You are at a hotel. You booked a room, but there is a problem with your room.\n"
+             "   Talk to the receptionist.\"\n")
+    return head + body
+
+
+def build_sys_prompt(stage):
+    """最终生效的 system prompt = 固定规则 + 本阶段难度块 + Phase 硬性规则。
+
+    单独抽成函数，方便测试"最终真正发给 AI 的 Prompt"到底长什么样，
+    也保证 stage 真的进入了 system prompt，而不是被忽略。
+
+    Phase 硬性规则（PHASE_RULES）是用户逐条给定的，必须原样带上 ——
+    它把 Phase 0-1 / 2-3 / 4 / 5 每一档"能用什么、不能用什么"写死了，
+    比只写一句 "Target CEFR: A2 early" 更难被模型忽略。
+    """
+    return _SYS + stage_difficulty_block(stage) + "\n\n" + PHASE_RULES
+
+
+# ------------------------------------------------------------------
 # 入库清洗：AI 偶尔还是会把语法要求写进情景（旧数据里就有），
 # 这里在**入库时**一次性剥掉，页面照常统一显示语法，不需要前端去猜 AI 写没写。
 # 只删两类很确定的东西：① 括号式「（语法：…）」② 句尾的时态指令短句。
@@ -245,11 +382,16 @@ def _lookup_word(word):
     return "", ""
 
 
-def generate_for_word(word, grammar="", n=GEN_COUNT, extra=None, need_tier=None):
+def generate_for_word(word, grammar="", n=GEN_COUNT, extra=None, need_tier=None,
+                      stage=None):
     """给一个词生成情景并入库。返回新增条数（0 = 库里已够 / AI 不可用 / 失败）。
 
     grammar 只作为**背景参考**交给模型（让它知道这周在学什么，选场景时更贴），
     但明确要求它**不要把语法写进情景文字**——语法要求由页面统一显示。
+
+    stage：学习者当前阶段（0-5）。**必须传真实值**，它决定生成情景的英语难度
+        （见 STAGE_CEFR / stage_difficulty_block）。不传按最保守的 A2 初期处理，
+        避免"漏传就默认 B1"把情景生成得过难。
 
     extra：同批的其他学习词（含复习词），只在 large 大情景里"能自然嵌入就带上"，
     嵌不进去不许硬造事件。没有就传 None，行为与以前一致。
@@ -259,7 +401,14 @@ def generate_for_word(word, grammar="", n=GEN_COUNT, extra=None, need_tier=None)
         以前"够不够"只看总数，于是常出现「有 3 条 small 就以为够了、
         large 永远 0 条」——组合句一直没情景就是这么来的。
         传了 need_tier 就**只补这一层**，并跳过其它层的库存判断。
-        传 None 则退回旧行为（small/large 都生成，用于导入时的首批）。
+
+    ⚠️ 2026-09-11：**small 层彻底不再由本函数生成**（见 AI_TIERS）。
+        基础句（20 个单词造句）的情景一律来自导入材料里词条自带的
+        Mini Scenario 1/2/3，由 importer 解析、存在 day_items/dictionary 里。
+        所以：
+          · need_tier="small" → 直接返回 0，一次 AI 都不调；
+          · need_tier=None（老调用）→ 自动降级成只生成 large。
+        想恢复旧行为，把 AI_TIERS 里的 "small" 加回去并把下面两道闸去掉。
     """
     word = (word or "").strip().lower()
     if not word or not ai_correct.ai_enabled():
@@ -267,6 +416,12 @@ def generate_for_word(word, grammar="", n=GEN_COUNT, extra=None, need_tier=None)
     nt = (str(need_tier) if need_tier else "").strip().lower() or None
     if nt not in ("small", "large"):
         nt = None
+    # 闸①：明确要 small → 不干（small 由导入材料自带，不调 AI）
+    if nt and nt not in AI_TIERS:
+        return 0
+    # 闸②：没指定层 → 只生成 AI 层（不让它顺手把 small 也造出来）
+    if not nt:
+        nt = AI_TIERS[0]
     with _busy_lock:
         # 同一词 + 同一层正在生成中就跳过；不同层互不阻塞
         busy_key = "%s|%s" % (word, nt or "all")
@@ -274,19 +429,19 @@ def generate_for_word(word, grammar="", n=GEN_COUNT, extra=None, need_tier=None)
             return 0
         _busy.add(busy_key)
     try:
-        if nt:
-            # 只补指定层：该层够了就退（其它层缺不缺不归这次管）
-            if count_of(word, nt) >= TIER_TARGET.get(nt, MIN_POOL):
-                return 0
-        else:
-            # 不指定层（导入时的首批）：**两层都够**才算够。
-            # 这里以前是 `count_of(word) >= MIN_POOL`（只看总数），
-            # 某词若只有 3 条 large 就会被误判"够了"、永远不补 small。
-            if all(count_of(word, x) >= TIER_TARGET.get(x, MIN_POOL)
-                   for x in ("small", "large")):
-                return 0
+        # 只补指定层：该层够了就退（其它层缺不缺不归这次管）
+        if count_of(word, nt) >= TIER_TARGET.get(nt, MIN_POOL):
+            return 0
         meaning, pos = _lookup_word(word)
-        user = "目标词：%s" % word
+        _code, _name = cefr_for_stage(stage)
+        try:
+            _snum = int(stage)
+        except (TypeError, ValueError):
+            _snum = 0
+        # 在 user 里也**明写**一次阶段与目标 CEFR：system 里已经写了完整难度规则，
+        # user 里再点一遍，AI 更不容易把它当成背景忽略掉。
+        user = ("Learner stage: Stage %d\nTarget CEFR: %s\n目标词：%s"
+                % (_snum, _code, word))
         if meaning or pos:
             user += "（%s%s）" % (pos or "", ("　" + meaning) if meaning else "")
         if grammar:
@@ -316,6 +471,9 @@ def generate_for_word(word, grammar="", n=GEN_COUNT, extra=None, need_tier=None)
         # 原因：大情景的本质是**一条连续的故事线**，要求它同时承担 4 个不同
         # 生活角度，模型只能靠"硬编十几二十件事"来满足 —— 这就是流水账的来源。
         # 所以角度只分给 small，large 专心讲一件事讲完整。
+        #
+        # ⚠️ 2026-09-11：small 不再由 AI 生成，所以下面分角度的分支实际上
+        # 只在 nt=="large" 时走到"跳过分配"这一支；保留结构以防将来恢复 small。
         _angs = angle_order_for_word(word, n)
         if _angs and len(_angs) > 1:
             if nt == "large":
@@ -337,8 +495,10 @@ def generate_for_word(word, grammar="", n=GEN_COUNT, extra=None, need_tier=None)
 
         # 生成配额：只产 small / large（medium 是删掉升级句之后的死层，
         # 页面没有任何地方取它，继续生成纯属白烧额度）。
+        # ⚠️ 2026-09-11：nt 现在只可能是 "large"（small 不走 AI）。
         if nt == "large":
-            user += "\n请生成 %d 条情景，tier 全部填 \"large\"。" % n
+            user += ("\n请生成 %d 条情景，tier 全部填 \"large\"。"
+                     "（**不要 small、不要 medium**）" % n)
         elif nt == "small":
             user += "\n请生成 %d 条情景，tier 全部填 \"small\"。" % n
         else:
@@ -347,7 +507,7 @@ def generate_for_word(word, grammar="", n=GEN_COUNT, extra=None, need_tier=None)
                      "%d 条 tier 填 \"large\"（**不要 medium**）。"
                      % (n, _half, max(1, n - _half)))
 
-        data, err = ai_correct.ark_json(_SYS, user, max_tokens=1400,
+        data, err = ai_correct.ark_json(build_sys_prompt(stage), user, max_tokens=1400,
                                         temperature=0.8, tag="scenario")
         if err:
             print("[scenario] %s 生成失败: %s" % (word, err))
@@ -429,6 +589,16 @@ def count_of(word, tier=None):
 # 每个 tier 的库存目标：低于它就该补。页面只消费 small（基础句）和
 # large（组合句），medium 是删掉升级句之后的死层，不再补。
 TIER_TARGET = {"small": 3, "large": 3}
+
+# ⚠️ 2026-09-11：**基础句的 small 层彻底不再调 AI**。
+#   small（20 个单词造句）的情景，一律来自导入材料里词条自带的
+#   Mini Scenario 1/2/3（存在 day_items.scenes / dictionary.scenes），
+#   在这里由 importer 解析、services.normalize_scenes 规范化。
+#   AI 只负责 large（组合句）那一层。
+#   所以下面所有「补货」逻辑都只遍历 AI_TIERS，不再碰 small ——
+#   这样即使历史库里还有 small 的 AI 情景，也不会再新增。
+#   想要恢复 old 行为，把 "small" 加回来即可。
+AI_TIERS = ("large",)
 
 
 def pick(word, exclude_id=0, tier=None):
@@ -521,7 +691,7 @@ def with_label(sc):
     return sc
 
 
-def refill_if_low(word, grammar=""):
+def refill_if_low(word, grammar="", stage=None):
     """按 tier 检查库存，缺哪层补哪层（2026-09-10 重写）。
 
     ⚠️ 旧版有三个错，一起修掉：
@@ -530,17 +700,18 @@ def refill_if_low(word, grammar=""):
      ② 完全不看 tier —— 有 3 条 small 就以为够了，large 永远补不上，
         组合句一直没情景；
      ③ 只补 3 条、层数随机，补了也可能全补到 small 上（约 30% 白补）。
-    现在：**按 small / large 分别检查**，缺哪层就专门补哪层。
+    现在：**只按 large 层检查**（small 不再走 AI，见 AI_TIERS 注释），缺就补。
     仍然只在 AI 可用时补，且由调用方决定何时调（不在这里发太多请求）。
     """
     w = (word or "").strip().lower()
     if not w or not ai_correct.ai_enabled():
         return
-    for t in ("small", "large"):
+    for t in AI_TIERS:
         need = TIER_TARGET.get(t, MIN_POOL)
         if count_of(w, t) < need:
             # 只补缺的那一层；同一词不同层可并行，同层由 _busy 去重
-            spawn(generate_for_word, w, grammar, max(1, need - count_of(w, t)), None, t)
+            spawn(generate_for_word, w, grammar, max(1, need - count_of(w, t)),
+                  None, t, stage)
 
 
 # ------------------------------------------------------------------
@@ -557,7 +728,7 @@ def spawn(fn, *args, **kwargs):
         return None
 
 
-def ensure_for_words(words, grammar="", workers=3, only_words=None):
+def ensure_for_words(words, grammar="", workers=3, only_words=None, stage=None):
     """导入时主触发：给这批词补齐首批情景。**已生成过的自动跳过**。
 
     同步执行（调用方自己放在后台线程里），返回生成了多少个词。
@@ -570,7 +741,7 @@ def ensure_for_words(words, grammar="", workers=3, only_words=None):
 
     旧版只看总数（count_of(w) < MIN_POOL）判断"缺不缺"，会出现
     「有 3 条 small 就跳过、large 永远 0 条」——组合句没情景的根因之一。
-    现在按 tier 判断，缺哪层补哪层。
+    现在只按 large 判断（small 不再走 AI，见 AI_TIERS 注释）。
     """
     ws = []
     seen = set()
@@ -585,23 +756,23 @@ def ensure_for_words(words, grammar="", workers=3, only_words=None):
         return 0
     todo = [w for w in ws
             if any(count_of(w, t) < TIER_TARGET.get(t, MIN_POOL)
-                   for t in ("small", "large"))]
+                   for t in AI_TIERS)]
     if not todo:
         return 0
-    print("[scenario] 导入触发：%d 个词待生成情景（只补当天这批）" % len(todo))
+    print("[scenario] 导入触发：%d 个词待生成情景（只补当天这批 / 只补 large）" % len(todo))
 
     done = 0
     try:
         from concurrent.futures import ThreadPoolExecutor, as_completed
         with ThreadPoolExecutor(max_workers=max(1, min(workers, 4))) as ex:
-            # small / large 分别补，缺哪层补哪层（generate_for_word 传 need_tier）
+            # 只补 large 层（generate_for_word 传 need_tier）
             futs = []
             for w in todo:
-                for t in ("small", "large"):
+                for t in AI_TIERS:
                     if count_of(w, t) < TIER_TARGET.get(t, MIN_POOL):
                         futs.append(ex.submit(generate_for_word, w, grammar,
                                               max(1, TIER_TARGET.get(t, MIN_POOL)
-                                                  - count_of(w, t)), None, t))
+                                                  - count_of(w, t)), None, t, stage))
             for f in as_completed(futs):
                 try:
                     if f.result():
@@ -613,20 +784,20 @@ def ensure_for_words(words, grammar="", workers=3, only_words=None):
     return done
 
 
-def ensure_for_word_bg(word, grammar=""):
+def ensure_for_word_bg(word, grammar="", stage=None):
     """点「记住了」兜底触发：这个词的情景缺哪层就补哪层（后台，不卡界面）。
 
     ⚠️ 旧版是 `if count_of(w) >= MIN_POOL: return` —— 只看总数。某词若已有
     3 条 small，总数够 3 就再也不补，它的 large 永远补不上，组合句一直没情景。
-    现在改成**按 small / large 分别判断**，谁缺补谁。
+    现在只按 large 判断（small 不再走 AI，见 AI_TIERS 注释）。
     """
     w = (word or "").strip().lower()
     if not w or not ai_correct.ai_enabled():
         return
-    for t in ("small", "large"):
+    for t in AI_TIERS:
         if count_of(w, t) < TIER_TARGET.get(t, MIN_POOL):
             spawn(generate_for_word, w, grammar,
-                  max(1, TIER_TARGET.get(t, MIN_POOL) - count_of(w, t)), None, t)
+                  max(1, TIER_TARGET.get(t, MIN_POOL) - count_of(w, t)), None, t, stage)
             return          # 一次只触发一层（另一层留着给下一次请求，避免瞬时打爆）
 
 
@@ -728,10 +899,10 @@ def backfill_step(max_words=None, force=False):
     limit = int(max_words or BF_BATCH)
 
     def _gaps_of(d):
-        """这一天还缺哪些 (词, 层)。"""
+        """这一天还缺哪些 (词, 层)。只算 large —— small 不走 AI。"""
         g = []
         for w in d["words"]:
-            for t in ("small", "large"):
+            for t in AI_TIERS:
                 if count_of(w, t) < TIER_TARGET.get(t, MIN_POOL):
                     g.append((w, t))
             if len(g) >= limit:
@@ -748,7 +919,8 @@ def backfill_step(max_words=None, force=False):
                     gr = _bf_grammar_of(d["week"])
                     n = 0
                     for w, t in g[:limit]:
-                        if generate_for_word(w, gr, TIER_TARGET.get(t, MIN_POOL), None, t):
+                        if generate_for_word(w, gr, TIER_TARGET.get(t, MIN_POOL), None, t,
+                                             d.get("stage")):
                             n += 1
                     if n:
                         print("[scenario] 按天补齐（今天）：W%s D%s 补了 %d 个词"
@@ -768,7 +940,8 @@ def backfill_step(max_words=None, force=False):
         if gaps:
             g = _bf_grammar_of(d["week"])
             for w, t in gaps[:limit]:
-                if generate_for_word(w, g, TIER_TARGET.get(t, MIN_POOL), None, t):
+                if generate_for_word(w, g, TIER_TARGET.get(t, MIN_POOL), None, t,
+                                     d.get("stage")):
                     done += 1
             # 停在这一天：下次接着补同一天，直到它齐了再往后走
             with _BF_LOCK:
@@ -785,13 +958,13 @@ def backfill_step(max_words=None, force=False):
 
 
 def backfill_status():
-    """给外部定时器看的状态：总共几天、每天齐了没、当前游标。"""
+    """给外部定时器看的状态：总共几天、每天齐了没、当前游标。只统计 large。"""
     days = _bf_days()
     out = []
     for d in days:
         miss = 0
         for w in d["words"]:
-            for t in ("small", "large"):
+            for t in AI_TIERS:
                 if count_of(w, t) < TIER_TARGET.get(t, MIN_POOL):
                     miss += 1
         out.append({"week": d["week"], "day": d["day"],

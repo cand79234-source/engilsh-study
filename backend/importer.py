@@ -86,8 +86,45 @@ _IPA_SEG_RE = re.compile(r"\s*/\[?[^/]{1,40}/\]?\s*")
 _HAS_CN = re.compile(r"[\u4e00-\u9fff]")
 # 固定搭配行：形如  固定搭配：「a」b；「c」d
 _COLLOC_LINE = re.compile(r"^\s*(?:固定搭配|搭配|词组|短语)\s*[:：]?\s*(.+)$")
+# 情景（场景）标签行：形如  Mini Scenario 1： / Mini Scenario 1: / 场景1： / 情景 2：
+# 用户粘贴的整周材料里，每个词后面跟着 3 条英文 mini scenario，格式固定是
+#     Mini Scenario 1：
+#     You meet your new colleague at the office and say hello.
+# 这行是**纯标签**（后面什么都没有），真正的英文在下一行。
+# 必须单独识别：不认它的话，标签行被丢掉、下面那句英文会被当成"第 4 条例句"
+# 混进 examples —— 例句区凭空多出三句没中译的英文，情景也永远进不了库。
+_SCENE_LINE = re.compile(
+    r"^\s*(?:mini\s*)?(?:scenario|scene|situation|情景|场景|情境)\s*"
+    r"([0-9０-９]{1,2})?\s*[:：.、]?\s*(.*)$", re.I)
 # 行首列表标记（-、•、·等；不含 */★，它们是重点词标记）
 _LIST_MARK_RE = re.compile(r"^[\s]*[-–—•·▪◦‣▪]+\s+")
+
+
+def _parse_scene_line(s):
+    """识别情景标签行，返回 (场景序号或None, 同一行里跟在标签后的内容)。
+
+    「Mini Scenario 1：」这种**行尾没内容**的标签行返回 ("", "")——它不是情景
+    本身，只是一个"接下来这句是情景"的牌子，真正内容在下一行。
+    同一行就写了内容的（"Mini Scenario 1：You meet your colleague."）也能认，
+    此时第 2 个返回值就是那句英文。
+
+    不是情景行 → None。判定从严（必须是整行就是标签），避免把
+    "In this scenario, you need to talk to your manager." 这类正常句子误伤。
+    """
+    s = (s or "").strip()
+    if not s or len(s) > 60:
+        return None
+    m = _SCENE_LINE.match(s)
+    if not m:
+        return None
+    num, rest = m.group(1), (m.group(2) or "").strip()
+    # 标签后面若还跟着一整句英文（以 . ! ? 收尾），说明是"标签+内容"同一行
+    if rest and not re.search(r"[.!?。！？]$", rest) and _HAS_CN.search(rest):
+        # 后面跟的是中文说明（如 "情景1：在办公室打招呼"），也认，当作内容
+        pass
+    if not rest:
+        return (num or ""), ""
+    return (num or ""), rest
 
 
 def _strip_list_marker(s):
@@ -325,6 +362,7 @@ def _parse_block(text):
     n = len(raw_lines)
     # 把连续行按空行/--- 分段，但中文翻译独立于空行。用逐行状态机：
     pending_ex = None  # 最近一个未配中译的例句
+    expect_scene = None  # 刚读到「Mini Scenario N：」牌子，下一行英文是情景
 
     for i, raw in enumerate(raw_lines):
         line = raw.strip()
@@ -358,13 +396,34 @@ def _parse_block(text):
             if cur_word is not None:
                 cur_word.setdefault("collocations", []).extend(colloc)
             continue
+        # 情景（场景）行 → 挂到当前词，**必须在"英文例句"判断之前**。
+        #   否则 "Mini Scenario 1：" 之下的三句英文会被当成第 4/5/6 条例句
+        #   混进 examples（例句区凭空多三句没中译的英文，场景也进不了库）。
+        scene = _parse_scene_line(line)
+        if scene is not None:
+            if cur_word is not None:
+                snum, sbody = scene
+                if sbody:
+                    cur_word.setdefault("scenes", []).append(
+                        {"n": snum, "text": _strip_list_marker(sbody)})
+                    expect_scene = None
+                else:
+                    # 只有牌子、没内容 → 下一行英文才是情景
+                    expect_scene = snum
+            continue
         # 英文例句 → 新开一条例句（中文随后配对）【须先于单词头判断，
         #   否则 "I started working..." 会被误认成单词 "I"】
         if _is_eng_sentence(line):
             if cur_word is not None:
-                ex = {"sentence": _strip_list_marker(line), "translation": ""}
-                cur_word.setdefault("examples", []).append(ex)
-                pending_ex = ex
+                if expect_scene is not None:
+                    # 上一条是「Mini Scenario N：」牌子 → 这句是情景，不是例句
+                    cur_word.setdefault("scenes", []).append(
+                        {"n": expect_scene, "text": _strip_list_marker(line)})
+                    expect_scene = None
+                else:
+                    ex = {"sentence": _strip_list_marker(line), "translation": ""}
+                    cur_word.setdefault("examples", []).append(ex)
+                    pending_ex = ex
             continue
         # 中文行 → 若前一句例句缺中译则配对，否则当作说明文字
         if _is_cn_only(line) and cur_word is not None:
@@ -380,9 +439,11 @@ def _parse_block(text):
             if w and _is_english_word(w["word"]):
                 w.setdefault("examples", [])
                 w.setdefault("collocations", [])
+                w.setdefault("scenes", [])
                 ensure_group(group_ref[0], group_ref[1])["words"].append(w)
                 cur_word = w
                 pending_ex = None
+                expect_scene = None
                 continue
         # 其它 → 注释/说明
         skipped.append(raw)
@@ -405,6 +466,10 @@ def _parse_line(text):
     header_lines = []
     cur_word = None
     pending_ex = None
+    # ⚠️ 2026-09-11：逐行式也要认 Mini Scenario（和块状式对齐）。
+    # 老版本 _parse_line 完全不认场景标签，于是「Mini Scenario 1：」被丢进
+    # skipped、它下面的英文句子被当成第 4/5/6 条例句 —— 基础句就没有自带情景了。
+    expect_scene = None      # 刚读到场景标签后，等它的英文句子
 
     def ensure_group(day, name=None):
         g = groups.setdefault(day, {"day": day, "name": "", "words": []})
@@ -435,16 +500,36 @@ def _parse_line(text):
         if colloc is not None and cur_word is not None:
             cur_word.setdefault("collocations", []).extend(colloc)
             continue
+        # 场景标签（Mini Scenario 1：/ 场景1：/ 情景一：…）→ 进入"等下一条英文"状态
+        if cur_word is not None:
+            _sc = _parse_scene_line(line)
+            if _sc is not None and (_sc[1] or not _is_eng_sentence(line)):
+                expect_scene = _sc[0] or str(len(cur_word.get("scenes") or []) + 1)
+                cur_word.setdefault("scenes", [])
+                if _sc[1]:      # 标签后面直接跟了正文（同一行）
+                    cur_word["scenes"].append({"n": expect_scene, "text": _sc[1]})
+                    expect_scene = None
+                continue
         w = _parse_word_header(line)
         if w and _is_english_word(w["word"]):
             w.setdefault("examples", [])
             w.setdefault("collocations", [])
+            w.setdefault("scenes", [])
             ensure_group(group_ref[0], group_ref[1])["words"].append(w)
             cur_word = w
             pending_ex = None
+            expect_scene = None
             continue
         if cur_word is not None and _is_eng_sentence(line):
-            ex = {"sentence": _strip_list_marker(line), "translation": ""}
+            _txt = _strip_list_marker(line)
+            # 场景标签下面那条英文 → 归到 scenes，不当例句
+            if expect_scene is not None:
+                cur_word.setdefault("scenes", []).append(
+                    {"n": expect_scene, "text": _txt})
+                expect_scene = None
+                pending_ex = None
+                continue
+            ex = {"sentence": _txt, "translation": ""}
             cur_word["examples"].append(ex)
             pending_ex = ex
             continue

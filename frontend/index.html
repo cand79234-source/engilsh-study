@@ -989,6 +989,9 @@ async function renderSentencePlan(t){
     const tk='basic:'+i;
     const headTxt=fixSentenceTask(b.task)||'';
     state.tkMeta[tk]={word:b.word||'', meaning:b.meaning||'', task:headTxt, label:headTxt, grammar:g, tier:'small',
+      /* scenes：这个词导入时自带的情景（Mini Scenario 1/2/3）。有它就本地轮换 🔁，
+         没有就退回后端 AI 情景库。见 fetchScenario / nextScenario。 */
+      scenes:(b.scenes||[]),
       /* cleanHead：情景拉到后把题干换成去重版（去掉与情景重复的搭配/语法括号），见 cleanTaskHead */
       cleanHead:`${b.i}. ${esc(cleanTaskHead(headTxt))}${starBadge(b.word)}${b.focus?' <span class="badge" style="background:#fef3c7;color:#92400e">★重点</span>':''}`};
     return itemHtml(tk,
@@ -1032,10 +1035,14 @@ function starBadge(w){
 }
 
 /* ---------- 造句情景（§2）：并入题干一行 + 🔁 换同词另一条 ----------
-   复用后端原有 /api/scenario/next（按 used_count 轮换，只出同一个词的情景）。
-   展示格式（用户反馈去重后）：「题干，情景：…（语法：…）🔁▽」——
-   情景直接接在题干后面，不再单独占一行；题干里原本重复的搭配/语法括号由 cleanTaskHead 去掉。
-   层级由 tkMeta.tier 决定（basic=small / combo=large），后端按 tier 字段过滤。 */
+   情景有两个来源，**基础句只走本地、组合句才可能走 AI**：
+     ① 基础句（tier=small）：情景**只**来自导入材料里词条自带的
+        Mini Scenario 1/2/3（解析后存在 tkMeta.scenes）。纯本地轮换，
+        不调 AI、不花额度、不用等；**没有就是没有，不回退到 AI**
+        —— 用户要求「20 个单词造句的场景彻底删干净 AI」。
+     ② 组合句（tier=large）：组合句本来就是 AI 生成的，情景也走 AI 情景库
+        （/api/scenario/next，tier=large）；有自带情景时同样优先本地。
+   层级由 tkMeta.tier 决定（basic=small / combo=large）。 */
 function cleanTaskHead(s){
   /* 只删两类与情景重复的括号段，别的括号（如「（自我介绍、遇到的问题…）」）一律保留：
      ① （语法：…）/(语法: …) ② 纯英文搭配式（like/enjoy/hate+doing、verb+ing…） */
@@ -1058,8 +1065,31 @@ function paintScenario(tk, grammar){
     +(grammar?`（语法：${esc(grammar)}）`:'')
     +` <span data-act="scNext" data-val="${tk}" title="换一条同词情景" style="cursor:pointer">🔁</span>`;
 }
+/* 是否允许这条题去后端 AI 情景库取景。
+   基础句（small）**一律不允许** —— 用户明确要求彻底去 AI；
+   组合句（large）允许（组合本身就是 AI 生成的）。 */
+function _scAllowAi(meta){
+  const t=String((meta&&meta.tier)||'').toLowerCase();
+  return t==='large';
+}
 async function fetchScenario(tk, grammar){
   const meta=(state.tkMeta||{})[tk]||{};
+  /* ① 优先：这个词**自带的情景**（导入时解析的 Mini Scenario）——纯本地轮换。
+     有就完全不问后端：不调 AI、不花额度、不用等，点 🔁 秒切。 */
+  const own=(meta.scenes||[]).filter(s=>s&&(s.text||s.prompt));
+  if(own.length){
+    state.scIdx=state.scIdx||{};
+    const idx=state.scIdx[tk]||0;
+    const s=own[idx%own.length];
+    state.scCur=state.scCur||{};
+    state.scCur[tk]={id:0, tier:'local', prompt:s.text||s.prompt, _local:true};
+    paintScenario(tk, grammar);
+    return;
+  }
+  /* ② 没有自带情景：
+       · 基础句 → 到此为止，**不回退 AI**（用户要求），只是不显示情景；
+       · 组合句 → 用后端 AI 情景库（large）。 */
+  if(!_scAllowAi(meta)) return;
   const w=((meta.scenWord||meta.word)||'').trim();
   if(!w) return;
   try{
@@ -1080,6 +1110,25 @@ function fetchScenarioQ(tk, grammar){
 async function nextScenario(tk){
   const meta=(state.tkMeta||{})[tk]||{};
   const cur=(state.scCur||{})[tk]||{};
+  /* ① 自带情景 → 本地轮换（点一次换一个，纯前端，秒切、不调 AI） */
+  const own=(meta.scenes||[]).filter(s=>s&&(s.text||s.prompt));
+  if(own.length){
+    state.scIdx=state.scIdx||{};
+    state.scIdx[tk]=((state.scIdx[tk]||0)+1)%own.length;
+    const s=own[state.scIdx[tk]];
+    state.scCur=state.scCur||{};
+    state.scCur[tk]={id:0, tier:'local', prompt:s.text||s.prompt, _local:true};
+    paintScenario(tk, meta.grammar||'');
+    return;
+  }
+  /* ② 没有自带情景：
+       · 基础句 → **不回退 AI**。本地就 1 条（或 0 条）时点 🔁 给个提示，
+         不再偷偷去调 AI 生成小情景。
+       · 组合句 → 后端 AI 情景库轮换。 */
+  if(!_scAllowAi(meta)){
+    toast('这个词没有自带情景，点 🔁 不会用 AI 生成（20 个单词造句已全部走本地）');
+    return;
+  }
   const w=((meta.scenWord||meta.word)||'').trim();
   if(!w) return;
   try{
@@ -1163,6 +1212,23 @@ async function submitSentence(tk){
       body:JSON.stringify({sentence:v, word:meta.word||'', task_key:tk,
         grammar:meta.grammar||'', prompt:meta.task||'', ai:1})});
     if(!r||r.error){toast((r&&r.error)||'批改失败');return;}
+    /* ⚠️ 服务端已经**一次写入**就带上了 AI 结果（r.score 就是 AI 分，r.ai_saved=true）。
+       所以提交后**先刷新一次**：直接以库里读回的数据为准，再往上追加这一条。
+       为什么不能只在内存里改：连点两次时后端两次 response 顺序可能颠倒，
+       内存里就会显示上一次的分数；而且这样"批改时看到的"与"刷新后看到的"
+       走的完全是同一条读取路径，天然一致。刷新失败才退回内存结果。 */
+    if(r.sentence_id){
+      try{
+        const h=await api('/sentence/attempts');
+        if(h&&h.ok!==false&&h.groups){
+          const g=(h.groups||[]).find(x=>x.task_key===tk);
+          if(g&&g.attempts&&g.attempts.length){
+            state.hist=state.hist||{}; state.hist[tk]=g.attempts;
+            renderAttempts(tk); planProgress();
+          }
+        }
+      }catch(e){ /* 拉不回来就用下面的内存结果兜底 */ }
+    }
     // 后端判语法；这里只补「这一题想练的词用上了吗」——纯建议，不动分数、不改判定
     const localIssues=localTaskCheck(v, meta);
     const f=Object.assign({}, r);
@@ -1180,6 +1246,7 @@ async function submitSentence(tk){
       f.verdict=a.level||(f.ok?'基本掌握':'需要改进');
       f.status=(f.ok?'PASS':'NEEDS_REVIEW');
       f.ai_source='ai';
+      f.source='ai'; f.ai_pending=false;
     }
     if(localIssues.length) f.task_issues=(f.task_issues||[]).concat(localIssues);
     state.hist=state.hist||{}; state.hist[tk]=state.hist[tk]||[];
@@ -1188,6 +1255,9 @@ async function submitSentence(tk){
       score:f.score, verdict:f.verdict, ok:!!f.ok, error_type:f.error_type,
       status:f.status||'', errors:f.errors||[], task_issues:f.task_issues||[],
       optimizations:f.optimizations||[], created_at:f.created_at, _local:f._local||0,
+      /* 来源标记：AI 批改成功=ai；否则为本地估算（与刷新后后端返回的字段一致，
+         保证「批改时看到的」与「刷新后看到的」来源标注完全一致）。 */
+      source:f.source||(byAI?'ai':'rule'), ai_pending:(f.ai_pending!==undefined?f.ai_pending:!byAI),
       /* ai：只留「更地道说法」这一项带进历史。
          ① 刷新页面后 attemptCard 还能渲染出 AI 建议（不然刷一次就没了）；
          ② 只存 natural，不存 errors/score —— 那些已经拍平成上面的字段了，
@@ -1305,14 +1375,18 @@ function attemptCard(a,tk,i,isLast){
   const errs=a.errors||[], opts=(a.optimizations||[]).filter(o=>!_optDropped(o)), tasks=a.task_issues||[];
   const hasErr=errs.length>0, hasTask=tasks.length>0;
   const pass = sc>=85 && !hasErr;      // 任务建议不再影响判定
+  /* 来源标记：这条分数是 AI 批改的还是本地规则的。
+     ai_pending=true 表示还没被 AI 批改过（AI 未配置 / 老历史数据）——
+     如实标注为「本地估算」，既不伪装成满分，也不把缺失的历史分数当 100。 */
+  const srcTag = (a.source==='ai') ? '' : (a.ai_pending ? ' · <span style="font-size:12px;font-weight:600;color:var(--muted)">本地估算</span>' : '');
   let head;
   if(pass){
-    head=`<div style="font-size:15.5px;font-weight:800;color:var(--green)">✅ 正确 · ${sc}/100 · 基本掌握</div>`;
+    head=`<div style="font-size:15.5px;font-weight:800;color:var(--green)">✅ 正确 · ${sc}/100 · 基本掌握${srcTag}</div>`;
   }else{
-    head=`<div style="font-size:15.5px;font-weight:800;color:var(--red)">❌ 有错误 · ${sc}/100 · 需要改进</div>`;
+    head=`<div style="font-size:15.5px;font-weight:800;color:var(--red)">❌ 有错误 · ${sc}/100 · 需要改进${srcTag}</div>`;
   }
   if(a.status==='UNCERTAIN'){
-    head=`<div style="font-size:15.5px;font-weight:800;color:#b45309">⚠️ 系统无法完全判断 · ${sc}/100</div>`;
+    head=`<div style="font-size:15.5px;font-weight:800;color:#b45309">⚠️ 系统无法完全判断 · ${sc}/100${srcTag}</div>`;
   }
   const errHtml = errs.length
     ? `<div style="margin-top:7px;font-size:13px;font-weight:800;color:var(--red)">🔍 哪里错了 / 为什么错</div>`
@@ -3791,7 +3865,15 @@ function _anaMastery(ms){
 function _sumRow(a,b){
   return `<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid var(--border);font-size:13.5px"><span style="min-width:0">${a}</span><span style="text-align:right;flex-shrink:0">${b}</span></div>`;
 }
-function _sumPeriod(){
+function _sumPeriod(repPeriod){
+  /* 周期显示：优先用后端 /api/report 返回的 period（中国时区自然周，
+     与「本周学习」里的数字是**同一个口径**，标签和数据不会打架）。
+     后端没给（接口失败）才退回本地按浏览器时间算的自然周。 */
+  if(repPeriod && repPeriod.week && repPeriod.week.label){
+    const wk=repPeriod.week, mo=repPeriod.month||{};
+    return {week:wk.label.replace(' ~ ',' ～ '),
+            month:(mo.label? mo.label+'-01 ～ '+mo.label+'-'+_daysInMonth(mo.label) : '')};
+  }
   const dt=new Date(), day=(dt.getDay()+6)%7;
   const mon=new Date(dt); mon.setDate(dt.getDate()-day);
   const sun=new Date(mon); sun.setDate(mon.getDate()+6);
@@ -3799,6 +3881,8 @@ function _sumPeriod(){
   const y=dt.getFullYear(), m=dt.getMonth()+1, md=('0'+m).slice(-2), last=new Date(y,m,0).getDate();
   return {week:f(mon)+' ～ '+f(sun), month:y+'-'+md+'-01 ～ '+y+'-'+md+'-'+('0'+last).slice(-2)};
 }
+function _daysInMonth(ym){ const p=String(ym||'').split('-'); if(p.length<2) return '28';
+  return ('0'+new Date(+p[0],+p[1],0).getDate()).slice(-2); }
 /* 总结页：周报 / 月报 / 复制报告
    数据来源：真实后端 /api/weakness、/api/errors（含错误时间戳，可算每日分布）。
    其余指标（学习天数 / 新学词汇 / 计划完成率等）后端未提供统计接口，按 docx「不编造」原则显示 —。 */
@@ -3818,7 +3902,7 @@ pages.sum=async function(el){
   let byDay={};
   errTypes.forEach(e=>{(e.recent||[]).forEach(r=>{const d=String(r.created_at||'').slice(0,10); if(d) byDay[d]=(byDay[d]||0)+1;});});
   let totalErr=errTypes.reduce((s,e)=>s+(Number(e.count_30d)||0),0);
-  const period=_sumPeriod();
+  const period=_sumPeriod(repData&&repData.period);
   const tab=state.sumTab||'week';
   const tabBtn=(k,label)=>`<button class="btn ${tab===k?'':'ghost'} sm" style="flex:1" data-act="sumTab" data-val="${k}">${label}</button>`;
   const dash=`<span style="color:var(--muted)">—</span>`;

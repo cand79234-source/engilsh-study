@@ -1767,18 +1767,53 @@ def _lock_task_attempt(conn, stage, week, day, task_key):
         pass
 
 
+def _norm_insert_ai(ai):
+    """把调用方传来的 AI 批改结果整成 INSERT 需要的字段。没有/不合法 → None。
+
+    只认「有可用分数」的结果：宁可只存本地规则分，也不写半个 AI 结果
+    （与 save_ai_result 的口径一致）。
+    """
+    if not isinstance(ai, dict):
+        return None
+    try:
+        score = ai.get("score")
+        score = int(score) if score is not None else None
+    except (TypeError, ValueError):
+        score = None
+    if score is None:
+        return None
+    return {
+        "score": score,
+        "corrected": str(ai.get("corrected") or "")[:2000],
+        "errors_json": json.dumps(ai.get("errors") or [], ensure_ascii=False),
+        "natural_json": json.dumps(ai.get("natural") or [], ensure_ascii=False),
+        "expand_json": json.dumps(ai.get("expand") or [], ensure_ascii=False),
+        "verdict": str(ai.get("level") or "")[:20],
+        "summary": str(ai.get("summary") or "")[:1000],
+        "model": str(ai.get("model") or "")[:80],
+    }
+
+
+# AI 字段列名（INSERT 时一起写；老库缺列会自动降级重插）
+_AI_INSERT_COLS = ("ai_score", "ai_corrected", "ai_errors_json", "ai_natural_json",
+                   "ai_expand_json", "ai_verdict", "ai_summary", "ai_model",
+                   "ai_at", "final_source")
+
+
 def _insert_sentence_with_attempt(conn, stage, week, day, word, task_key, res, now,
-                                  category=""):
+                                  category="", ai=None):
     """插入一条 sentences 并返回 (id, attempt)。
 
     category 是这条练习的「角度」（自我介绍/描述日常/过去经历/…），
     只做后台记账：累计哪个角度错得多，之后就多出那个角度。不参与批改、不进 UI。
-    老库万一没迁移出这一列（写不进去），退回不带列的 INSERT —— 记账失败
-    不能连批改记录一起丢。
+    ai 见 correct_sentence 的说明：非空时把 AI 的分数/批改/标签**同一次 INSERT**
+    写进去（final_source='ai'），避免"写入后原地 UPDATE"在读写分离库/D 上的错位与覆盖。
+    降级顺序：category+ai → ai → 裸插（老库缺列时逐层退，宁可少写附加列也不能丢记录）。
     """
     last_exc = None
     tried = 0
     with_cat = bool(category)
+    with_ai = bool(ai)
     for _ in range(_ATTEMPT_RETRY):
         try:
             row = conn.execute(
@@ -1793,8 +1828,10 @@ def _insert_sentence_with_attempt(conn, stage, week, day, word, task_key, res, n
             head = ("stage, week, day, word, task_key,"
                     + (" category," if with_cat else "")
                     + " attempt, original, corrected, error_type, explanation,"
-                      " ai_source, good, score, verdict, errors_json, opts_json, created_at")
-            marks = ",".join(["?"] * (17 + (1 if with_cat else 0)))
+                      " ai_source, good, score, verdict, errors_json, opts_json, created_at"
+                    + (", " + ", ".join(_AI_INSERT_COLS) if with_ai else ""))
+            marks = ",".join(["?"] * (17 + (1 if with_cat else 0)
+                                      + (len(_AI_INSERT_COLS) if with_ai else 0)))
             args = [stage, week, day, word, task_key]
             if with_cat:
                 args.append(category)
@@ -1803,6 +1840,10 @@ def _insert_sentence_with_attempt(conn, stage, week, day, word, task_key, res, n
                      1 if res["ok"] else 0, res["score"], res["verdict"],
                      json.dumps(res["errors"], ensure_ascii=False),
                      json.dumps(res["optimizations"], ensure_ascii=False), now]
+            if with_ai:
+                args += [ai["score"], ai["corrected"], ai["errors_json"],
+                         ai["natural_json"], ai["expand_json"], ai["verdict"],
+                         ai["summary"], ai["model"], now, "ai"]
             sid = insert_get_id(conn, f"INSERT INTO sentences ({head}) VALUES ({marks})",
                                 tuple(args))
             return sid, attempt
@@ -1812,6 +1853,10 @@ def _insert_sentence_with_attempt(conn, stage, week, day, word, task_key, res, n
                 conn.rollback()
             except Exception:
                 pass
+            if with_ai and any(_missing_column(ex, c) for c in _AI_INSERT_COLS):
+                with_ai = False      # 老库没迁移 ai_*：丢掉 AI 字段，重插一次
+                tried = 0
+                continue
             if _missing_column(ex, "category") and with_cat:
                 with_cat = False     # 老库没迁移：丢掉记账，重插一次
                 tried = 0
@@ -1886,7 +1931,7 @@ def _merge_error(conn, word, etype, norm, where, e, task_key, original, now):
 # =====================================================================
 
 def correct_sentence(sentence, stage=0, week=3, day=1, word="", task_key="",
-                     task_grammar="", task_prompt="", category=""):
+                     task_grammar="", task_prompt="", category="", ai=None):
     """纯本地批改主入口。
 
     - sentences：每次作答追加一行，attempt 递增，**绝不覆盖上一次答案**。
@@ -1894,11 +1939,21 @@ def correct_sentence(sentence, stage=0, week=3, day=1, word="", task_key="",
       该词后来写对了只把 fixed 标成 1，**不删除**历史记录。
     - task_issues（任务未完成，如缺频率副词）：只展示、不进错题本、不污染 SRS。
     - category：这条练习的角度（后台记账用，决定以后哪类多出；不参与批改）。
-    全程无任何 AI 参与。
+    - ai：可选的 **AI 批改结果**（豆包返回的 dict）。传了它就把"分数 / 批改后
+      句子 / 错误标签"按 AI 的结果一起写进同一行 sentences（final_source='ai'）。
+      为什么必须在这里写、而不是入库后再补一刀 UPDATE：
+        ① 读写分离的库（Neon）里，追加行刚提交、紧接着原地 UPDATE 偶尔会读到旧行，
+           于是"批改时显示 AI 40、刷新变回本地分"；
+        ② 快速连点时，两次追加只隔几毫秒，后一次 UPDATE 可能改到上一行，结果错位。
+      在 INSERT 时就带上 AI 字段，一次写清、永不错位。
+    全程无任何 AI 参与（除非调用方传了 ai）。
     """
     res = analyze(sentence, word, task_grammar, task_prompt)
     if res is None:
         return None
+
+    # 把 AI 结果并进这一次 INSERT（详见 docstring 的 ai 参数说明）
+    insert_ai = _norm_insert_ai(ai)
 
     word = (word or "").strip()
     task_key = (task_key or "").strip()
@@ -1926,7 +1981,8 @@ def correct_sentence(sentence, stage=0, week=3, day=1, word="", task_key="",
         _lock_task_attempt(conn, stage, week, day, task_key)
 
         sentence_id, attempt = _insert_sentence_with_attempt(
-            conn, stage, week, day, word, task_key, res, now, category)
+            conn, stage, week, day, word, task_key, res, now, category,
+            ai=insert_ai)
 
         # 错题本：只有真错才写入；同一个 (词 + 错误类型 + 归一化错误片段) 合并成一条，只累加次数
         bank_ids = []
@@ -1984,7 +2040,10 @@ def correct_sentence(sentence, stage=0, week=3, day=1, word="", task_key="",
         "task_key": task_key,
         "created_at": now,
         "good": res["ok"],
-        "ai_source": "rule",
+        # 有 AI 结果时如实标注来源，前端据此显示 AI 分数而不是标成"本地估算"
+        "ai_source": "ai" if insert_ai else "rule",
+        "ai_saved": bool(insert_ai),
+        "final_source": "ai" if insert_ai else "rule",
         # task_issues 现在只是「写得可以更贴题」的建议，不算语言错误，
         # 不安排复习卡、不污染 SRS（以前会，导致写完一句好句还被拉去复习）
         "needs_review": hard_review,
@@ -1996,6 +2055,48 @@ def correct_sentence(sentence, stage=0, week=3, day=1, word="", task_key="",
                         or res["optimizations"][0].get("note") or "")
                        if res["optimizations"] else "",
     })
+    # AI 批改成功时，返回体必须以 AI 的口径为准（分数/改后句/错误/判定/三态），
+    # 与库里那一行完全一致。以前这里只标了 ai_source="ai"，分数却还是本地规则的
+    # —— 接口自相矛盾：调用方看到 source=ai 却拿到本地分，前端只能自己再覆盖一遍。
+    # 字段口径与 _row_to_attempt 的 by_ai 分支严格对齐，保证
+    # 「提交时拿到的」和「刷新后读回的」逐字段相同。
+    if insert_ai:
+        try:
+            ai_errors = json.loads(insert_ai["errors_json"] or "[]")
+        except Exception:
+            ai_errors = []
+        try:
+            ai_natural = json.loads(insert_ai["natural_json"] or "[]")
+        except Exception:
+            ai_natural = []
+        try:
+            ai_expand = json.loads(insert_ai["expand_json"] or "[]")
+        except Exception:
+            ai_expand = []
+        _ai_score = int(insert_ai["score"])
+        out.update({
+            "corrected": insert_ai["corrected"] or res["corrected"],
+            "score": _ai_score,
+            "verdict": insert_ai["verdict"] or ("基本掌握" if _ai_score >= 85
+                                               else "需要改进"),
+            "ok": (_ai_score >= 85) and (len(ai_errors) == 0),
+            "status": "PASS" if ((_ai_score >= 85) and not ai_errors) else "NEEDS_REVIEW",
+            "error_type": (ai_errors[0].get("type") if ai_errors else "") or "",
+            "errors": ai_errors,
+            # ⚠️ 2026-09-11：把 AI 的扩写并进 optimizations（和读历史时口径一致），
+            # 否则前端只能看到本地模板的扩写，AI 白调。
+            "optimizations": _merge_ai_expand_into_opts(
+                out.get("optimizations"), ai_expand, ai_natural),
+            "source": "ai",
+            "ai_score": _ai_score,
+            "ai_summary": insert_ai["summary"],
+            "ai_model": insert_ai["model"],
+            "ai_at": now,
+            "ai_pending": False,
+            "ai": {"natural": ai_natural, "expand": ai_expand}
+                  if (ai_natural or ai_expand) else None,
+        })
+        out["good"] = out["ok"]
     return out
 
 
@@ -2003,55 +2104,189 @@ def attempts_of(conn, stage, week, day, task_key):
     """取某道题的全部作答历史（按 attempt 升序）。"""
     rows = conn.execute(
         "SELECT id, attempt, original, corrected, score, verdict, good,"
-        " error_type, errors_json, opts_json, created_at"
+        " error_type, errors_json, opts_json, created_at,"
+        " ai_score, ai_corrected, ai_errors_json, ai_natural_json,"
+        " ai_expand_json, ai_verdict, ai_summary, ai_model, ai_at, final_source"
         " FROM sentences WHERE stage=? AND week=? AND day=? AND task_key=?"
         " ORDER BY attempt, id",
         (stage, week, day, task_key)).fetchall()
-    out = []
-    for r in rows:
-        try:
-            errs = json.loads(r["errors_json"] or "[]")
-        except Exception:
-            errs = []
-        try:
-            opts = json.loads(r["opts_json"] or "[]")
-        except Exception:
-            opts = []
-        out.append({
-            "id": r["id"], "attempt": r["attempt"], "sentence": r["original"],
-            "corrected": r["corrected"], "score": r["score"],
-            "verdict": r["verdict"] or ("正确" if r["good"] else "有错误"),
-            "ok": bool(r["good"]), "error_type": r["error_type"],
-            "errors": errs, "optimizations": opts, "created_at": r["created_at"],
-        })
-    return out
+    return [_row_to_attempt(r) for r in rows]
 
 
 def today_attempts(conn, stage, week, day, since):
     """当天全部作答，按 task_key 分组（用于页面刷新后回填历史）。"""
     rows = conn.execute(
         "SELECT id, word, task_key, attempt, original, corrected, score,"
-        " verdict, good, error_type, errors_json, opts_json, created_at"
+        " verdict, good, error_type, errors_json, opts_json, created_at,"
+        " ai_score, ai_corrected, ai_errors_json, ai_natural_json,"
+        " ai_expand_json, ai_verdict, ai_summary, ai_model, ai_at, final_source"
         " FROM sentences WHERE stage=? AND week=? AND day=? AND created_at>=?"
         " ORDER BY id", (stage, week, day, since)).fetchall()
     groups = {}
     for r in rows:
         tk = r["task_key"] or f"free:{r['id']}"
-        try:
-            errs = json.loads(r["errors_json"] or "[]")
-        except Exception:
-            errs = []
-        try:
-            opts = json.loads(r["opts_json"] or "[]")
-        except Exception:
-            opts = []
         groups.setdefault(tk, {"task_key": tk, "word": r["word"] or "",
                                "attempts": []})
-        groups[tk]["attempts"].append({
-            "id": r["id"], "attempt": r["attempt"], "sentence": r["original"],
-            "corrected": r["corrected"], "score": r["score"],
-            "verdict": r["verdict"] or ("正确" if r["good"] else "有错误"),
-            "ok": bool(r["good"]), "error_type": r["error_type"],
-            "errors": errs, "optimizations": opts, "created_at": r["created_at"],
-        })
+        groups[tk]["attempts"].append(_row_to_attempt(r))
     return list(groups.values())
+
+
+def _merge_ai_expand_into_opts(opts, ai_expand, ai_natural=None):
+    """把 **AI 生成的扩写** 合并进 optimizations，让前端能真正显示出来。
+
+    ⚠️ 2026-09-11 修的 bug：
+       AI 批改返回的扩写（ai.expand，例如 "I am busy with my work today so
+       I will call you later."）一直被**生成并入库**，但前端只渲染
+       optimizations 里 kind=='expand' 的条目 —— 而那些条目全是**本地模板**
+       (_expand_samples) 造的。结果：AI 的扩写永远看不到，用户看到的扩写
+       是本地拼的（比如硬贴因果尾巴的病句），等于白白花钱调了 AI 又扔掉。
+
+    做法（方案 B —— 后端合并，前端一行不用改）：
+      · 保留本地模板的润色类建议（where/suggestion/reason，有用且稳）；
+      · 用 AI 的扩写**替换**本地模板的 expand 条目（AI 的更自然）；
+      · AI 没给扩写时，本地模板的 expand 原样保留（兜底，不至于空白）。
+    返回新的列表，不原地改。
+    """
+    out = [o for o in (opts or []) if not (isinstance(o, dict)
+                                          and o.get("kind") == "expand")]
+    ai_items = ai_expand if isinstance(ai_expand, list) else []
+    for it in ai_items:
+        if isinstance(it, dict):
+            sample = str(it.get("text") or it.get("sample")
+                         or it.get("sentence") or "").strip()
+            note = str(it.get("note") or it.get("reason") or "").strip()
+        else:
+            sample, note = str(it or "").strip(), ""
+        if len(sample) < 2:
+            continue
+        out.append({
+            "kind": "expand", "where": "整句", "sample": sample,
+            "note": note or "这是 AI 给的更地道说法，可以参考着写。",
+        })
+    if ai_items and out:
+        return out
+    # AI 没给扩写 → 本地模板的 expand 补回来（兜底）
+    if not ai_items:
+        return list(opts or [])
+    return out
+
+
+def _row_to_attempt(r):
+    """把一行 sentences 序列化成前端 attempt 对象。
+
+    **AI 结果优先**：若这条被 AI 批改过（final_source='ai' 且 ai_score 非空），
+    返回的就是 AI 的分数 / 错误 / 正确写法 —— 保证「刷新后与批改时完全一致」。
+    否则回落到本地规则结果，并用 ai_pending=True 标记「尚未 AI 批改」，
+    历史缺失数据（老记录）也走这条，**绝不伪造 100 分**。
+    """
+    keys = r.keys() if hasattr(r, "keys") else []
+
+    def _j(raw, default="[]"):
+        try:
+            v = json.loads(raw or default)
+            return v if isinstance(v, list) else []
+        except Exception:
+            return []
+
+    try:
+        errs = json.loads(r["errors_json"] or "[]")
+    except Exception:
+        errs = []
+    try:
+        opts = json.loads(r["opts_json"] or "[]")
+    except Exception:
+        opts = []
+
+    ai_score = r["ai_score"] if "ai_score" in keys else None
+    final_source = (r["final_source"] if "final_source" in keys else "") or ""
+    by_ai = (final_source == "ai" and ai_score is not None)
+
+    out = {
+        "id": r["id"], "attempt": r["attempt"], "sentence": r["original"],
+        "created_at": r["created_at"],
+    }
+    if by_ai:
+        ai_errors = _j(r["ai_errors_json"] if "ai_errors_json" in keys else "[]")
+        ai_natural = _j(r["ai_natural_json"] if "ai_natural_json" in keys else "[]")
+        ai_expand = _j(r["ai_expand_json"] if "ai_expand_json" in keys else "[]")
+        ai_corr = (r["ai_corrected"] if "ai_corrected" in keys else "") or ""
+        ai_verdict = (r["ai_verdict"] if "ai_verdict" in keys else "") or ""
+        score = int(ai_score)
+        out.update({
+            "corrected": ai_corr or r["corrected"],
+            "score": score,
+            "verdict": ai_verdict or ("基本掌握" if score >= 85 else "需要改进"),
+            "ok": (score >= 85) and (len(ai_errors) == 0),
+            "status": "PASS" if ((score >= 85) and not ai_errors) else "NEEDS_REVIEW",
+            "error_type": (ai_errors[0].get("type") if ai_errors else "") or "",
+            "errors": ai_errors,
+            # ⚠️ 2026-09-11：把 AI 的扩写并进 optimizations，前端才看得到
+            "optimizations": _merge_ai_expand_into_opts(opts, ai_expand, ai_natural),
+            "task_issues": [],
+            "source": "ai",
+            "ai_score": score,
+            "ai_summary": (r["ai_summary"] if "ai_summary" in keys else "") or "",
+            "ai_model": (r["ai_model"] if "ai_model" in keys else "") or "",
+            "ai_at": (r["ai_at"] if "ai_at" in keys else "") or "",
+            "ai_pending": False,
+            # 前端 attemptCard 读 a.ai.natural 渲染「更地道说法」，这里保持同一形状
+            "ai": {"natural": ai_natural, "expand": ai_expand} if (ai_natural or ai_expand) else None,
+        })
+    else:
+        score = int(r["score"] or 0)
+        out.update({
+            "corrected": r["corrected"], "score": score,
+            "verdict": r["verdict"] or ("正确" if r["good"] else "有错误"),
+            "ok": bool(r["good"]),
+            "status": "PASS" if r["good"] else "NEEDS_REVIEW",
+            "error_type": r["error_type"],
+            "errors": errs, "optimizations": opts,
+            "task_issues": [],
+            "source": "rule",
+            # 尚未 AI 批改（老历史数据或 AI 未启用）—— 前端据此显示「本地估算」而非伪装满分
+            "ai_pending": True,
+            "ai": None,
+        })
+    return out
+
+
+def save_ai_result(sentence_id, ai, now=None):
+    """把 AI 批改结果写入刚才那条 sentences 行（按 id 精确定位）。
+
+    返回 True/False（失败不抛，AI 批改已经成功展示给用户，落库失败只记日志，
+    不能让一次数据库抖动把批改结果整个吞掉）。
+    """
+    if not sentence_id or not isinstance(ai, dict):
+        return False
+    try:
+        score = ai.get("score")
+        score = int(score) if score is not None else None
+    except (TypeError, ValueError):
+        score = None
+    if score is None:
+        # 没有可用分数就不覆盖：宁可保留本地规则结果，也不写半个 AI 结果
+        return False
+    now = now or ts()
+    try:
+        conn = get_conn()
+        try:
+            conn.execute(
+                "UPDATE sentences SET ai_score=?, ai_corrected=?, ai_errors_json=?,"
+                " ai_natural_json=?, ai_expand_json=?, ai_verdict=?, ai_summary=?,"
+                " ai_model=?, ai_at=?, final_source='ai' WHERE id=?",
+                (score,
+                 str(ai.get("corrected") or "")[:2000],
+                 json.dumps(ai.get("errors") or [], ensure_ascii=False),
+                 json.dumps(ai.get("natural") or [], ensure_ascii=False),
+                 json.dumps(ai.get("expand") or [], ensure_ascii=False),
+                 str(ai.get("level") or "")[:20],
+                 str(ai.get("summary") or "")[:1000],
+                 str(ai.get("model") or "")[:80],
+                 now, int(sentence_id)))
+            conn.commit()
+            return True
+        finally:
+            conn.close()
+    except Exception as e:
+        print("[ai] 保存 AI 批改结果失败(不影响本次显示): %s" % e)
+        return False

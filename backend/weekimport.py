@@ -86,6 +86,28 @@ def _norm_examples(examples):
     return [e for e in out if e["sentence"]]
 
 
+def _norm_scenes(scenes):
+    """情景（场景）规范成 [{"n": "1", "text": "..."}, ...]。
+
+    来源是导入材料里每个词的「Mini Scenario 1/2/3：」+ 下一行英文。
+    没有它就返回空列表 —— 老材料里本来就没有情景，返回空数组让老逻辑照走，
+    绝不能因为"没情景"把导入搞崩。
+    """
+    out = []
+    if not scenes:
+        return out
+    for i, s in enumerate(scenes, 1):
+        if isinstance(s, dict):
+            text = (s.get("text") or s.get("prompt") or "").strip()
+            n = str(s.get("n") or i)
+        else:
+            text = str(s or "").strip()
+            n = str(i)
+        if text:
+            out.append({"n": n, "text": text[:600]})
+    return out
+
+
 def _norm_collocs(collocs):
     """固定搭配规范成 [{"phrase":..., "meaning":...}, ...]。兼容字符串或dict。"""
     out = []
@@ -252,11 +274,14 @@ def import_rich_week(text, forced_stage=None, forced_week=None):
             for c in collocs:
                 if _bank_colloc(conn, w["word"], c["phrase"], c["meaning"]):
                     added_col += 1
+            # 情景（Mini Scenario 1/2/3）：随词入库，供造句页 🔁 轮换，不调 AI
+            scenes = _norm_scenes(w.get("scenes"))
             new_vocab.append({
                 "day": day, "group_name": g["name"],
                 "word": w["word"], "meaning": meaning, "pos": pos,
                 "phonetic": w.get("phonetic", "") or "",
                 "collocations": collocs,
+                "scenes": scenes,
                 "examples": examples,
                 "ex_source": ex_src,
             })
@@ -295,6 +320,10 @@ def _trigger_scenarios(new_vocab, stage, week):
     - **只补 Day1 那批**（2026-09-10 改）：导入通常是整周 120 词，全部一次补
       要 240 次 AI 调用，又慢又贵；而用户当天只学 Day1。其余的天数交给
       scenario.backfill_step 按天慢慢补（页面访问 / 外部定时器驱动）。
+    - ⚠️ 2026-09-11：**只生成 large（组合句）那一层**。
+      基础句（small）的情景不再由 AI 生成，而是导入材料里词条自带的
+      Mini Scenario 1/2/3（由 importer 解析，存在 vocab_json / day_items 里）。
+      ensure_for_words 内部已按 AI_TIERS 只跑 large，这里无需额外过滤。
     """
     try:
         import scenario
@@ -320,7 +349,7 @@ def _trigger_scenarios(new_vocab, stage, week):
             grammar = (svc.get_week(stage, week) or {}).get("grammar") or ""
         except Exception:
             pass
-        scenario.spawn(scenario.ensure_for_words, words, grammar, 3, only)
+        scenario.spawn(scenario.ensure_for_words, words, grammar, 3, only, stage)
     except Exception as e:
         # 情景是增强项：生成失败绝不能影响导入本身的结果
         print("[weekimport] 情景生成触发失败（不影响导入）:", e)
@@ -386,6 +415,8 @@ def _build_word_entry(conn, known, day, gname, w, counters):
         "word": w["word"], "meaning": meaning, "pos": pos,
         "phonetic": w.get("phonetic", "") or "",
         "collocations": collocs,
+        # 情景随词一起入库：造句页的 🔁「换一个情景」就靠它（不再调 AI）
+        "scenes": _norm_scenes(w.get("scenes")),
         "examples": examples,
         "ex_source": ex_src,
         "focus": bool(w.get("focus")),   # ★ 用户标记的重点词 → 优先进入"升级"环节

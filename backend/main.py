@@ -14,6 +14,7 @@ import os
 from db import init_db, get_conn, ts, today_str, STAGES, insert_get_id, _using_pg, app_now
 import services as svc
 import srs
+import ai_service as _ai_svc
 from ai_service import (correct_sentence, ERROR_TYPES, attempts_of,
                         today_attempts, analyze)
 import fileimport
@@ -23,6 +24,8 @@ import link as _link
 import ai_correct as _ai
 import scenario as _scenario
 import weakness as _weakness
+import db as _db
+import weekimport as _weekimport
 
 app = FastAPI(title="English OS")
 
@@ -132,10 +135,12 @@ def stealth_next():
         return {"ok": True, "done": True, "progress": prog, "message": "今天的词都过完了"}
     w = pending[0]
     grammar = t.get("grammar") or ""
+    _stage = (t.get("stage") if t.get("stage") is not None
+              else (svc.get_progress() or {}).get("stage"))
     sc = _scenario.with_label(_scenario.pick(w.get("word") or ""))
     if sc:
-        # 该词哪一层缺就补哪一层（不阻塞本次返回）
-        _scenario.refill_if_low(w.get("word") or "", grammar)
+        # 该词哪一层缺就补哪一层（不阻塞本次返回）；带上当前阶段，情景难度才匹配水平
+        _scenario.refill_if_low(w.get("word") or "", grammar, _stage)
     return {"ok": True, "done": False, "word": w, "scenario": sc,
             "grammar": grammar, "progress": prog}
 
@@ -159,7 +164,7 @@ def scenario_next(word: str = "", cur: int = 0, tier: str = ""):
         _scenario.spawn(_scenario.backfill_step)
         return {"ok": True, "scenario": None,
                 "message": "这个词还没有情景，正在后台生成，稍后点 🔁 再看"}
-    _scenario.refill_if_low(w)
+    _scenario.refill_if_low(w, "", (svc.get_progress() or {}).get("stage"))
     return {"ok": True, "scenario": sc}
 
 
@@ -176,20 +181,24 @@ def stealth_submit(body: dict, request: Request):
     p = svc.get_progress()
     grammar = (body.get("grammar") or "").strip()
     ip = (request.client.host if request.client else "") or ""
-    # ① 本地规则批改：入库 sentences、更新五星、进错题本 —— 与正常造句页完全同一套
-    local = {}
-    try:
-        local = correct_sentence(text, p["stage"], p["week"], p["day"], word,
-                                 "stealth:" + word, grammar,
-                                 "用「%s」造句" % word) or {}
-    except Exception as e:
-        print("[stealth] 本地批改失败（已跳过）: %s" % e)
     # ② 豆包批改（可选）。ai=0 时完全不调豆包：不花额度、不用等、也不触发冷却，
-    #    连点提交下一个词也不会被限流挡住。① 已入库的记录不受影响。
+    #    连点提交下一个词也不会被限流挡住。
+    #    ⚠️ 顺序：**先拿到 AI 结果，再一次性入库**（同 sentence_check 的修法）——
+    #    这样"提交时看到的 AI 分"与"刷新后从库里读回的分"永远是同一个。
     ai = None
     err = None
     if body.get("ai", 1):
         ai, err = _ai.correct(text, client_ip=ip, context=grammar, word=word)
+
+    # ① 本地规则批改 + AI 结果一次写入：sentences 行、五星、错题本 —— 与正常造句页同一套
+    local = {}
+    try:
+        local = correct_sentence(text, p["stage"], p["week"], p["day"], word,
+                                 "stealth:" + word, grammar,
+                                 "用「%s」造句" % word,
+                                 ai=ai if (ai and not err) else None) or {}
+    except Exception as e:
+        print("[stealth] 本地批改失败（已跳过）: %s" % e)
 
     # ③ 错误标签入库 + 薄弱项触发判定（设计方案 §4）
     #    AI 模式用 AI 给的 error_tags；AI 没跑通就用本地规则的错误类型顶上，
@@ -204,6 +213,8 @@ def stealth_submit(body: dict, request: Request):
     pend = _weakness.pending(word)
 
     return {"ok": True, "ai": ai, "ai_error": err,
+            "ai_saved": bool(local.get("ai_saved")),
+            "sentence_id": local.get("sentence_id"),
             "weakness": ({"word": word, "tag": pend["tag"], "hits": pend["hits"],
                           "explain": _weakness.cached(word, pend["tag"])}
                          if pend else None),
@@ -356,6 +367,10 @@ def today():
             "phonetic": _ph,
             # 归一化：老词条只有 collocation 字符串，不归一化的话搭配区会空白
             "collocations": svc.normalize_collocations(w),
+            # 情景（导入材料里每个词的 Mini Scenario 1/2/3）：
+            # 造句页的 🔁「换一个情景」直接从这里轮换，**不调 AI**。
+            # 老数据没有这个字段 → 空数组，前端/接口自然退回原行为。
+            "scenes": svc.normalize_scenes(w),
             "examples": examples,
             "ex_source": w.get("ex_source", ""),
             "day": w.get("day", 1), "group_name": w.get("group_name", ""),
@@ -439,7 +454,7 @@ def word_master(body: dict):
     # 确保用户之后去造句时「先有场景，再写第一句」。已生成的词自动跳过。
     if mastered == 2:
         try:
-            _scenario.ensure_for_word_bg(key)
+            _scenario.ensure_for_word_bg(key, "", p["stage"])
         except Exception as e:
             print("[scenario] 记住了兜底生成失败:", e)
     return {"ok": True}
@@ -497,8 +512,23 @@ def sentence_check(body: dict, request: Request):
     task_key = (body.get("task_key") or "").strip()
     grammar = (body.get("grammar") or "").strip()
     prompt = (body.get("prompt") or "").strip()
+
+    # ④ 豆包 AI 批改（与 /api/stealth/submit 同一套模式，仅服务于造句批改这一件事）：
+    #    AI 的 error_tags 记入 weak_hits（同词同错 ≥3 次 → 前端 ⭐ 薄弱项讲解），
+    #    AI 没跑通（没配 Key / 超时 / 限流）就回退本地规则的错误类型，统计不断链。
+    #
+    #    ⚠️ 顺序很关键（2026-09 修「刷新后分数变回去」）：
+    #    先拿到 AI 结果，**再连同本地结果一次 INSERT 落库**，而不是"先插本地行、
+    #    回头再 UPDATE 补 AI 字段"。后者在读写分离的库（Neon）上偶尔读到旧行，
+    #    快速连点重写同一道题时还可能 UPDATE 错行 —— 这就是"批改时 40、刷新变 100"。
+    ai = None
+    ai_err = None
+    if body.get("ai"):
+        ip = (request.client.host if request.client else "") or ""
+        ai, ai_err = _ai.correct(text, client_ip=ip, context=grammar, word=word)
     result = correct_sentence(text, p["stage"], p["week"], p["day"],
-                              word, task_key, grammar, prompt)
+                              word, task_key, grammar, prompt,
+                              ai=ai if (ai and not ai_err) else None)
     # ③ 造句五星：以批改三态为唯一信号，更新「主动输出熟练度」（与 SRS 完全无关）
     # PASS → +1 星；NEEDS_REVIEW / UNCERTAIN → -1 星；星级限制 0~5。
     status = result.get("status") or ("PASS" if result.get("ok") else "NEEDS_REVIEW")
@@ -526,19 +556,13 @@ def sentence_check(body: dict, request: Request):
     _star_row = srs.word_stars(head_word) if head_word else None
     result["output_star"] = _star_row["stars"] if _star_row else None
 
-    # ④ 豆包 AI 批改（与 /api/stealth/submit 同一套模式，仅服务于造句批改这一件事）：
-    #    AI 的 error_tags 记入 weak_hits（同词同错 ≥3 次 → 前端 ⭐ 薄弱项讲解），
-    #    AI 没跑通（没配 Key / 超时 / 限流）就回退本地规则的错误类型，统计不断链。
-    ai = None
-    ai_err = None
+    # ④ 收尾：错误标签记账 + 薄弱项讲解（AI 结果已在上面一次性落库）
     weak = None
     if body.get("ai"):
-        ip = (request.client.host if request.client else "") or ""
-        ai, ai_err = _ai.correct(text, client_ip=ip, context=grammar, word=word)
-        tags = []
         if ai and not ai_err:
             tags = list(ai.get("error_tags") or [])
-        elif not ai:
+        else:
+            # AI 没跑通 → 用本地规则的错误类型顶上，反复同错的统计不断链
             tags = [e.get("type") for e in (result.get("errors") or [])
                     if isinstance(e, dict) and e.get("type")]
         if tags:
@@ -577,29 +601,53 @@ def sentence_attempts_one(task_key: str):
 
 
 @app.get("/api/sentence/history")
-def sentence_history(limit: int = 300):
+def sentence_history(limit: int = 300, date_: str = "", days: int = 0):
     """跨天可查的全部造句记录（修复「昨天造的句子看不见」）。
 
-    不按当天 stage/week/day 过滤，直接按时间倒序返回全部作答，
-    让用户随时回看自己写过的每一句。
+    造句记录是**历史数据**，不因为日期变化而消失。本接口默认返回全部作答
+    （时间倒序），也可按日期精确读取，方便前端/测试回看历史：
+
+      * date_ = 'YYYY-MM-DD'：只取**中国时间**该自然日 00:00:00~23:59:59 的作答；
+      * days  = N：只取最近 N 个自然日（按中国时间，含今天）；
+      * 两者都不传：返回全部（最多 limit 条）。
+
+    绝不按「当前 stage/week/day」过滤，绝不用「今天 ± 7 天」伪造历史。
     """
+    sql = ("SELECT id, stage, week, day, word, task_key, attempt, original,"
+           " corrected, score, verdict, good, error_type, created_at,"
+           " ai_score, ai_corrected, ai_errors_json, ai_natural_json,"
+           " ai_expand_json, ai_verdict, ai_summary, ai_model, ai_at, final_source"
+           " FROM sentences")
+    args = []
+    where = []
+    d = (date_ or "").strip()
+    if d:
+        # 用中国时区的自然日边界做字符串比较（created_at 为 ISO 串，字典序=时间序）
+        try:
+            from datetime import date as _d
+            dd = _d.fromisoformat(d[:10])
+            where.append("created_at >= ? AND created_at <= ?")
+            args += [dd.isoformat() + "T00:00:00", dd.isoformat() + "T23:59:59"]
+        except Exception:
+            pass
+    elif days and int(days) > 0:
+        start = _db.app_today() - timedelta(days=int(days) - 1)
+        where.append("created_at >= ?")
+        args.append(start.isoformat() + "T00:00:00")
+    if where:
+        sql += " WHERE " + " AND ".join(where)
+    sql += " ORDER BY created_at DESC, id DESC LIMIT ?"
+    args.append(limit)
     conn = get_conn()
-    rows = conn.execute(
-        "SELECT id, stage, week, day, word, task_key, attempt, original,"
-        " corrected, score, verdict, good, error_type, created_at"
-        " FROM sentences ORDER BY created_at DESC, id DESC LIMIT ?",
-        (limit,)).fetchall()
+    rows = conn.execute(sql, tuple(args)).fetchall()
     conn.close()
-    items = [{
-        "id": r["id"], "stage": r["stage"], "week": r["week"], "day": r["day"],
-        "word": r["word"] or "", "task_key": r["task_key"] or "",
-        "attempt": r["attempt"], "sentence": r["original"],
-        "corrected": r["corrected"], "score": r["score"],
-        "verdict": r["verdict"] or ("正确" if r["good"] else "有错误"),
-        "ok": bool(r["good"]), "error_type": r["error_type"],
-        "created_at": r["created_at"],
-    } for r in rows]
-    return {"items": items}
+    items = []
+    for r in rows:
+        a = _ai_svc._row_to_attempt(r)
+        a.update({"stage": r["stage"], "week": r["week"], "day": r["day"],
+                  "word": r["word"] or "", "task_key": r["task_key"] or ""})
+        items.append(a)
+    return {"items": items, "total": len(items)}
 
 
 @app.post("/api/output/stars")

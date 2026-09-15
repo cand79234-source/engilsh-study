@@ -84,6 +84,40 @@ def normalize_collocations(word_obj):
     return out
 
 
+def normalize_scenes(word_obj):
+    """把词条的情景（场景）统一成 [{"n": "1", "text": "..."}, ...]。
+
+    情景 = 导入材料里每个词自带的「Mini Scenario 1/2/3」，用于造句页的 🔁
+    「换一个情景」按钮：同一个词点一次换一个场景，不需要调 AI。
+    兼容三种写法（列表 / 单个字符串 / 老字段名），并且**只保留有文字的**，
+    空壳（只有标签没内容）直接丢掉，免得 🔁 转到一个空场景上。
+    """
+    raw = word_obj.get("scenes")
+    if raw is None:
+        raw = word_obj.get("scenario")
+    if not raw:
+        return []
+    if isinstance(raw, str):
+        raw = [raw]
+    out = []
+    for i, s in enumerate(raw, 1):
+        if isinstance(s, dict):
+            text = (s.get("text") or s.get("prompt") or s.get("content") or "").strip()
+            n = str(s.get("n") or s.get("num") or "").strip()
+        else:
+            text = str(s or "").strip()
+            n = ""
+        if text:
+            out.append({"n": n, "text": text})
+    # 丢掉空壳后**按顺序重编号**：输入里显式写了 n 就尊重它，
+    # 没写（或写空）的按它在**过滤后**的位置补 —— 这样 3 条情景永远是
+    # 1/2/3，不会因为中间丢了一条空壳就出现 "1, 3" 这种断号。
+    for i, s in enumerate(out, 1):
+        if not s["n"]:
+            s["n"] = str(i)
+    return out
+
+
 def collocation_text(word_obj_or_body):
     """把搭配拍平成一行文本，供 SRS 卡片答案面等纯文本场景使用。"""
     items = normalize_collocations(word_obj_or_body)
@@ -928,12 +962,29 @@ def _build_basic(today_new, grammar, seed_date=None, weights=None):
             "i": i, "word": w.get("word"), "meaning": w.get("meaning") or "",
             "category": cat_name, "task": task,
             "focus": bool(w.get("focus")),
+            # 这个词自带的情景（导入材料里的 Mini Scenario 1/2/3）。
+            # 前端据此让 🔁 在本地情景之间轮换 —— 不走 AI、不花额度、不用等。
+            # 老数据没有 → 空数组，前端自然退回原来的 /scenario/next 行为。
+            "scenes": normalize_scenes(w),
         })
     return out
 
 
-def _build_combos(today_new, due_vocab, grammar, seed, n=10, per=3):
-    """③ 组合：n 组，每组 2-3 个词写成连续表达。复习词优先入选且不额外占位。"""
+def _build_combos(today_new, due_vocab, grammar, seed, n=10, per=5):
+    """③ 组合：10 组，**每组 5 个词**（3 个复习词 + 2 个当天新词）写成连续表达。
+
+    【为什么是 5 个词 = 3 复习 + 2 新词（用户定，2026-09 改）】
+    当天新词是 20 个。每组放 2 个新词 → **20 ÷ 2 = 正好 10 组**，
+    白天学的 20 个词一个不落全被组合题消化掉；剩下的 3 个位置留给复习词，
+    复习占比 3/5 = 60%，仍然以"复习为主"。
+    旧配比是 per=3（2 复习 + 1 新词），20 个新词要 20 组才用得完，
+    但一天只出 10 组 → 每天有一半新词根本进不了组合题。
+
+    【复习词不够时不补（用户定）】
+    复习词靠 SRS 到期产生，某天可能只有三五个。这时**不重复使用复习词**，
+    缺的位置直接让新词顶上 —— 复习占比自然退化，但不硬凑。
+    理由：同一个词一天写两三遍是纯抄，不产生新记忆。
+    """
     seen = set()
     review_words, new_words = [], []
     for w in due_vocab:                      # due_vocab 已按"错误率+久未复习"排好序
@@ -950,24 +1001,32 @@ def _build_combos(today_new, due_vocab, grammar, seed, n=10, per=3):
     # 洗牌新词（同日稳定），让每天的搭配不重样
     new_words = _deterministic_shuffle(new_words, seed + 99)
 
-    # 每组配比：复习词占多数（2026-09-10 改）
+    # 组数：**先按"当天新词要全部用上"来定**
+    #   20 个新词 ÷ 每组 2 个新词位 = 10 组。
+    # 然后再把复习词**平均摊到每组**（而不是前几组吃光）。
     #
-    # 旧配比是「1 复习 + 2 新词」，复习只占 1/3 —— 与"复习为主"的设计意图相反。
-    # 现在改成 n_review_per_group 个复习词 + 剩下的位置给新词。
-    # 默认 2 复习 + 1 新词（per=3）：复习占 2/3，且**每组还是 3 个词**，
-    # 页面「建议 2-3 句」的长度提示不用改，不会突然变长。
-    #
-    # 【复习词不够时不补（用户定）】
-    # 复习词靠 SRS 到期产生，某天可能只有三五个。这时**不重复使用复习词**，
-    # 缺的位置直接让新词顶上 —— 复习占比自然退化，但不硬凑。
-    # 理由：同一个词一天写两三遍是纯抄，不产生新记忆。
-    # 复查（2026-09-10 实测）：库存 8 个复习词时，2A 与 3+1 方案的实际效果
-    # 完全一样（都退化到 复习 8 / 新词 20，占 28%）—— 所以不补也不会更差。
-    n_review_per_group = min(2, max(1, per - 1)) if len(review_words) else 0
+    # 为什么必须这样算（2026-09，per 由 3 改成 5 时踩的坑）：
+    #   旧写法是"每组先抓 3 个复习词，剩下的位子给新词"。复习词只有 8 个时，
+    #   前 3 组就把复习词吃光，第 4 组起只能抓新词 —— 而每组位子只有 5 个，
+    #   新词反而用不完（实测只覆盖 17/20），组数也上不去。
+    #   现在反过来：组数由新词定，复习词均匀摊进去，两个目标同时满足。
+    new_slots = 2 if review_words else per      # 每组留给新词的位数
+    n_by_new = (len(new_words) + new_slots - 1) // new_slots if new_words else 0
+    # 还要看**总池子**够不够每组 5 个：总位数 = 新词 + 不重复复用的复习词
+    _total_slots = len(new_words) + len(review_words)
+    n_by_pool = _total_slots // per if per else 0
+    # 组数 = 上限 n、新词撑得住的组数、总池撑得住的组数 —— 三者取小
+    n_eff = max(1, min(n, n_by_new, n_by_pool)) if new_words else min(n, n_by_pool or n)
+    n_eff = max(1, n_eff)
+    # 复习词平均每组几个（可能为 0；余数从第 1 组开始各多给 1 个）
+    _rev_base = (len(review_words) // n_eff) if n_eff else 0
+    _rev_extra = (len(review_words) % n_eff) if n_eff else 0
     combos, ri, ni = [], 0, 0
-    for gi in range(n):
+    for gi in range(n_eff):
         group = []
-        for _ in range(n_review_per_group):
+        # 本组该放几个复习词：上限 per-1（至少留 1 个位给新词）
+        _want_rev = min(per - 1, _rev_base + (1 if gi < _rev_extra else 0))
+        for _ in range(max(0, _want_rev)):
             if ri >= len(review_words):
                 break
             group.append({"word": review_words[ri].get("word"),
@@ -979,10 +1038,17 @@ def _build_combos(today_new, due_vocab, grammar, seed, n=10, per=3):
                           "meaning": new_words[ni].get("meaning") or "",
                           "review": False})
             ni += 1
-        # 词总量不够凑满 per 个时，宁可不凑（不生成只有 1-2 个词的残缺组）：
-        # 单独一个词写不出"连续表达"，那种题是废题还占题量。
-        # 直接 break —— 后面所有组都只会更短。
-        if len(group) < 2:
+        # 收摊条件（2026-09 重新定，per 由 3 改成 5 时踩过坑）：
+        #
+        # 硬约束是算术：出 10 组 × 每组 5 词 = 要 50 个词位，而复习词**不重复用**。
+        # 所以「20 新词 + N 复习词」只有在 N ≥ 30 才能凑满 10 组满编。
+        # 复习词通常远没有 30 个（SRS 到期才有），因此**退化是常态，不是异常**。
+        #
+        # 退化时宁可**少出几组**，也不出一组半成品：
+        #   凑满 5 个词 → 出这道题；
+        #   凑不满     → 停止，把这几个词**还回池子**（不影响下次调用）。
+        # 这样每组都是完整的 5 词题，页面提示"把这 5 个词串成一小段"才是对的。
+        if len(group) < per:
             break
         if not group:
             # 复习词和新词都用光了才走到这里。这时允许复读已用过的词：
@@ -1015,7 +1081,8 @@ def _build_combos(today_new, due_vocab, grammar, seed, n=10, per=3):
             "task": f"【{cat}】用 {names} 写一段关于你自己的连续表达"
                     + (f"（{n_rev} 个是到期复习词）" if n_rev else "")
                     + (f"（语法：{grammar}）" if grammar else ""),
-            "hint": "建议 2-3 句，写成一小段；写多写少随意，不强制。"
+            # 这组是 5 个词 → 长度提示跟着改成 3-5 句（原来按 3 个词写的"2-3 句"）
+            "hint": "建议 3-5 句，把这 5 个词串成一小段；写多写少随意，不强制。"
                     "系统只在你提交后告诉你用到了哪几个词。",
             "has_review": n_rev > 0,
         })

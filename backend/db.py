@@ -19,13 +19,15 @@ DB_PATH = os.environ.get("EOS_DB", os.path.join(os.path.dirname(__file__), "..",
 # 和用户实际所在时区差好几个小时，会让「今天学的算昨天」「SRS 到期日错位」
 # 「近7/30天统计跨错天」这类问题在跨零点时随机出现。
 #
+# 默认时区 = 中国时间 Asia/Shanghai（用户在中国，周统计按中国自然周）。
+# Render 等服务器默认是 UTC，不能依赖服务器本地时区，必须显式用本时区计算。
 # 换时区只改环境变量 APP_TZ 即可（例如 Asia/Shanghai、Asia/Seoul），不用动代码。
-APP_TZ_NAME = (os.environ.get("APP_TZ") or "Asia/Seoul").strip()
+APP_TZ_NAME = (os.environ.get("APP_TZ") or "Asia/Shanghai").strip()
 try:
     from zoneinfo import ZoneInfo
     APP_TZ = ZoneInfo(APP_TZ_NAME)
 except Exception:      # 运行环境缺 tzdata 时兜底成固定偏移，绝不让启动失败
-    APP_TZ = timezone(timedelta(hours=int(os.environ.get("APP_TZ_OFFSET_HOURS") or 9)))
+    APP_TZ = timezone(timedelta(hours=int(os.environ.get("APP_TZ_OFFSET_HOURS") or 8)))
 print("[db] 应用时区 = %s" % APP_TZ_NAME)
 
 
@@ -37,6 +39,66 @@ def app_now():
     用字符串直接比较，不需要迁移历史数据。
     """
     return datetime.now(APP_TZ).replace(tzinfo=None)
+
+
+# ------------------------------------------------------------------
+# 统一日期工具（全项目唯一入口，业务层不许再各写一套日期逻辑）
+# ------------------------------------------------------------------
+# 命名与语义：
+#   get_china_now()   -> 中国时间下不带 tzinfo 的 datetime（等同 app_now）
+#   get_china_date()  -> 中国时间下的 date（等同 app_today）
+#   china_week_start  -> 给定日期所在「自然周」的周一（00:00:00）
+#   china_week_end    -> 给定日期所在「自然周」的周日（23:59:59）
+#   china_week_range  -> (周一 00:00:00, 周日 23:59:59) 的 ISO 串，可直接拼进 SQL
+#
+# 「自然周」定义：周一 00:00:00 → 周日 23:59:59（Asia/Shanghai），
+# 例如 2026-09-15 是周二，其自然周 = 2026-09-14 ~ 2026-09-20。
+# 绝不用「今天往前 7×24 小时」冒充本周。
+def get_china_now():
+    """中国时间下的「现在」（不带 tzinfo，库内统一用这种朴素 ISO 串）。"""
+    return app_now()
+
+
+def get_china_date():
+    """中国时间下的「今天」（date 对象）。"""
+    return datetime.now(APP_TZ).date()
+
+
+def _as_china_date(d=None):
+    """把传入值归一成中国时区的 date。None → 今天；date 原样；str 按 'YYYY-MM-DD...' 解析。"""
+    if d is None:
+        return get_china_date()
+    if isinstance(d, datetime):
+        return d.date()
+    if isinstance(d, date):
+        return d
+    try:
+        return date.fromisoformat(str(d)[:10])
+    except Exception:
+        return get_china_date()
+
+
+def china_week_start(d=None):
+    """给定日期（默认中国今天）所在自然周的周一（date，00:00:00）。"""
+    dd = _as_china_date(d)
+    return dd - timedelta(days=dd.weekday())      # weekday(): 周一=0 … 周日=6
+
+
+def china_week_end(d=None):
+    """给定日期（默认中国今天）所在自然周的周日（date，23:59:59）。"""
+    return china_week_start(d) + timedelta(days=6)
+
+
+def china_week_range(d=None):
+    """返回 (本周一 00:00:00, 本周日 23:59:59) 的 ISO 串，可直接与 created_at 做字符串比较。
+
+    created_at 存的是 'YYYY-MM-DDTHH:MM:SS' / 'YYYY-MM-DD HH:MM:SS' 这类 ISO 串，
+    字典序即时间序，SQLite 与 PG(TEXT) 通用。
+    """
+    start = china_week_start(d)
+    end = china_week_end(d)
+    return (start.isoformat() + "T00:00:00",
+            end.isoformat() + "T23:59:59")
 
 
 def ensure_plan_goals(conn):
@@ -64,8 +126,8 @@ def ensure_plan_goals(conn):
 
 
 def app_today():
-    """应用时区下的「今天」（date 对象）。"""
-    return datetime.now(APP_TZ).date()
+    """应用时区下的「今天」（date 对象）。等价 get_china_date()（保留旧名兼容）。"""
+    return get_china_date()
 
 # ---- Postgres 适配（DATABASE_URL 存在时启用，Neon 等托管库）----
 DATABASE_URL = os.environ.get("DATABASE_URL")
@@ -857,6 +919,25 @@ def init_db():
         "verdict": "TEXT DEFAULT ''",
         "errors_json": "TEXT DEFAULT '[]'",
         "opts_json": "TEXT DEFAULT '[]'",
+    })
+    # ---- AI 批改结果持久化 ----
+    # 背景：过去 AI 批改结果只回给前端内存显示，从不落库；刷新页面后前端重新读
+    # sentences.score（那是**本地规则**分），于是「AI 给 40、刷新变高分」。
+    # 这里把 AI 的批改结果原样落库，刷新后从库里恢复到与批改时完全一致的结果。
+    #
+    # ⚠️ ai_score 刻意可为 NULL：NULL = 这条从没被 AI 批改过（老历史数据 / AI 未启用），
+    #    与「真的是 100 分」必须区分开 —— 绝不给缺失的历史数据伪造 100。
+    _ensure_columns(conn, "sentences", {
+        "ai_score": "INTEGER",                 # NULL=未批改；否则为 AI 给的 0-100
+        "ai_corrected": "TEXT DEFAULT ''",     # AI 给的整句正确写法
+        "ai_errors_json": "TEXT DEFAULT '[]'",  # AI 的错误明细 [{type,wrong,right,explain}]
+        "ai_natural_json": "TEXT DEFAULT '[]'",  # AI 的「更地道说法」[{original,better,reason}]
+        "ai_expand_json": "TEXT DEFAULT '[]'",  # AI 的扩写句
+        "ai_verdict": "TEXT DEFAULT ''",       # AI 判定（基本掌握/需要改进）
+        "ai_summary": "TEXT DEFAULT ''",       # AI 总评
+        "ai_model": "TEXT DEFAULT ''",         # 生成该结果的模型名（便于追溯）
+        "ai_at": "TEXT DEFAULT ''",            # AI 批改落库时间
+        "final_source": "TEXT DEFAULT ''",     # 本条最终展示采用哪套：'rule' | 'ai'
     })
     _ensure_columns(conn, "errors", {
         "word": "TEXT DEFAULT ''",
