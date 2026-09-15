@@ -1,24 +1,45 @@
-# 交接文档：engilsh-study 本次全部改动（给其他 AI 看）
+# 交接文档：engilsh-study 本轮全部改动（给其他 AI 看）
 
 > **仓库**：`cand79234-source/engilsh-study`（main 分支）
-> **本次提交**：`1a53240`（父提交 `8da9c38`）
-> **提交时间**：2026-09-15 14:02 +0800
+> **本轮全部提交**：`1a53240` → `97f5590` → `6e08f49`（父提交 `8da9c38`）
+> **提交时间**：2026-09-15
 > **说明**：这份文档是**给接手的 AI 看的**，所以写得尽量直白、不省略、能落到文件与行为。
-> **重要前提**：这次提交里**混进了上一轮未提交的改动**（时区/自然周相关，见第 5 节），
-> 下面会明确区分「本轮我按用户要求改的」和「上一轮遗留、被这次提交一起带上的」。
+> **⚠️ 重要**：用户明确纠正过——「全部」指的是**用户最初提的 5 个问题**（见第 0 节），
+> 不是只有后半段那 4 件事。这份文档已按 5 个问题逐条整理。
+> **⚠️ 另一件重要的事**：本轮所有代码**从未推送过 GitHub**（沙箱无凭据），
+> 详见第 10 节。
 
 ---
 
-## 0. 一句话总览
+## 0. 用户最初提的 5 个问题（这才是「全部」）
 
-用户提了 **7 件事**，我全部改完，从「导入材料解析 → 入库 → 造句计划 → 前端 🔁 换场景」
-整条链路打通，6 项端到端复验 + 21 个单元测试全绿。
+用户原话（经整理）：
 
-主要在做四件事：
-1. 让导入解析器**认识 `Mini Scenario 1/2/3`**（基础句自带的场景）；
-2. 把**基础句场景彻底去 AI**（只认词自带的场景，永不调 AI 补）；
-3. 改**组合句**：每组 5 词（3 复习 + 2 新）、提示词加 Phase 难度硬性规则；
-4. 修 **AI 扩写**：以前生成完就扔，现在能真正显示出来。
+| # | 问题 | 用户原话（节选） |
+|---|---|---|
+| 1 | **AI 批改刷新后 40→100** | 「学习页造句那块AI批改有的，但是批改后我一刷新页面就变成了本地从40分 变成100分」 |
+| 2 | **造句记录只有当天** | 「造句完批改完的记录只有当天留存，我返回前一天任何造句记录都没有」 |
+| 3 | **周统计口径不对** | 「我怀疑内部不是一周就是中国时间1-7，是当天加上前七天，所以数据薄弱项和总结那块的数据不对」 |
+| 4/5 | **场景难度超纲** | 「学习页面场景这个场景我觉得完全不是我这个水平有的，所以我希望再提示词那边告诉AI阶段0-1给出A2初期的场景，2-3A2后期，4是B1，5B1后期」 |
+| — | **补充要求**（后几轮提出） | Mini Scenario 解析、基础句场景彻底去 AI、组合句 5 词配比、组合句加 Phase 规则、AI 扩写接上台面 |
+
+**各问题的最终状态（截至 `6e08f49`）**：
+
+| # | 问题 | 状态 | 修在哪 |
+|---|---|---|---|
+| 1 | 刷新 40→100 | ✅ **已修** | `main.py` `sentence_check`/`stealth_submit`，`ai_service.correct_sentence` |
+| 2 | 造句记录只有当天 | ✅ **已修**（本轮补修） | `ai_service.today_attempts` 去掉当天过滤 |
+| 3 | 周统计口径 | ✅ **已修**（本轮补修） | `main.py:errors_trend` 分桶改 Python 侧自然周；`report.py` 本周=自然周 |
+| 4/5 | 场景难度超纲 | ✅ **已修** | `scenario.py` `STAGE_CEFR` + `PHASE_RULES` + `build_sys_prompt` |
+| — | Mini Scenario / 去AI / 5词配比 / AI扩写 | ✅ 已修 | 见第 3 节 |
+
+---
+
+## 0.1 一句话总览
+
+用户提了 **5 个问题 + 若干补充要求**，我全部改完，从「导入材料解析 → 入库 → 造句计划 →
+前端 🔁 换场景 → 批改落库 → 刷新/跨天读取 → 周统计」整条链路打通。
+**38 个单元测试全绿**（本轮新增/改动的测试文件），端到端复验通过。
 
 ---
 
@@ -87,22 +108,27 @@ Phase 5：使用 B1 后期水平。场景可以更加完整和自然，可以包
 
 ---
 
-## 2. 本轮（1a53240）真正改了哪些文件
+## 2. 本轮（3 个提交）真正改了哪些文件
 
-| 文件 | 改动量 | 属于本轮吗 |
+> 累计 diff：`git diff --stat 8da9c38 HEAD`
+
+| 文件 | 改动量 | 属于本轮哪个提交 / 备注 |
 |---|---|---|
-| `backend/importer.py` | +89 / -4 | ✅ 本轮 |
-| `backend/scenario.py` | +210 / -37 | ✅ 本轮 |
-| `backend/services.py` | +89 / -22 | ✅ 本轮 |
-| `backend/weekimport.py` | +32 / -1 | ✅ 本轮 |
-| `backend/main.py` | +88 / -40 | ✅ 本轮 |
-| `backend/ai_service.py` | +278 / -43 | ✅ 本轮（含上一轮持久化的收尾） |
-| `frontend/index.html` | +93 / -9 | ✅ 本轮 |
-| `backend/db.py` | +85 / -4 | ⚠️ **上一轮遗留**（时区工具），本次被一起提交 |
-| `backend/report.py` | +41 / -15 | ⚠️ **上一轮遗留**（自然周口径），本次被一起提交 |
-| `tests/test_import_scenes.py` | +211（新文件） | ✅ 本轮 |
-| `tests/test_sentence_persistence_and_week.py` | +296（新文件） | ⚠️ 上一轮创建，本轮改了 2 个断言 |
-| `FIX_REPORT.md` | +120（新文件） | ⚠️ 上一轮遗留文档，本次被一起提交 |
+| `backend/importer.py` | +89 / -4 | `1a53240` Mini Scenario 解析 |
+| `backend/scenario.py` | +210 / -37 | `1a53240` 去AI + Phase 规则 |
+| `backend/services.py` | +89 / -22 | `1a53240` scenes + 5词配比 |
+| `backend/weekimport.py` | +32 / -1 | `1a53240` scenes 入库 |
+| `backend/main.py` | +189 / -? | `1a53240` scenes；`6e08f49` 周桶 |
+| `backend/ai_service.py` | +339 / -? | `1a53240` AI扩写；`6e08f49` 跨天 |
+| `frontend/index.html` | +102 / -9 | `1a53240` 🔁 不回退 AI |
+| `backend/db.py` | +89 / -4 | ⚠️ **更早一轮遗留**（时区工具），被一起提交 |
+| `backend/report.py` | +56 / -15 | ⚠️ **更早一轮遗留**（自然周口径），被一起提交 |
+| `tests/test_import_scenes.py` | +211（新） | `1a53240` |
+| `tests/test_sentence_persistence_and_week.py` | +320 | 更早一轮创建；本轮的改断言 + 跨天用例 |
+| `tests/test_trend_week_bucket.py` | +95（新） | `6e08f49` |
+| `CHANGES_THIS_ROUND.md` | 本文档 | `97f5590` |
+| `FIX_REPORT.md` | +120（新） | ⚠️ 更早一轮遗留文档，被一起提交 |
+
 
 ---
 
@@ -239,13 +265,75 @@ if len(group) < per:
 
 ---
 
-### 3.8 测试
+### 3.8 问题 1：AI 批改刷新后 40→100（已修，属更早一轮）
 
-- **新增** `tests/test_import_scenes.py`（8 个用例）：解析、入库、到造句计划、归一化容错、老材料不变。
-- **修改** `tests/test_sentence_persistence_and_week.py` 的 2 个断言：
-  `test_generate_for_word_passes_stage_into_sys_prompt`、`test_generate_defaults_to_a2_not_b1`
-  原来点名 `need_tier="small"` 验证 stage 透传 —— 现在 small 不调 AI 了，改成用 `large` 验证。
-  并**新增** `test_small_tier_never_calls_ai` 锁住「small 永不调 AI」。
+**根因**：`sentences` 表先 INSERT 本地分（如 100）、再 UPDATE 补 AI 字段。
+在 Neon 等读写分离库上，刷新时偶尔读到**还没 UPDATE 的旧行**；快速连点重写同一道题时
+还可能 UPDATE 错行。于是"批改时看到 AI 的 40、刷新变回本地 100"。
+
+**修法**：改成**先拿到 AI 结果，再连同本地结果一次性 INSERT**（不再 INSERT-then-UPDATE）。
+并在 `correct_sentence` 的返回体里把 AI 的 score/corrected/errors 合并进 `out`，
+保证"提交时拿到的"与"刷新后读回的"逐字段一致。
+
+- `main.py` `sentence_check`：先 `_ai.correct()` 拿 AI，再 `correct_sentence(..., ai=...)` 一次写入。
+- `main.py` `stealth_submit`：同样顺序。
+- `ai_service.correct_sentence`：新增 `ai=None` 参数 + `insert_ai` 合并块。
+
+### 3.9 问题 2：造句记录只有当天（**本轮补修**）
+
+**根因**：前端刷新走 `/api/sentence/attempts`，而后端 `today_attempts()` 的 SQL 是
+`WHERE stage=? AND week=? AND day=? AND created_at >= 今天` —— **跨天就查不到**。
+（`/api/sentence/history` 虽然支持跨天，但**前端从不调用它**。）
+
+**修法**：`ai_service.today_attempts` **去掉 `created_at>=今天` 过滤**，
+改为按 `(stage, week, day, task_key)` 取**全部历史**。同一道题的每一次作答都回填，
+与"今天是不是那天"无关；仍按 stage/week/day 限定，避免把别的位置的作答串进来。
+前端**不用改**（它本来就走 `attempts`）。
+
+- 新增测试 `test_attempts_survive_next_day`（把 created_at 改成 2020 年，仍能读回）。
+
+### 3.10 问题 3：周统计口径不对（**本轮补修**）
+
+**根因（两处）**：
+1. `/api/errors/trend` 的周分桶交给数据库：SQLite 用 `strftime('%Y-W%W')`，
+   PG 用 `to_char(...,'IYYY-"W"IW')` —— **两者不是同一套周**；且 SQLite 的 `%W`
+   **既不是 ISO 周、也不是中国自然周**。同一份数据在本地(SQLite)与线上(PG)落到不同周桶。
+2. 该 SQL 还用了 `created_at::timestamp`（PG 专属语法），在 SQLite 上直接 500。
+
+**修法**：`errors_trend` 的**分桶完全改到 Python 侧**，统一按
+**中国自然周（周一 00:00:00 ~ 周日 23:59:59，Asia/Shanghai）**：
+```python
+monday = d - timedelta(days=d.weekday())     # weekday(): 周一=0
+iso_year, iso_week, _ = monday.isocalendar()
+label = "%04d-W%02d" % (iso_year, iso_week)
+```
+两引擎走同一条逻辑，结果必然一致，也和"自然周"口径对齐。参数化比较改用纯字符串
+（去掉 `::timestamp`），SQLite 也能跑。
+
+- 新增测试 `tests/test_trend_week_bucket.py`（3 例）：
+  周一~周日归同一周、周日不跨进新周、SQLite 不崩、日桶正确。
+
+> `report.py` 里「本周」改成 `china_week_range()` 自然周，属更早一轮已完成。
+
+### 3.11 问题 4/5：场景难度超纲（已修）
+
+**根因**：`scenario.generate_for_word()` 原本**完全没有 stage 参数**，`_SYS` 也不提 CEFR，
+AI 自由发挥生成 B1/B2 场景。
+
+**修法**：
+- 新增 `STAGE_CEFR`(0/1→A2 early, 2/3→A2 late, 4→B1, 5→B1 late)；
+- 新增 `PHASE_RULES`（用户给的 Phase 0–1 / 2–3 / 4 / 5 硬性规则，逐字抄录）；
+- `build_sys_prompt(stage)` = `_SYS + stage_difficulty_block(stage) + "\n\n" + PHASE_RULES`；
+- 全链路透传 stage；漏传按最保守 A2 处理，**绝不默认 B1**。
+
+### 3.12 测试
+
+- **新增** `tests/test_import_scenes.py`（8 例）：解析、入库、到造句计划、归一化容错、老材料不变。
+- **新增** `tests/test_trend_week_bucket.py`（3 例）：自然周分桶。
+- **新增** `test_attempts_survive_next_day`：跨天回填。
+- **新增** `test_small_tier_never_calls_ai`：基础句层永不调 AI。
+- **修改** `test_sentence_persistence_and_week.py` 的 2 个断言（small→large）。
+
 
 ---
 
@@ -253,6 +341,10 @@ if len(group) < per:
 
 | 改动 | 用户是否明确同意 |
 |---|---|
+| 问题1 刷新 40→100（先 AI 再一次性入库） | ✅ 同意（用户最初就要求修） |
+| 问题2 造句记录跨天可见（去掉当天过滤） | ✅ 同意（用户明确要求"返回前一天也要有记录"） |
+| 问题3 周统计统一自然周（Python 侧分桶） | ✅ 同意（用户明确质疑"当天+前七天"口径） |
+| 问题4/5 场景难度按阶段（STAGE_CEFR + PHASE_RULES） | ✅ 同意 |
 | 解析 Mini Scenario（块状 + 逐行） | ✅ 同意 |
 | 场景入库并带到前端 | ✅ 同意（🔁 要能切场景的前提） |
 | 基础句场景彻底去 AI + `AI_TIERS` | ✅ 同意 |
@@ -260,9 +352,10 @@ if len(group) < per:
 | 组合句提示词加 Phase 规则 | ✅ 同意 |
 | AI 扩写合并进 optimizations | ✅ 同意（授权"你改吧"） |
 | 前端 🔁 基础句不回退 AI | ✅ 同意 |
-| **改 2 个老测试的断言 + 新增 1 个测试** | ❌ **未经单独同意**（是 3.3 的必然结果，顺手改的） |
+| **改 2 个老测试的断言 + 新增若干测试** | ❌ **未经单独同意**（是"基础句去 AI"的必然结果，顺手改的） |
 | **`normalize_scenes` 加"过滤后按顺序重编号"** | ❌ **未经单独同意**（为让 3 条场景永远是 1/2/3，不出现断号） |
-| **`generate_for_word` 加两道闸（点名 small 直接返回 0）** | ✅ 属于 3.3 的一部分，用户说"彻底删干净"，视为同意 |
+| **`errors_trend` 顺带删掉 PG-only 的 `::timestamp`** | ❌ **未经单独同意**（是修周桶时必须一并处理的 SQLite 兼容问题） |
+| **`generate_for_word` 加两道闸（点名 small 直接返回 0）** | ✅ 属于"彻底删干净"的一部分，视为同意 |
 
 ---
 
@@ -306,19 +399,25 @@ if len(group) < per:
 
 ---
 
-## 7. 关于用户追问的"造句不保留在页面上"
+## 7. 关于"造句不保留在页面上"与"跨天看不到记录"
 
-用户最后问：「之前造句不保留在页面上修改了嘛」。
+用户问过两句：「之前造句不保留在页面上修改了嘛」+ 「返回前一天任何造句记录都没有」。
 
 **查证结论**：
-- **本轮（1a53240）没动这件事。**
-- 相关的「删除」发生在**更早的提交 `2167cab`**（"薄弱项+总结页改动"），其说明写着：
-  > 「总结页: 删除本周学习里的造句记录(句子记录保留在学习页)」
-- 具体：
-  - **总结页**（`pages.sum`）：删掉了「📝 本周造句记录（N 条，点开看批改）」整块卡片。
-  - **学习页**：**没动** —— 每题的历史记录、折叠、复制都在（`state.hist` / `histOf(tk)` / `attemptCard`）。
-  - **后端 `report.py`**：`sentence_list` **还在算**，只是前端不显示了。
-- 我已把上述事实回报给用户，并**请其确认**到底是「确认已修」（→ 是）还是「抱怨不该删 / 现在仍看不到」（→ 新需求，需用户明确要在哪看、看什么）。
+
+1. **"造句记录不显示在页面上"** —— 这件事的**删除**发生在**更早的提交 `2167cab`**
+   （"薄弱项+总结页改动"），其说明原话：「总结页: 删除本周学习里的造句记录(句子记录保留在学习页)」。
+   - **总结页**（`pages.sum`）：删掉了「📝 本周造句记录」整块卡片。
+   - **学习页**：**没动** —— 每题的历史、折叠、复制都在。
+
+2. **"返回前一天任何造句记录都没有"** —— 这是**真 bug**，本轮（`6e08f49`）**已修**：
+   - 根因：`today_attempts()` 的 SQL 带 `created_at >= 今天`，跨天过滤掉了历史。
+   - 修法：去掉该过滤，按 `(stage, week, day, task_key)` 取全部历史。
+   - 现在**返回前一天再看，以前的造句记录都在**。
+
+> ⚠️ 接手注意：若用户仍表示"某处看不到历史"，需先确认他指的是
+> **学习页**（现已修好）还是**总结页那块被删掉的卡片**（那是另一个决定，
+> 是否加回要问用户）。
 
 > ⚠️ 接手时请注意：**这一条用户尚未给出最终答复**，可能需要后续处理。
 
@@ -326,13 +425,18 @@ if len(group) < per:
 
 ## 8. 验证与提交状态
 
-- **21 个单元测试全绿**：`test_import_scenes.py`（8）+ `test_sentence_persistence_and_week.py`（13）。
-- **6 项端到端复验全过**：解析 → 入库 → 造句计划 → 基础句去 AI → 组合配比 → Phase 提示词 → AI 扩写。
-- 全量测试套件里的 **7 个 collection error** 经 `git stash` 对照确认**改动前就存在**
-  （playwright 浏览器测试 + 需真实 AI Key 的脚本），**非本轮引入**。
-- **提交**：`1a53240`，**仅在本机**。
-- ⚠️ **未推送到 GitHub**：沙箱没有用户 GitHub 凭据（`gh` 未登录，`ghfast.top` 镜像推送也拿不到用户名/token）。
-  **需要用户自行 push 或提供凭据。**
+- **本轮新增/改动的测试文件 38 项全绿**：
+  - `test_import_scenes.py`（8）
+  - `test_sentence_persistence_and_week.py`（14，含新增的跨天用例）
+  - `test_trend_week_bucket.py`（3，本轮新增）
+  - 以及既有的场景/持久化相关用例
+- **端到端复验全过**：解析 → 入库 → 造句计划 → 基础句去 AI → 组合配比 → Phase 提示词 → AI 扩写 → 跨天读取 → 周分桶。
+- 全量测试套件仍有若干失败/collection error，但经 `git stash` 对照确认：
+  - 无我改动时：**22 failed / 153 passed**
+  - 有我的改动时：**18 failed / 157 passed**
+  → 我的改动**净修好 4 个**，**没有新增任何失败**。剩余失败是 playwright 浏览器测试、
+    需真实 AI Key 的脚本、以及仓库既有的测试隔离问题（无 conftest 隔离、脚本式测试共用库）。
+- **提交**：`1a53240` → `97f5590` → `6e08f49`，三个提交**均仅在本机**。
 
 ---
 
@@ -343,4 +447,31 @@ if len(group) < per:
    `test_mobile_fe.py`、`test_new_ui.py`、`test_new_ui_v2.py`、`test_scenario_weakness.py`、`test_stealth_ai_flow.py`。
 2. 若要让**老数据**也补上自带场景，需要重新解析老材料 —— 这是独立任务，用户尚未要求。
 3. `AI_TIERS` 是控制「哪一层走 AI」的总开关，想恢复旧行为就把 `"small"` 加回去并去掉 3.3 的两道闸。
-4. 用户风格：**要求先分析需求再动手，并且要大白话报告**；对反复提问会不耐烦。
+4. 时间口径统一入口在 `db.py`：`get_china_now / get_china_date / china_week_range`。
+   **业务层不许再各写一套日期逻辑**；`errors_trend` 的分桶也已改到 Python 侧统一自然周。
+5. 用户风格：**要求先分析需求再动手，并且要大白话报告**；对反复提问会不耐烦。
+
+---
+
+## 10. ⚠️ GitHub 推送状态（用户特别在意）
+
+**用户原话**：「你从未推送过GITHUB拿来的一轮一轮，这就是一轮无语」。
+
+**实情**：本轮 3 个提交（`1a53240`、`97f5590`、`6e08f49`）**全部只在本机沙箱**，
+**从未推送到 GitHub**。原因：沙箱里没有可用的 GitHub 凭据 ——
+- `gh` 未登录（`gh auth status` → not logged into any hosts）；
+- 直连 `https://github.com` 报 TLS 握手失败（`gnutls_handshake() failed`）；
+- `ghfast.top` 镜像推送时拿不到用户名/token（`could not read Username`）；
+- `git-credential-helper` 返回空。
+
+**已为用户准备好两条路**（任一即可）：
+1. **补丁包**：`/workspace/待推送补丁.patch`（含 3 个提交，`git am` 即可应用）；
+2. **本地直接推**：用户在能联网的机器上 `git push origin main`。
+
+**待推送的 3 个提交**：
+```
+6e08f49 fix: 造句记录跨天可见 + 错误趋势周桶统一为中国自然周
+97f5590 docs: 补本次全部改动的交接文档（给其他 AI 看）
+1a53240 feat: Mini Scenario 解析 + 基础句场景去AI + 组合句5词配比/Phase规则 + AI扩写上台面
+```
+
