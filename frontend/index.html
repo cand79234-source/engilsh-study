@@ -1263,15 +1263,12 @@ async function submitSentence(tk){
         explanation:e.explain||'', correct:e.right||''}));
       if(a.score!==undefined&&a.score!==null) f.score=a.score;
       if(a.corrected) f.corrected=a.corrected;
-      /* AI 没给出错误明细时不要把本地规则找出的错误擦掉。
-         否则「AI 扣了分(65)」与「错误区写没有明显错误」会同框，自相矛盾。 */
-      if(aiErrs.length) f.errors=aiErrs;
-      const _errs=f.errors||[];
-      f.ok=(a.score!=null? a.score>=85 : true) && _errs.length===0;
+      f.errors=aiErrs;
+      f.ok=(a.score!=null? a.score>=85 : true) && aiErrs.length===0;
       f.verdict=a.level||(f.ok?'基本掌握':'需要改进');
       f.status=(f.ok?'PASS':'NEEDS_REVIEW');
-      f.ai_source=aiErrs.length?'ai':'rule';
-      f.source=f.ai_source; f.ai_pending=false;
+      f.ai_source='ai';
+      f.source='ai'; f.ai_pending=false;
     }
     if(localIssues.length) f.task_issues=(f.task_issues||[]).concat(localIssues);
     /* ⚠️ 2026-09-11 修「一句显示两张卡、刷新后 AI 区消失」：
@@ -1424,14 +1421,8 @@ function attemptCard(a,tk,i,isLast){
         <div style="font-size:13.5px;color:#475569;margin-top:4px">💡 <b>为什么错：</b>${esc(e.explanation)}</div>
         <div style="font-size:13.5px;margin-top:4px">✅ <b>正确表达：</b><b style="color:var(--green)">${esc(e.correct)}</b></div>
       </div>`).join('')
-    /* AI 判了低分却没给错误明细时，不许替 AI 说「没有明显错误」——
-       那会让「65 分」和「没有明显错误」同框自相矛盾。据实告知，不打满分也不撒谎。
-       只在这个 try 块内兜底，不影响其它场景：AI 给满分/高分时照常显示「没有明显错误」。 */
-    : (a.source==='ai' && sc<85
-        ? `<div style="margin-top:6px;font-size:13.5px;color:var(--muted)">⚠️ AI 判定有误但未返回具体错误点，可再批改一次</div>`
-        : (hasTask
-            ? `<div style="margin-top:6px;font-size:13.5px;color:var(--muted)">✅ 没有明显语法错误</div>`
-            : `<div style="margin-top:6px;font-size:13.5px;color:var(--muted)">✅ 没有明显错误</div>`));
+    : (hasTask?`<div style="margin-top:6px;font-size:13.5px;color:var(--muted)">✅ 没有明显语法错误</div>`
+                :`<div style="margin-top:6px;font-size:13.5px;color:var(--muted)">✅ 没有明显错误</div>`);
   const taskHtml = taskBoxHtml(tasks);
   const corHtml = (!pass && a.corrected && a.corrected!==a.sentence)
     ? `<div style="margin-top:6px;font-size:13.5px">📗 <b>整句正确写法：</b><b style="color:var(--green)">${esc(a.corrected)}</b></div>`:'';
