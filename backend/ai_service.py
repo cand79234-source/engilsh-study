@@ -2114,14 +2114,26 @@ def attempts_of(conn, stage, week, day, task_key):
 
 
 def today_attempts(conn, stage, week, day, since):
-    """当天全部作答，按 task_key 分组（用于页面刷新后回填历史）。"""
+    """按 task_key 分组回填造句历史（用于页面刷新后回填）。
+
+    ⚠️ 2026-09-11 修「昨天造的句子看不见」：
+       旧实现是 `WHERE stage=? AND week=? AND day=? AND created_at>=今天`，
+       结果**跨天就查不到**：用户第 2 天回到同一道题，昨天的作答全消失。
+       造句记录是**历史数据**，不该因为"今天不是那天"就消失。
+
+       现在改成**按 (stage, week, day, task_key) 取全部历史**（去掉日期过滤），
+       即"同一道题、同一学习位置"的每一次作答都回填 —— 与当天/跨天无关。
+       仍然按 stage/week/day 限定，避免把别的位置的作答串进来。
+
+       since 参数保留但不再用于过滤（兼容老调用），历史数据一律返回。
+    """
     rows = conn.execute(
         "SELECT id, word, task_key, attempt, original, corrected, score,"
         " verdict, good, error_type, errors_json, opts_json, created_at,"
         " ai_score, ai_corrected, ai_errors_json, ai_natural_json,"
         " ai_expand_json, ai_verdict, ai_summary, ai_model, ai_at, final_source"
-        " FROM sentences WHERE stage=? AND week=? AND day=? AND created_at>=?"
-        " ORDER BY id", (stage, week, day, since)).fetchall()
+        " FROM sentences WHERE stage=? AND week=? AND day=?"
+        " ORDER BY id", (stage, week, day)).fetchall()
     groups = {}
     for r in rows:
         tk = r["task_key"] or f"free:{r['id']}"

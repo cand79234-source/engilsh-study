@@ -96,6 +96,30 @@ def test_local_fallback_not_persisted_as_ai(env):
     assert a["ai_pending"] is True
 
 
+def test_attempts_survive_next_day(env):
+    """⚠️ 2026-09-11 修「返回前一天任何造句记录都没有」。
+
+    同一道题（同 stage/week/day/task_key）**跨天**回填历史：
+    昨天造过、今天再打开，昨天的作答必须还在（不能再按"当天"过滤掉）。
+    """
+    import ai_service as ais
+    db = env
+    # 昨天造一句，把 created_at 手动改成昨天
+    r = ais.correct_sentence("I go to work every day.", 0, 3, 1, "work", "basic:0")
+    conn = db.get_conn()
+    conn.execute("UPDATE sentences SET created_at=? WHERE id=?",
+                 ("2020-01-01 08:00:00", r["sentence_id"]))
+    conn.commit()
+    # 今天再回填：不传日期也照样能读到那道题（去掉了"当天"过滤）
+    groups = ais.today_attempts(conn, 0, 3, 1, db.today_str())
+    conn.close()
+    tks = [g["task_key"] for g in groups]
+    assert "basic:0" in tks, "跨天回填：昨天的作答不见了 —— %s" % tks
+    one = [g for g in groups if g["task_key"] == "basic:0"][0]
+    assert one["attempts"][0]["sentence"] == "I go to work every day."
+    assert one["attempts"][0]["created_at"].startswith("2020-01-01")
+
+
 def test_missing_ai_score_never_faked_as_100(env):
     """历史缺失（ai_score=NULL、score=0）不能被伪造/默认成 100。"""
     import ai_service as ais

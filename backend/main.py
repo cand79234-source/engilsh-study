@@ -771,45 +771,60 @@ def errors_trend(days: int = 90, bucket: str = "week", only_unfixed: int = 0):
     """月报「近四周错误趋势」：按时间桶聚合 errors 表，统计窗口内的错误数量。
 
     - days  : 向前窗口天数（默认 90）
-    - bucket: 'week'（默认，'2026-W35' 形状）或 'day'（'2026-08-30' 形状）
+    - bucket: 'week'（默认）或 'day'
     - only_unfixed: 1 只统计未改正(fixed=0)错误，默认 0 统计全部
-    双引擎：SQLite 用 strftime，PostgreSQL 用 to_char/date_trunc，
-    通过 _using_pg() 分支，绝不写死某一引擎的 SQL。
     空数据返回空数组（weeks=[] 或 days=[]），不报错。
+
+    ⚠️ 2026-09-11 重写周桶（修「周数据对不上」）：
+       旧实现把分桶交给数据库：SQLite 用 `strftime('%Y-W%W')`，PG 用
+       `to_char(...,'IYYY-"W"IW')`。这两者**根本不是同一套周**；
+       而且 SQLite 的 `%W` 是"本年第一个周一为第 1 周"的自定义周，
+       **既不是 ISO 周、也不是中国自然周**。于是同一份数据在 SQLite（本地）
+       与 PG（线上）上会落到不同的周桶里，用户看到的"本周/近四周"就永远是错的。
+
+       现在改成：**分桶完全在 Python 侧做**，统一按
+       「中国自然周：周一 00:00:00 ~ 周日 23:59:59（Asia/Shanghai）」，
+       两种引擎走同一条逻辑，结果必然一致，也和第 3 题要求的自然周口径对齐。
+       （数据量很小——errors 表默认窗口 90 天、上限几万行，Python 侧聚合无压力。）
     """
     conn = get_conn()
     try:
-        # 时间桶表达式：两种引擎各一套，输出形状统一为 'YYYY-Www' / 'YYYY-MM-DD'
-        if _using_pg():
-            if bucket == "day":
-                bucket_expr = "to_char(created_at::timestamp, 'YYYY-MM-DD')"
-            else:
-                # IYYY/IW 取 ISO 周（周一为一周起点），并用 "W" 字面量保持与 SQLite 同形状
-                bucket_expr = "to_char(date_trunc('week', created_at::timestamp), 'IYYY-\"W\"IW')"
-        else:
-            if bucket == "day":
-                bucket_expr = "strftime('%Y-%m-%d', created_at)"
-            else:
-                bucket_expr = "strftime('%Y-W%W', created_at)"
-
-        # 窗口下界用 Python 计算后作为参数传入，避开两引擎日期函数差异（TEXT vs timestamp）
         cutoff = (app_now() - timedelta(days=days)).strftime("%Y-%m-%d %H:%M:%S")
-
-        sql = ("SELECT " + bucket_expr + " AS bucket_label, COUNT(*) AS cnt "
-               "FROM errors WHERE created_at::timestamp >= ?")
+        # created_at 存的是 ISO 文本串，字典序即时间序；两引擎都用纯字符串比较，
+        # 不用 `::timestamp`（那是 PG 专属语法，SQLite 会直接报 unrecognized token）。
+        sql = ("SELECT created_at FROM errors WHERE created_at >= ?")
         args = [cutoff]
         if only_unfixed:
             sql += " AND fixed=0"
-        sql += " GROUP BY bucket_label ORDER BY bucket_label ASC"
         rows = conn.execute(sql, tuple(args)).fetchall()
     finally:
         conn.close()
 
     if bucket == "day":
+        buckets = {}
+        for r in rows:
+            d = str(r["created_at"] or "")[:10]
+            if d:
+                buckets[d] = buckets.get(d, 0) + 1
         return {"bucket": "day",
-                "days": [{"date": r["bucket_label"], "count": r["cnt"]} for r in rows]}
+                "days": [{"date": k, "count": buckets[k]} for k in sorted(buckets)]}
+
+    # 周桶：中国自然周（周一~周日）。用 db.china_week_range 的同一套算法，
+    # 但这里只要"这一天属于哪个周一"，所以直接算 date 的周一。
+    from datetime import date as _date
+    buckets = {}
+    for r in rows:
+        s = str(r["created_at"] or "")
+        try:
+            d = _date.fromisoformat(s[:10])
+        except Exception:
+            continue
+        monday = d - timedelta(days=d.weekday())      # weekday(): 周一=0
+        iso_year, iso_week, _ = monday.isocalendar()
+        label = "%04d-W%02d" % (iso_year, iso_week)
+        buckets[label] = buckets.get(label, 0) + 1
     return {"bucket": "week",
-            "weeks": [{"week": r["bucket_label"], "count": r["cnt"]} for r in rows]}
+            "weeks": [{"week": k, "count": buckets[k]} for k in sorted(buckets)]}
 
 
 @app.get("/api/errors/{error_type}")
