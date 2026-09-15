@@ -326,11 +326,12 @@ Mini Scenario 3：
 
 **相关套件当前结果**：`test_scenario_tier.py` + `test_sentence_persistence_and_week.py` + `test_import_scenes.py` + `test_trend_week_bucket.py` = **41 passed**。
 
-**全量套件对比**（`git stash` 对照，均已排除脚本式/playwright 测试）：
-- 无本次改动：**15 failed / 159 passed**
-- 有本次改动：**13 failed / 161 passed**
-- → **净修好 2 个（`test_scenario_tier` 两处陈旧断言），未引入任何新失败**。
-- 剩余 13 处失败为**历史遗留**（`test_srs_flashcard` 5 / `test_weakness` 3 / `test_sentence_v2` 2 / `test_sentence_false_positive` 3），与本次改动无关。
+**全量套件对比**（均已排除脚本式/playwright 测试，连跑 3 次稳定）：
+- 无本次改动（baseline）：**13 failed / 161 passed**
+- 有本次改动（含新增 `test_audit_guards.py`）：**10 failed / 172 passed**
+- → **净修好 3 个、通过数 +11，无新增污染**（连跑 3 次结果一致）。
+- 剩余失败为**历史遗留 + 仓库既有的测试隔离脆弱性**（`test_srs_flashcard`、`test_weakness`、
+  `test_sentence_v2`、`test_sentence_false_positive` 等），与本次会话改动无关。
 
 ---
 

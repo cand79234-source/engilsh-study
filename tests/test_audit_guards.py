@@ -21,23 +21,32 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."
 
 @pytest.fixture()
 def env(monkeypatch):
+    """独立临时库 + 干净模块（与 test_sentence_persistence_and_week 同款）。
+
+    ⚠️ 收尾必须把 `main` 重新 import 回来：别的测试（test_bugfixes）用
+    `importlib.reload(main)`，它要求 main 存在于 sys.modules。
+    我们这里如果删掉又不补，会让那些测试 ImportError（实测踩过）。
+    """
     fd, path = tempfile.mkstemp(suffix=".db")
     os.close(fd)
     monkeypatch.setenv("EOS_DB", path)
     monkeypatch.delenv("DATABASE_URL", raising=False)
     monkeypatch.setenv("APP_TZ", "Asia/Shanghai")
-    for m in [m for m in list(sys.modules)
-              if m in ("db", "scenario", "services", "srs", "ai_correct",
-                       "ai_service", "report", "main")]:
+    _mods = ("db", "scenario", "services", "srs", "ai_correct", "ai_service",
+             "report", "main")
+    for m in [m for m in list(sys.modules) if m in _mods]:
         del sys.modules[m]
     import db
     db.init_db()
     db.ensure_unique_indexes()
     yield db
-    for m in [m for m in list(sys.modules)
-              if m in ("db", "scenario", "services", "srs", "ai_correct",
-                       "ai_service", "report", "main")]:
+    for m in [m for m in list(sys.modules) if m in _mods]:
         del sys.modules[m]
+    # 补回 main，避免下游测试 reload 失败
+    try:
+        import main  # noqa: F401
+    except Exception:
+        pass
     try:
         os.remove(path)
     except OSError:
