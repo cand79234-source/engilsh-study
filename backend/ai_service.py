@@ -1499,11 +1499,11 @@ def _optimizations(s, low, req="", word=""):
     两类都只影响展示，不进错误本、不扣分。
     """
     opts = []
-    if s and s[-1] not in ".!?":
-        opts.append({
-            "where": "句末", "suggestion": s + ".",
-            "reason": "英文句子末尾要加句号。这是书写习惯，不是语法错误。",
-        })
+    # ⚠️ 2026-09-11 按用户要求**删除**「句末加句号」这条参考建议（用户已多次提出）。
+    #    原来这里是：句子结尾不是 .!? 就追加 {where:"句末", suggestion:s+"."}。
+    #    删除理由：① 用户明确要求删；② 与 _SYS_PROMPT 规则9「句号/大小写彻底不提」
+    #    口径统一 —— 句末标点是书写习惯、不是语法错误，不该出现在「参考建议」里。
+    #    仅删这一条，不影响 errors 判定 / 分数 / 其他建议。
     m = re.search(r"\b(i|you|we|they|he|she)\s+(like|likes|love|loves|enjoy|enjoys)\b",
                   low)
     if m and not any(d in low for d in _DEGREE):

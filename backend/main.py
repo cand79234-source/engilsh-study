@@ -1500,7 +1500,7 @@ def _grade_training(ability, user_sentence, answer):
         score, fb = 75, "听力类作答已记录，建议回听原文自行核对。"
     elif "语法" in ab or "grammar" in ab:
         score = 85 if (u[:1].isupper() and re.search(r"[.!?]$", u)) else 65
-        fb = "语法类作答已记录，注意首字母大写与句末标点。"
+        fb = "语法类作答已记录。"
     elif "词汇" in ab or "vocab" in ab:
         score, fb = 75, "词汇类作答已记录。"
     else:
