@@ -1226,7 +1226,25 @@ async function submitSentence(tk){
         if(h&&h.ok!==false&&h.groups){
           const g=(h.groups||[]).find(x=>x.task_key===tk);
           if(g&&g.attempts&&g.attempts.length){
-            state.hist=state.hist||{}; state.hist[tk]=g.attempts;
+            /* ⚠️ 2026-09-15 修「哪里错了 / 正确表达」整块空白：
+               从库读回来的 errors，字段名是 AI 的**原始结构**
+               （wrong / right / explain），而 attemptCard 渲染读的是
+               where / correct / explanation —— 名字对不上 → 三栏全空
+               （页面就会显示成「没有明显错误」）。
+               提交时上面那段翻译过内存副本，但 refreshOk=true 时渲染用的是
+               这份库里数据、没经过翻译 —— 所以在这里统一翻译一次，
+               保证「提交当场」与「刷新后」两条路渲染完全一致。
+               兼容两种形状：已翻译的（有 where）原样保留，未翻译的（有 wrong）转换。 */
+            state.hist=state.hist||{};
+            state.hist[tk]=(g.attempts||[]).map(a=>{
+              if(a&&Array.isArray(a.errors)&&a.errors.length
+                 &&a.errors[0]&&a.errors[0].where===undefined){
+                a.errors=a.errors.map(e=>({
+                  where:e.wrong||'', type:e.type||'其它',
+                  explanation:e.explain||'', correct:e.right||''}));
+              }
+              return a;
+            });
             renderAttempts(tk); planProgress();
             refreshOk=true;
           }
