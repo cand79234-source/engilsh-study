@@ -186,7 +186,11 @@ def test_bf_days_ordered(env):
 
 
 def test_backfill_status_reports_gaps(env):
-    """status 要如实报出每天缺多少（每词缺 small+large = 2 项）。"""
+    """status 要如实报出每天缺多少。
+
+    ⚠️ 2026-09-11：small 层已不再由 AI 生成（见 scenario.AI_TIERS），
+    backfill 只统计 large，所以每词只算 1 项缺口（旧版算 small+large=2 项）。
+    """
     sc, db = env
     conn = db.get_conn()
     _seed_days(conn, n_days=2, per=2)
@@ -194,7 +198,7 @@ def test_backfill_status_reports_gaps(env):
     assert st["total_days"] == 2
     assert st["all_done"] is False
     for d in st["days"]:
-        assert d["missing"] == 4, "2 个词 × 2 层 = 4 项缺口"
+        assert d["missing"] == 2, "2 个词 × 1 层（只补 large）= 2 项缺口"
 
 
 def test_backfill_all_done_when_full(env):
@@ -301,5 +305,6 @@ def test_backfill_prioritizes_today(env, monkeypatch):
     st = sc.backfill_status()
     d3 = [d for d in st["days"] if d["day"] == 3][0]
     d1 = [d for d in st["days"] if d["day"] == 1][0]
-    assert d3["missing"] < 2, "今天的 Day3 应该被优先补上"
-    assert d1["missing"] == 2, "没轮到的时候，Day1 不该被动过"
+    # ⚠️ 2026-09-11：缺口只算 large（每词 1 项），不再是 small+large=2 项
+    assert d3["missing"] == 0, "今天的 Day3 应该被优先补满"
+    assert d1["missing"] == 1, "没轮到的时候，Day1 不该被动过（仍缺 1 层 large）"

@@ -971,19 +971,26 @@ def _build_basic(today_new, grammar, seed_date=None, weights=None):
 
 
 def _build_combos(today_new, due_vocab, grammar, seed, n=10, per=5):
-    """③ 组合：10 组，**每组 5 个词**（3 个复习词 + 2 个当天新词）写成连续表达。
+    """③ 组合：**每组严格 5 个词 = 3 个复习词 + 2 个当天新词**。
 
-    【为什么是 5 个词 = 3 复习 + 2 新词（用户定，2026-09 改）】
-    当天新词是 20 个。每组放 2 个新词 → **20 ÷ 2 = 正好 10 组**，
-    白天学的 20 个词一个不落全被组合题消化掉；剩下的 3 个位置留给复习词，
-    复习占比 3/5 = 60%，仍然以"复习为主"。
-    旧配比是 per=3（2 复习 + 1 新词），20 个新词要 20 组才用得完，
-    但一天只出 10 组 → 每天有一半新词根本进不了组合题。
+    【配比规则（用户定，2026-09；2026-09-11 改为"严格"）】
+      每组恰好 3 复习 + 2 新。当天新词 20 个 → 20 ÷ 2 = 10 组正好吃完。
 
-    【复习词不够时不补（用户定）】
-    复习词靠 SRS 到期产生，某天可能只有三五个。这时**不重复使用复习词**，
-    缺的位置直接让新词顶上 —— 复习占比自然退化，但不硬凑。
-    理由：同一个词一天写两三遍是纯抄，不产生新记忆。
+    【⚠️ 做不到就"减少组数"，绝不偷偷改配比 —— 2026-09-11 重写】
+      旧实现是"尽量凑 5 个"：复习词不够时用新词顶（变成 2+3 / 1+4 / 0+5），
+      复习词多了又挤掉新词（变成 4+1，20 个新词只上 10 个）。
+      实测穷举 0~40 个复习词，**只有复习词恰好 30 时才严格 3+2**，其余档位全歪。
+      现在改成**严格约束**：
+        · 能凑出「3 复习 + 2 新」的完整组 → 出这组；
+        · 凑不出（复习词 or 新词不足 3/2）→ **停止，少出几组**。
+      于是组数会随复习词数量变化，但**每一组都严格是 3+2**，不会变味。
+      复习词不重复使用（同一个词一天写两遍是抄，不产生记忆）。
+
+    复习词数量对组数的影响（新词 20 个）：
+      复习 ≥ 30 → 10 组满编（唯一能满编的情况）
+      复习 20   → 6 组（3×6=18 ≤ 20；第 7 组复习不够）
+      复习 10   → 3 组；复习 3 → 1 组；复习 < 3 → 0 组
+      新词不足 2 个 → 0 组（无法成组）
     """
     seen = set()
     review_words, new_words = [], []
@@ -1001,67 +1008,27 @@ def _build_combos(today_new, due_vocab, grammar, seed, n=10, per=5):
     # 洗牌新词（同日稳定），让每天的搭配不重样
     new_words = _deterministic_shuffle(new_words, seed + 99)
 
-    # 组数：**先按"当天新词要全部用上"来定**
-    #   20 个新词 ÷ 每组 2 个新词位 = 10 组。
-    # 然后再把复习词**平均摊到每组**（而不是前几组吃光）。
-    #
-    # 为什么必须这样算（2026-09，per 由 3 改成 5 时踩的坑）：
-    #   旧写法是"每组先抓 3 个复习词，剩下的位子给新词"。复习词只有 8 个时，
-    #   前 3 组就把复习词吃光，第 4 组起只能抓新词 —— 而每组位子只有 5 个，
-    #   新词反而用不完（实测只覆盖 17/20），组数也上不去。
-    #   现在反过来：组数由新词定，复习词均匀摊进去，两个目标同时满足。
-    new_slots = 2 if review_words else per      # 每组留给新词的位数
-    n_by_new = (len(new_words) + new_slots - 1) // new_slots if new_words else 0
-    # 还要看**总池子**够不够每组 5 个：总位数 = 新词 + 不重复复用的复习词
-    _total_slots = len(new_words) + len(review_words)
-    n_by_pool = _total_slots // per if per else 0
-    # 组数 = 上限 n、新词撑得住的组数、总池撑得住的组数 —— 三者取小
-    n_eff = max(1, min(n, n_by_new, n_by_pool)) if new_words else min(n, n_by_pool or n)
-    n_eff = max(1, n_eff)
-    # 复习词平均每组几个（可能为 0；余数从第 1 组开始各多给 1 个）
-    _rev_base = (len(review_words) // n_eff) if n_eff else 0
-    _rev_extra = (len(review_words) % n_eff) if n_eff else 0
+    # 每组固定要 3 复习 + 2 新；两者都不重复使用 → 组数受两个池子同时约束。
+    n_per_rev, n_per_new = 3, 2
+    n_by_rev = len(review_words) // n_per_rev
+    n_by_new = len(new_words) // n_per_new
+    n_eff = max(0, min(n, n_by_rev, n_by_new))       # 严格取小：任何一个池子不够就少出组
+
     combos, ri, ni = [], 0, 0
     for gi in range(n_eff):
         group = []
-        # 本组该放几个复习词：上限 per-1（至少留 1 个位给新词）
-        _want_rev = min(per - 1, _rev_base + (1 if gi < _rev_extra else 0))
-        for _ in range(max(0, _want_rev)):
-            if ri >= len(review_words):
-                break
+        for _ in range(n_per_rev):
             group.append({"word": review_words[ri].get("word"),
                           "meaning": review_words[ri].get("meaning") or "",
                           "review": True})
             ri += 1
-        while len(group) < per and ni < len(new_words):
+        for _ in range(n_per_new):
             group.append({"word": new_words[ni].get("word"),
                           "meaning": new_words[ni].get("meaning") or "",
                           "review": False})
             ni += 1
-        # 收摊条件（2026-09 重新定，per 由 3 改成 5 时踩过坑）：
-        #
-        # 硬约束是算术：出 10 组 × 每组 5 词 = 要 50 个词位，而复习词**不重复用**。
-        # 所以「20 新词 + N 复习词」只有在 N ≥ 30 才能凑满 10 组满编。
-        # 复习词通常远没有 30 个（SRS 到期才有），因此**退化是常态，不是异常**。
-        #
-        # 退化时宁可**少出几组**，也不出一组半成品：
-        #   凑满 5 个词 → 出这道题；
-        #   凑不满     → 停止，把这几个词**还回池子**（不影响下次调用）。
-        # 这样每组都是完整的 5 词题，页面提示"把这 5 个词串成一小段"才是对的。
-        if len(group) < per:
-            break
-        if not group:
-            # 复习词和新词都用光了才走到这里。这时允许复读已用过的词：
-            # 复习词优先（重复本身就是复习），但只用来补满组，不提前触发。
-            if not (review_words or new_words):
-                break
-            pool = review_words + new_words
-            for j in range(per):
-                src = pool[(gi * per + j) % len(pool)]
-                group.append({"word": src.get("word"),
-                              "meaning": src.get("meaning") or "",
-                              "review": bool(src.get("error_rate"))})
-        if not group:
+        # 收摊：严格 3+2 —— 这里理论上永远成立（n_eff 已保证），留断言式兜底
+        if len(group) != per:
             break
 
         # 场景：用组内首个词的功能分类作为表达框架。

@@ -658,8 +658,19 @@ def pick(word, exclude_id=0, tier=None):
             sql += " ORDER BY id ASC LIMIT 1"
             return conn.execute(sql, tuple(args)).fetchone()
 
-        # 按层找；该层没有 → 退回不过滤（老数据可能全是 medium）
-        for tf in ([t, None] if t else [None]):
+        # 按层找；该层没有 → 退回不过滤（老数据可能全是 medium）。
+        #
+        # ⚠️ 2026-09-11：**tier="small" 不许回退到别的层**。
+        #   small（基础句）的情景现在只来自导入材料自带的 Mini Scenario，
+        #   前端 basic 题根本不会用 tier 来问后端；但万一有旧客户端 /
+        #   手工请求带 tier=small，回退不过滤会捞出一条 large（组合句）情景 ——
+        #   那就把「组合句的大情景」显示到「单词造句」上了，语义错位。
+        #   所以 small 只在 small 层里找，找不到就返回 None（前端会静默不显示情景）。
+        if t == "small":
+            fallbacks = ["small"]
+        else:
+            fallbacks = ([t, None] if t else [None])
+        for tf in fallbacks:
             if cur:
                 row = _one(tf, cur)          # 当前这条之后的
                 if not row:
