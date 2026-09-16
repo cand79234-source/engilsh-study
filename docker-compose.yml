@@ -1,0 +1,47 @@
+# English OS — Oracle Cloud Always Free (Docker Compose)
+# 仅部署配置，不改动任何业务代码。
+#
+# 数据源策略：通过 .env 的 DATABASE_URL 指向**现有 Neon**（与 Render 使用同一条连接串）。
+# 迁移到 Oracle 不新建数据库、不迁移数据、不清空数据——只复用既有 Neon 实例。
+# 验证期间 Render 与 Oracle 会短暂共享同一个 Neon（Neon 支持多连接），保证数据零丢失。
+
+services:
+  # ── 应用（FastAPI + 前端静态，原样运行）──
+  app:
+    build: .
+    restart: unless-stopped
+    environment:
+      # 关键：指向你现有的 Neon 连接串（与 Render 完全相同，含 ?sslmode=require）
+      - DATABASE_URL=${DATABASE_URL}
+      # 访问口令：建议与 Render 上的 EOS_TOKEN 保持一致，用户无需记新口令
+      - EOS_TOKEN=${EOS_TOKEN:-}
+      # 火山方舟 AI 批改（可选，不填则回落本地规则）
+      - ARK_API_KEY=${ARK_API_KEY:-}
+      - ARK_MODEL=${ARK_MODEL:-}
+      # 应用时区（默认中国时间，库内按中国自然周统计）
+      - APP_TZ=${APP_TZ:-Asia/Shanghai}
+    # 只暴露给同一 compose 网络内的 Caddy，不直接发布到宿主机公网
+    expose:
+      - "8000"
+
+  # ── 反向代理 + 自动 HTTPS ──
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    depends_on:
+      - app
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    environment:
+      # 设了 DOMAIN（A 记录指向本机公网 IP）→ 自动签发 Let's Encrypt 证书走 HTTPS
+      # 留空 → 仅 HTTP 监听 :80
+      - DOMAIN=${DOMAIN:-}
+
+volumes:
+  caddy_data:
+  caddy_config:
