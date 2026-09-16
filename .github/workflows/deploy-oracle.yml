@@ -1,0 +1,34 @@
+# English OS — GitHub → Oracle Cloud 自动部署
+# 仅在 push 到 main（或手动 workflow_dispatch）时，SSH 进 Oracle VM 拉最新代码并重建容器。
+# 不改动任何业务代码；与既有 release.yml（桌面壳构建）互不影响。
+#
+# 使用前需在仓库 Settings → Secrets → Actions 配置：
+#   ORACLE_HOST    Oracle VM 公网 IP 或域名
+#   ORACLE_USER    SSH 用户名（Ubuntu 镜像默认 ubuntu，需有 sudo 免密或脚本已用 root）
+#   ORACLE_SSH_KEY 私钥（对应 VM 上 ~/.ssh/authorized_keys 的公钥）
+#
+# 注意：VM 上的 /opt/english-os/.env 由你手动填写（含 Neon 连接串），不会被本工作流覆盖。
+
+name: Deploy to Oracle Cloud
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: SSH 部署到 Oracle VM
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.ORACLE_HOST }}
+          username: ${{ secrets.ORACLE_USER }}
+          key: ${{ secrets.ORACLE_SSH_KEY }}
+          script: |
+            set -e
+            cd /opt/english-os
+            git pull --ff-only
+            docker compose up -d --build
+            docker image prune -f
