@@ -1,0 +1,14 @@
+# 部署镜像构建上下文排除项（不进入镜像，减小体积、避免泄露）
+.git
+.github
+desktop
+tests
+data
+.venv
+__pycache__
+*.pyc
+*.pyo
+.env
+node_modules
+*.log
+.DS_Store
