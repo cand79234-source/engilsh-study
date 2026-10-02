@@ -101,9 +101,11 @@ _LIST_MARK_RE = re.compile(r"^[\s]*[-–—•·▪◦‣▪]+\s+")
 
 # 场景块标题（中文格式，与前端 WEEK_SCENE_PROMPT_TPL 输出一致）：
 #   场景 1｜<名称>        → 小场景（daily 10 个小场景，2–3 个当天词）
+#   小场景 1｜<名称>      → 小场景（同上，AI 输出的 markdown "### 小场景N｜" 也认）
 #   大场景 1｜<名称>      → 大场景（综合复习，复习词 + 当天词）
-# 前缀「大」判定 tier；后面跟数字才认，避免误伤「今日综合复习｜5个大场景」这类分区标题。
-_SCENE_TITLE_RE = re.compile(r"(大?)\s*场景\s*(\d+)\s*[｜|]\s*(.*)")
+# 前缀「大/小」判定 tier；后面跟数字才认，避免误伤「今日综合复习｜5个大场景」这类分区标题。
+# 行首的 markdown "#/##/### " 不影响识别：finditer 会在文本里扫到「小场景N｜」子串。
+_SCENE_TITLE_RE = re.compile(r"(大|小)?\s*场景\s*(\d+)\s*[｜|]\s*(.*)")
 # 块内字段头（与用户给定格式一致）
 _SCENE_DESC_RE = re.compile(r"^场景说明\s*[:：]")          # 场景文本（中文情境）
 _USE_WORDS_RE = re.compile(r"^使用单词\s*[:：]")          # 小场景：使用的当天词
@@ -641,7 +643,8 @@ def _parse_large_scene_block(block):
             continue
         tm = _SCENE_TITLE_RE.match(s)
         if tm:                                  # 块首标题行：判定 tier
-            tier = "large" if tm.group(1) else "small"
+            # 只有前缀是「大」才判大场景；「小」或纯「场景」都归小场景
+            tier = "large" if tm.group(1) == "大" else "small"
             continue
         if _SCENE_DESC_RE.match(s):
             mode = "desc"
