@@ -99,6 +99,15 @@ _SCENE_LINE = re.compile(
 # 行首列表标记（-、•、·等；不含 */★，它们是重点词标记）
 _LIST_MARK_RE = re.compile(r"^[\s]*[-–—•·▪◦‣▪]+\s+")
 
+# 大/中/小场景块标题：形如  Scene 1｜large / Scene 3｜medium / Scene 2｜small
+# （用户「复制提示词 → 外部 AI 生成 → 导入」带来的场景，运行时系统不再调 AI 造）。
+# 负向后顾保证不匹配 "RScene"（复习场景块用 RScene 命名，不在此处解析）。
+_LARGE_SCENE_RE = re.compile(
+    r"(?<![A-Za-z])Scene\s+(\d+)\s*[｜|]\s*(large|medium|small)", re.I)
+_WORDS_HEAD_RE = re.compile(r"^使用词\s*[:：]")
+_SCENE_HEAD_RE = re.compile(r"^场景\s*[:：]")
+_CN_HEAD_RE = re.compile(r"^中文理解\s*[:：]")
+
 
 def _parse_scene_line(s):
     """识别情景标签行，返回 (场景序号或None, 同一行里跟在标签后的内容)。
@@ -588,9 +597,80 @@ def _normalize_text(text):
     return text
 
 
+def _parse_large_scene_block(block):
+    """解析单个 Scene 块正文，返回 (words, scene_text)。
+
+    块结构（用户提示词 #二十四·五）：
+        Scene 1｜large
+        使用词：
+        - word1
+        - word2
+        场景：
+        English scene text（可多行）
+        中文理解：
+        中文翻译
+    """
+    words = []
+    scene_text = []
+    mode = None
+    for raw in block.splitlines():
+        s = raw.strip()
+        if not s:
+            continue
+        if _WORDS_HEAD_RE.match(s):
+            mode = "words"
+            continue
+        if _SCENE_HEAD_RE.match(s):
+            mode = "scene"
+            rest = _SCENE_HEAD_RE.sub("", s).strip()
+            if rest:
+                scene_text.append(rest)
+            continue
+        if _CN_HEAD_RE.match(s):
+            mode = "cn"          # 中文理解：仅作辅助，不入库
+            continue
+        if mode == "words":
+            w = re.sub(r"^[\-\u2022\u00b7\u30fb\d\.、]+\s*", "", s).strip().strip("`").strip()
+            if w and _is_english_word(w):
+                words.append(w.lower())
+        elif mode == "scene":
+            scene_text.append(s)
+    return words, " ".join(scene_text).strip()
+
+
+def _extract_large_scenes(text):
+    """抽走文本里所有 Scene N｜tier 块，返回 (scenes, cleaned_text)。
+
+    scenes: [{"tier": "large"/"medium"/"small", "words": [...], "text": "..."}, ...]
+    cleaned_text: 去掉这些块后的正文，交给主解析器（不干扰每词 Mini Scenario）。
+    找不到块则原样返回。
+    """
+    spans = [m.start() for m in _LARGE_SCENE_RE.finditer(text)]
+    if not spans:
+        return [], text
+    spans.append(len(text))
+    scenes = []
+    parts = []
+    prev = 0
+    for i in range(len(spans) - 1):
+        start, end = spans[i], spans[i + 1]
+        block = text[start:end]
+        tm = _LARGE_SCENE_RE.search(block)
+        tier = (tm.group(2) or "large").strip().lower()
+        words, scene_text = _parse_large_scene_block(block)
+        if words and scene_text:
+            scenes.append({"tier": tier, "words": words, "text": scene_text})
+        parts.append(text[prev:start])   # 块之前的文本保留
+        prev = end
+    parts.append(text[prev:])
+    return scenes, "".join(parts)
+
+
 def parse_import(text):
     """主解析入口。返回结构见文件头。"""
     text = _normalize_text(text)
+    # 先把「Scene N｜tier」大/中/小场景块抽走（这些来自导入，不归每词 Mini Scenario）：
+    large_scenes, text = _extract_large_scenes(text)
     if _looks_like_block(text):
         parsed = _parse_block(text)
     else:
@@ -604,4 +684,6 @@ def parse_import(text):
         "grammar": parsed["grammar"], "groups": groups, "flat": flat,
         "warnings": warnings, "skipped": parsed["skipped"],
         "header_lines": parsed["header_lines"],
+        # 导入带来的大/中/小场景（运行时系统不再调 AI 生成，见 scenario.AI_TIERS=()）
+        "large_scenes": large_scenes,
     }

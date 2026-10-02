@@ -230,6 +230,7 @@ def import_rich_week(text, forced_stage=None, forced_week=None):
     added_ex = 0
     added_col = 0
     autogen = 0
+    large_scenes = parsed.get("large_scenes") or []
     # 词库已有词（用于补缺）—— 只查本次涉及的词，不读全表（见 _load_known 注释）
     known = _load_known(conn, [w["word"] for g in groups for w in g["words"]])
 
@@ -291,6 +292,7 @@ def import_rich_week(text, forced_stage=None, forced_week=None):
     svc.update_week(stage, week, title=title, vocab=new_vocab)
     _move_progress_to(stage, week)
     _trigger_scenarios(new_vocab, stage, week)
+    _store_large_scenes(large_scenes)
     total = len(new_vocab)
     day_counts = {}
     for v in new_vocab:
@@ -309,50 +311,77 @@ def import_rich_week(text, forced_stage=None, forced_week=None):
 
 
 def _trigger_scenarios(new_vocab, stage, week):
-    """导入成功后的情景主触发（设计方案 §2.1 触发点①）。
+    """导入成功后的情景触发 —— 2026-09 起改为**空操作**。
 
-    「导入 → 情景已生成就绪」：用户之后打开造句时场景早就在库里，
-    先看场景再写第一句 —— 而不是写完第一句才临时生成（旧设计顺序反了，已推翻）。
+    历史行为：导入后后台调 AI 现生成大场景（scenario.ensure_for_words）。
+    现已关闭：大场景改由用户「复制提示词 → 外部 AI 生成 → 导入」提供，
+    见 scenario.AI_TIERS=() 与 importer 的 large_scenes 解析。
+    系统运行期只保留 ai_correct 批改调用，导入绝不再偷偷调 AI 烧额度。
 
-    - 后台线程跑：批量生成不阻塞导入结果返回，用户不需要在页面前干等
-    - 已生成过的词自动跳过，不重复烧 token
-    - AI 只往 word_scenarios 写情景文字，绝不碰导入列表、周次、进度
-    - **只补 Day1 那批**（2026-09-10 改）：导入通常是整周 120 词，全部一次补
-      要 240 次 AI 调用，又慢又贵；而用户当天只学 Day1。其余的天数交给
-      scenario.backfill_step 按天慢慢补（页面访问 / 外部定时器驱动）。
-    - ⚠️ 2026-09-11：**只生成 large（组合句）那一层**。
-      基础句（small）的情景不再由 AI 生成，而是导入材料里词条自带的
-      Mini Scenario 1/2/3（由 importer 解析，存在 vocab_json / day_items 里）。
-      ensure_for_words 内部已按 AI_TIERS 只跑 large，这里无需额外过滤。
+    大场景随导入文本解析后经 _store_large_scenes 直接入库（见 import_rich_week）。
     """
+    return
+
+
+def _store_large_scenes(large_scenarios):
+    """把导入带进来的大/中场景写进 word_scenarios（tier='large'）。
+
+    - 只认 tier='large'/'medium'，small 来自每词 Mini Scenario 不走这里；
+      medium 是死层，并入 large 才能被组合句页取到，避免素材丢失。
+    - 覆盖导入语义：先按「本次涉及的所有词」一次性 DELETE 旧 large，再写入
+      本次全部场景 —— 这样同一个词出现在多个场景块时不会被后面的块误删。
+    - 一个场景列了多个词 → 每个词都存一份（用户确认的落库方式）。
+    返回入库条数。
+    """
+    if not large_scenarios:
+        return 0
+    pairs = []          # (word, text) 去重后待写
+    seen = set()
+    words = set()
+    for sc in (large_scenarios or []):
+        tier = (sc.get("tier") or "large").lower()
+        if tier not in ("large", "medium"):
+            continue
+        text = (sc.get("text") or "").strip()
+        if len(text) < 4:
+            continue
+        for w in (sc.get("words") or []):
+            wl = (w or "").strip().lower()
+            if not wl:
+                continue
+            key = (wl, text)
+            if key in seen:
+                continue
+            seen.add(key)
+            pairs.append(key)
+            words.add(wl)
+    if not pairs:
+        return 0
+    conn = get_conn()
+    saved = 0
     try:
-        import scenario
-        if not scenario.ai_enabled():
-            return
-        words = [v.get("word") for v in (new_vocab or []) if v.get("word")]
-        if not words:
-            return
-        # 只取第一天（Day1）的词；分组信息缺失时退回全部（行为与旧版一致）
+        for wl in words:
+            conn.execute(
+                "DELETE FROM word_scenarios WHERE word=? AND tier='large'", (wl,))
+        for wl, text in pairs:
+            conn.execute(
+                "INSERT INTO word_scenarios (word, tier, prompt, grammar, used_count, created_at)"
+                " VALUES (?,?,?,?,0,?)",
+                (wl, "large", text[:600], "", ts()))
+            saved += 1
+        conn.commit()
+    except Exception as e:
+        print("[weekimport] 大场景入库失败(不影响导入):", e)
         try:
-            _days = sorted({int(v.get("day") or 0) for v in (new_vocab or [])
-                            if v.get("day")})
-        except Exception:
-            _days = []
-        if _days:
-            first = _days[0]
-            only = [v.get("word") for v in (new_vocab or [])
-                    if v.get("word") and int(v.get("day") or 0) == first]
-        else:
-            only = words
-        grammar = ""
-        try:
-            grammar = (svc.get_week(stage, week) or {}).get("grammar") or ""
+            conn.rollback()
         except Exception:
             pass
-        scenario.spawn(scenario.ensure_for_words, words, grammar, 3, only, stage)
-    except Exception as e:
-        # 情景是增强项：生成失败绝不能影响导入本身的结果
-        print("[weekimport] 情景生成触发失败（不影响导入）:", e)
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
+    return saved
 
 
 def _move_progress_to(stage, week, day=1):
@@ -440,6 +469,7 @@ def import_rich_week_merge(text, forced_stage=None, forced_week=None):
 
     existing = svc.get_week(stage, week) or {"title": title, "vocab": []}
     base_vocab = existing.get("vocab") or []
+    large_scenes = parsed.get("large_scenes") or []
     # 保留其它天的旧词，本次涉及的天将被替换。
     # 关键修复：系统「预设填充」词（ensure_week_content 按主题自动补的词）没有 day 字段、
     # 且标记为 source='builtin'；若不过滤会被当作"其它天"一起保留，混入用户没填的词。
@@ -465,6 +495,7 @@ def import_rich_week_merge(text, forced_stage=None, forced_week=None):
     svc.update_week(stage, week, title=title or existing.get("title"), vocab=new_vocab)
     _move_progress_to(stage, week)
     _trigger_scenarios([v for v in new_vocab if v.get("day")], stage, week)
+    _store_large_scenes(large_scenes)
     # 统计各天词数。注意：kept 里可能混有旧版/自动填充的无 day 字段条目，
     # 用 get 防 KeyError（此前在"已有自动填充内容的周"上合并导入会 500）。
     day_counts = {}

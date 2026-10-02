@@ -413,6 +413,11 @@ def generate_for_word(word, grammar="", n=GEN_COUNT, extra=None, need_tier=None,
     word = (word or "").strip().lower()
     if not word or not ai_correct.ai_enabled():
         return 0
+    # 2026-09：运行时 AI 情景生成已整体关闭（见 AI_TIERS）。
+    # 大场景改由用户「复制提示词 → 外部 AI 生成 → 导入」提供，
+    # 系统运行期只保留 ai_correct 批改调用，不再消耗额度生成情景。
+    if not AI_TIERS:
+        return 0
     nt = (str(need_tier) if need_tier else "").strip().lower() or None
     if nt not in ("small", "large"):
         nt = None
@@ -598,7 +603,9 @@ TIER_TARGET = {"small": 3, "large": 3}
 #   所以下面所有「补货」逻辑都只遍历 AI_TIERS，不再碰 small ——
 #   这样即使历史库里还有 small 的 AI 情景，也不会再新增。
 #   想要恢复 old 行为，把 "small" 加回来即可。
-AI_TIERS = ("large",)
+# 2026-09：运行时 AI 情景生成已整体关闭 —— 大场景改由用户导入提供，
+# 系统运行期不再调 AI 造情景（见 generate_for_word 顶部守卫）。
+AI_TIERS = ()
 
 
 def pick(word, exclude_id=0, tier=None):
