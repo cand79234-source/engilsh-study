@@ -343,159 +343,37 @@ ERROR_TYPES = [
 ]
 
 STAGES = [
-    {"stage": 0, "name": "阶段0｜基础重建", "weeks": 12, "months": "第1-3月"},
-    {"stage": 1, "name": "阶段1｜旅行生存英语", "weeks": 12, "months": "第4-6月"},
-    {"stage": 2, "name": "阶段2｜工作沟通英语", "weeks": 16, "months": "第7-10月"},
-    {"stage": 3, "name": "阶段3｜社会与信息输入", "weeks": 16, "months": "第11-14月"},
-    {"stage": 4, "name": "阶段4｜雅思输出突破", "weeks": 20, "months": "第15-19月"},
-    {"stage": 5, "name": "阶段5｜雅思综合与强化", "weeks": 20, "months": "第20-24月"},
+    {"stage": 0, "name": "阶段0｜真实场景英语重建", "weeks": 16, "months": "全程16周"},
 ]
 
-# 96 周课程地图（阶段｜周｜主题｜语法）——已固化，后续只允许改词汇内容，不再改这张地图。
-# 阶段0 基础重建 12 周 / 阶段1 旅行生存英语 12 周 / 阶段2 工作沟通英语 16 周 /
-# 阶段3 社会与信息输入 16 周 / 阶段4 雅思输出突破 20 周 / 阶段5 雅思综合与强化 20 周
+# 16 周课程地图（单阶段0：阶段｜周｜主题｜语法）——已固化，后续只允许改词汇内容，不再改这张地图。
+# 主题依据用户给定的「16周词汇主题依据」精简而来；语法按 A2→B1 递进配置。词汇由用户自行导入。
 SEED_WEEKS = [
-    (0, 1, "家庭与人际", "be动词、人称代词、物主代词"),
-    (0, 2, "工作与日常", "一般现在时、频率副词"),
-    (0, 3, "爱好与休闲", "like / enjoy / hate + doing"),
-    (0, 4, "时间与生活", "一般过去时"),
-    (0, 5, "交通与出行", "一般将来时 will / be going to"),
-    (0, 6, "购物与消费", "可数/不可数名词、some / any / much / many"),
-    (0, 7, "地点与城市", "there be、方位介词"),
-    (0, 8, "天气与季节", "形容词、副词、比较级、最高级"),
-    (0, 9, "食物与饮食", "can / can't、能力与请求"),
-    (0, 10, "健康与身体", "must / should / have to"),
-    (0, 11, "综合描述", "that / which / who / where / when"),
-    (0, 12, "综合复习", "基础被动语态、全语法抽测"),
+    (0, 1, "真实的自己与生活", "一般现在时、be动词、人称代词"),
+    (0, 2, "我的一天", "一般现在时、频率副词"),
+    (0, 3, "喜好与选择", "like / enjoy / hate + doing、prefer"),
+    (0, 4, "最近发生的事", "一般过去时、时间表达"),
+    (0, 5, "计划与安排", "一般将来时 will / be going to、时间从句"),
+    (0, 6, "需求与询问", "情态动词 can/could、疑问句、would like"),
+    (0, 7, "地点与路线", "there be、方位介词、问路表达"),
+    (0, 8, "比较与建议", "比较级/最高级、should"),
+    (0, 9, "约人与社交", "祈使句、礼貌请求、现在进行时表将来"),
+    (0, 10, "问题与求助", "情态动词 should/must、条件句基础"),
+    (0, 11, "描述人与物", "定语从句 who/which/that、形容词"),
+    (0, 12, "一件工作的事", "现在完成时、被动语态基础"),
+    (0, 13, "一次旅行", "过去时、现在完成时、旅行表达"),
+    (0, 14, "计划变化", "条件句、情态动词、将来时"),
+    (0, 15, "连续讲述经历", "时态综合、连接词、从句"),
+    (0, 16, "真实互动综合", "全语法综合、自然表达"),
 ]
 
-SEED_WEEKS_STAGES15 = {
-    1: [
-        (1, 1, "机场与值机", "现在进行时、一般现在时表示固定安排"),
-        (1, 2, "飞机与飞行", "现在进行时、祈使句"),
-        (1, 3, "入境与海关", "一般过去时、现在完成时基础"),
-        (1, 4, "酒店入住", "would like、want to、need to"),
-        (1, 5, "酒店问题与投诉", "there is / are、should / could"),
-        (1, 6, "餐厅点餐", "可数/不可数、some / any、would like"),
-        (1, 7, "购物与退换货", "比较级、最高级、too / enough"),
-        (1, 8, "问路与导航", "祈使句、方位介词、疑问句"),
-        (1, 9, "公共交通", "一般现在时、一般将来时、时间从句基础"),
-        (1, 10, "景点与门票", "过去时、现在完成时基础"),
-        (1, 11, "旅行活动与体验", "动词不定式、动名词基础"),
-        (1, 12, "旅行突发情况", "情态动词 can / could / should / must、条件句基础"),
-    ],
-    2: [
-        (2, 1, "公司与岗位", "一般现在时、there be"),
-        (2, 2, "同事与团队", "人称代词、物主代词、反身代词"),
-        (2, 3, "工作任务与安排", "一般现在时、一般将来时"),
-        (2, 4, "工作进度与时间管理", "现在进行时、现在完成时"),
-        (2, 5, "邮件与消息", "祈使句、礼貌请求、would / could"),
-        (2, 6, "请求与确认", "疑问句、间接疑问句基础"),
-        (2, 7, "问题与解决方案", "should / need to / have to"),
-        (2, 8, "客户与需求", "who / which / that 定语从句基础"),
-        (2, 9, "产品与功能", "被动语态基础"),
-        (2, 10, "技术问题与故障", "现在完成时、被动语态"),
-        (2, 11, "会议与讨论", "同意/不同意、比较结构、连接词"),
-        (2, 12, "汇报与展示", "过去时、现在时、将来时综合"),
-        (2, 13, "项目计划与执行", "将来时、时间从句、条件句"),
-        (2, 14, "反馈与改进", "比较级、too / enough、动名词"),
-        (2, 15, "跨部门沟通", "条件句、情态动词、间接表达"),
-        (2, 16, "职场综合沟通", "时态综合、被动语态、从句综合"),
-    ],
-    3: [
-        (3, 1, "教育与学习", "现在完成时、过去时对比"),
-        (3, 2, "科技与互联网", "被动语态、定语从句"),
-        (3, 3, "人工智能", "现在/将来时、被动语态"),
-        (3, 4, "工作与职业发展", "条件句、将来时"),
-        (3, 5, "金钱与消费社会", "比较级、数量表达、百分比表达"),
-        (3, 6, "城市与住房", "there be、定语从句"),
-        (3, 7, "环境与气候", "被动语态、因果连接词"),
-        (3, 8, "健康与生活方式", "情态动词、建议表达"),
-        (3, 9, "媒体与新闻", "被动语态、过去时、现在完成时"),
-        (3, 10, "社交媒体", "现在完成时、进行时"),
-        (3, 11, "文化与娱乐", "定语从句、动名词/不定式"),
-        (3, 12, "旅行与全球化", "比较结构、因果关系"),
-        (3, 13, "家庭与社会关系", "条件句、让步关系"),
-        (3, 14, "年轻人与社会", "观点表达、比较结构"),
-        (3, 15, "问题与社会变化", "被动语态、现在完成时"),
-        (3, 16, "观点与日常讨论", "复合句、连接词、从句综合"),
-    ],
-    4: [
-        (4, 1, "教育制度", "复杂定语从句、被动语态"),
-        (4, 2, "学习方式", "比较结构、原因与结果"),
-        (4, 3, "科技发展", "被动语态、现在完成时"),
-        (4, 4, "人工智能与未来", "将来时、条件句"),
-        (4, 5, "网络与信息", "定语从句、被动语态"),
-        (4, 6, "工作与就业", "条件句、情态动词"),
-        (4, 7, "职业选择", "比较结构、让步从句"),
-        (4, 8, "城市发展", "there be、被动语态、定语从句"),
-        (4, 9, "住房问题", "比较结构、原因结果"),
-        (4, 10, "交通问题", "被动语态、条件句"),
-        (4, 11, "环境保护", "被动语态、因果与让步"),
-        (4, 12, "气候变化", "现在完成时、被动语态"),
-        (4, 13, "健康与医疗", "情态动词、条件句"),
-        (4, 14, "饮食与生活方式", "比较结构、因果关系"),
-        (4, 15, "政府与公共服务", "被动语态、情态动词"),
-        (4, 16, "社会公平", "比较结构、让步从句"),
-        (4, 17, "文化与传统", "定语从句、被动语态"),
-        (4, 18, "全球化", "因果关系、让步关系"),
-        (4, 19, "媒体与广告", "被动语态、比较结构"),
-        (4, 20, "娱乐与休闲", "动名词、不定式、定语从句"),
-    ],
-    5: [
-        (5, 1, "教育与社会", "复杂句综合、从句连接"),
-        (5, 2, "科技与社会", "被动语态、复杂定语从句"),
-        (5, 3, "环境与发展", "条件句、让步从句"),
-        (5, 4, "工作与经济", "条件句、比较结构"),
-        (5, 5, "城市与人口", "定语从句、数量表达"),
-        (5, 6, "健康与公共政策", "情态动词、被动语态"),
-        (5, 7, "媒体与信息", "被动语态、间接表达"),
-        (5, 8, "文化与全球化", "让步、因果、比较结构"),
-        (5, 9, "家庭与代际关系", "条件句、比较结构"),
-        (5, 10, "犯罪与社会治理", "被动语态、情态动词"),
-        (5, 11, "政府与个人责任", "条件句、情态动词"),
-        (5, 12, "消费与生活质量", "比较结构、数量表达"),
-        (5, 13, "动物与自然", "被动语态、定语从句"),
-        (5, 14, "艺术与文化", "定语从句、比较结构"),
-        (5, 15, "科技伦理与未来", "条件句、将来时、情态动词"),
-        (5, 16, "社会问题综合讨论", "复杂句、连接词综合"),
-        (5, 17, "雅思高频混合主题一", "时态综合、从句综合"),
-        (5, 18, "雅思高频混合主题二", "被动语态、条件句综合"),
-        (5, 19, "雅思弱项主题强化一", "根据模考错误动态强化"),
-        (5, 20, "雅思弱项主题强化二", "根据模考错误动态强化"),
-    ],
-}
 
-# 全部 96 周 = 阶段0 + 阶段1-5，供初始化与线上老库同步使用
+# 全部 16 周（单阶段0），供初始化与老库同步使用
 def all_seed_weeks():
-    """返回 [(stage, week_no, title, grammar), ...]，共 96 条。"""
-    out = list(SEED_WEEKS)
-    for st in sorted(SEED_WEEKS_STAGES15.keys()):
-        out.extend(SEED_WEEKS_STAGES15[st])
-    return out
+    """返回 [(stage, week_no, title, grammar), ...]，共 16 条。"""
+    return list(SEED_WEEKS)
 
-SEED_WEEK3_VOCAB = [
-    {"word": "hobby", "meaning": "爱好", "pos": "名词", "collocation": "a hobby / my hobby", "example": "Reading is my hobby."},
-    {"word": "relax", "meaning": "放松", "pos": "动词", "collocation": "relax at home / relax after work", "example": "I like to relax on weekends."},
-    {"word": "enjoy", "meaning": "享受，喜欢", "pos": "动词", "collocation": "enjoy doing sth", "example": "I enjoy listening to music."},
-    {"word": "practice", "meaning": "练习", "pos": "动词/名词", "collocation": "practice the guitar / practice every day", "example": "I practice English every morning."},
-    {"word": "exercise", "meaning": "锻炼，练习", "pos": "动词/名词", "collocation": "do exercise / exercise daily", "example": "Exercise keeps me healthy."},
-    {"word": "sing", "meaning": "唱歌", "pos": "动词", "collocation": "sing a song / love singing", "example": "She sings very well."},
-    {"word": "dance", "meaning": "跳舞", "pos": "动词/名词", "collocation": "dance to music / go dancing", "example": "We dance at the party."},
-    {"word": "draw", "meaning": "画画", "pos": "动词", "collocation": "draw a picture", "example": "I draw pictures in my free time."},
-    {"word": "travel", "meaning": "旅行", "pos": "动词/名词", "collocation": "travel abroad / go traveling", "example": "I want to travel around the world."},
-    {"word": "cook", "meaning": "做饭", "pos": "动词", "collocation": "cook dinner / cooking class", "example": "I cook dinner at 7."},
-    {"word": "game", "meaning": "游戏", "pos": "名词", "collocation": "play games / video game", "example": "We play games together."},
-    {"word": "free", "meaning": "空闲的，自由的", "pos": "形容词", "collocation": "free time / be free", "example": "I am free this afternoon."},
-    {"word": "interesting", "meaning": "有趣的", "pos": "形容词", "collocation": "an interesting book / very interesting", "example": "The movie is interesting."},
-    {"word": "fun", "meaning": "有趣的，乐趣", "pos": "名词/形容词", "collocation": "have fun / a fun game", "example": "We had fun yesterday."},
-    {"word": "weekend", "meaning": "周末", "pos": "名词", "collocation": "at the weekend / last weekend", "example": "I relax at the weekend."},
-    {"word": "together", "meaning": "一起", "pos": "副词", "collocation": "do sth together / work together", "example": "We study together."},
-    {"word": "like", "meaning": "喜欢", "pos": "动词", "collocation": "like doing / like to do", "example": "I like swimming."},
-    {"word": "hate", "meaning": "讨厌", "pos": "动词", "collocation": "hate doing sth", "example": "I hate getting up early."},
-    {"word": "movie", "meaning": "电影", "pos": "名词", "collocation": "watch a movie / go to the movies", "example": "I watch a movie tonight."},
-    {"word": "music", "meaning": "音乐", "pos": "名词", "collocation": "listen to music / play music", "example": "I listen to music every day."},
-]
+# 词汇由用户自行导入，不再内置任何词（原 SEED_WEEK3_VOCAB 已移除）。
 
 
 def insert_get_id(conn, sql, params=None):
@@ -533,7 +411,7 @@ _ECDICT_BG_STARTED = False
 
 
 def sync_curriculum_map(conn=None):
-    """把 96 周课程地图同步进 weeks 表。
+    """把 16 周课程地图同步进 weeks 表。
 
     - 地图里缺的周 → 插入（新建库 / 老库补 13-20 周）
     - 已存在的周 → 只把 title / grammar 对齐到地图（老库存的旧骨架会被纠正）
@@ -550,7 +428,7 @@ def sync_curriculum_map(conn=None):
                 "SELECT title, grammar FROM weeks WHERE stage=? AND week_no=?", (st, w)
             ).fetchone()
             if not row:
-                vocab = SEED_WEEK3_VOCAB if (st == 0 and w == 3) else []
+                vocab = []
                 c.execute(
                     "INSERT INTO weeks (stage, week_no, title, grammar, vocab_json) VALUES (?,?,?,?,?)",
                     (st, w, title, grammar, json.dumps(vocab, ensure_ascii=False)),
@@ -567,7 +445,7 @@ def sync_curriculum_map(conn=None):
                     changed += 1
         conn.commit()
         if changed:
-            print(f"[db] 课程地图已同步：{changed} 处（96 周「阶段｜周｜主题｜语法」）")
+            print(f"[db] 课程地图已同步：{changed} 处（16 周「阶段｜周｜主题｜语法」）")
         return changed
     except Exception as e:
         print("[db] 课程地图同步失败（不影响启动）:", e)
@@ -899,7 +777,7 @@ def init_db():
         now = app_now().isoformat()
         c.execute("INSERT INTO progress (id, stage, week, day, last_activity, updated_at) VALUES (1, 0, 3, 1, 'vocab', ?)", (now,))
 
-    # 96 周课程地图：缺失的周插入，已存在的周把 title/grammar 对齐到地图
+    # 16 周课程地图：缺失的周插入，已存在的周把 title/grammar 对齐到地图
     # （不动 vocab_json —— 用户导入的词汇内容必须原样保留）
     sync_curriculum_map(conn)
 
