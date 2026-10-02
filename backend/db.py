@@ -443,6 +443,11 @@ def sync_curriculum_map(conn=None):
                         (title, grammar, st, w),
                     )
                     changed += 1
+        # —— 清理不在地图里的旧骨架：老库从「多阶段/超纲周」升级到单阶段 16 周时，
+        #    残留的 stage 1-5、week 17-96 这类旧结构必须删掉，否则 /api/curriculum 会把它们
+        #    也读出来，前端显示成「多个阶段 + 旧主题」。当前单阶段库（stage0/1-16）不受影响。
+        valid = {(st, w) for (st, w, _, _) in all_seed_weeks()}
+        changed += _clean_orphan_weeks(c, valid)
         conn.commit()
         if changed:
             print(f"[db] 课程地图已同步：{changed} 处（16 周「阶段｜周｜主题｜语法」）")
@@ -460,6 +465,30 @@ def sync_curriculum_map(conn=None):
                 conn.close()
             except Exception:
                 pass
+
+
+def _clean_orphan_weeks(cursor, valid):
+    """删除 weeks 表里不在 valid(stage,week_no) 集合中的旧骨架行，
+    并连带清理指向这些已删周的子表残留数据（子表用普通列存 stage/week，无外键约束，手动清）。
+    只动「不属于当前课程地图」的周 —— 当前单阶段库（stage0/1-16）不会因为 valid 集合而误删。
+    返回删除的周行数。
+    """
+    rows = cursor.execute("SELECT id, stage, week_no FROM weeks").fetchall()
+    stale = [r[0] for r in rows if (r[1], r[2]) not in valid]
+    for wid in stale:
+        cursor.execute("DELETE FROM weeks WHERE id=?", (wid,))
+    if stale:
+        # 子表以「(stage,week) 是否仍存在于 weeks」判定孤儿，统一清掉，避免脏数据残留
+        for t in ("day_items", "sentences", "reviews", "history", "quizzes"):
+            try:
+                cols = {r[1] for r in cursor.execute(f"PRAGMA table_info({t})")}
+            except Exception:
+                continue
+            if "stage" in cols and "week" in cols:
+                cursor.execute(
+                    f"DELETE FROM {t} WHERE (stage, week) NOT IN "
+                    f"(SELECT stage, week_no FROM weeks)")
+    return len(stale)
 
 
 def init_db():

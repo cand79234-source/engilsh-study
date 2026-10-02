@@ -16,7 +16,7 @@ import json
 import re
 from datetime import datetime, timedelta
 
-from db import get_conn, ts, insert_get_id, app_now, _using_pg
+from db import get_conn, ts, insert_get_id, app_now, _using_pg, _ensure_columns
 from srs import schedule_review
 
 ERROR_TYPES = [
@@ -1853,12 +1853,36 @@ def _insert_sentence_with_attempt(conn, stage, week, day, word, task_key, res, n
                 conn.rollback()
             except Exception:
                 pass
-            if with_ai and any(_missing_column(ex, c) for c in _AI_INSERT_COLS):
-                with_ai = False      # 老库没迁移 ai_*：丢掉 AI 字段，重插一次
+            missing_ai = [c for c in _AI_INSERT_COLS if _missing_column(ex, c)]
+            if with_ai and missing_ai:
+                # 老库缺 ai_* 列：自动补列后保留 AI 结果重试（不再静默丢掉 AI 批改）。
+                # 列定义与 db.init_db 里的迁移完全一致，幂等。
+                _ensure_columns(conn, "sentences", {
+                    "ai_score": "INTEGER",
+                    "ai_corrected": "TEXT DEFAULT ''",
+                    "ai_errors_json": "TEXT DEFAULT '[]'",
+                    "ai_natural_json": "TEXT DEFAULT '[]'",
+                    "ai_expand_json": "TEXT DEFAULT '[]'",
+                    "ai_verdict": "TEXT DEFAULT ''",
+                    "ai_summary": "TEXT DEFAULT ''",
+                    "ai_model": "TEXT DEFAULT ''",
+                    "ai_at": "TEXT DEFAULT ''",
+                    "final_source": "TEXT DEFAULT ''",
+                })
                 tried = 0
-                continue
+                continue   # with_ai 保持 True，重试时带上 AI
             if _missing_column(ex, "category") and with_cat:
-                with_cat = False     # 老库没迁移：丢掉记账，重插一次
+                # 同理：缺记账列则自动补齐，保留 category 重试
+                _ensure_columns(conn, "sentences", {
+                    "word": "TEXT DEFAULT ''",
+                    "task_key": "TEXT DEFAULT ''",
+                    "category": "TEXT DEFAULT ''",
+                    "attempt": "INTEGER DEFAULT 1",
+                    "score": "INTEGER DEFAULT 0",
+                    "verdict": "TEXT DEFAULT ''",
+                    "errors_json": "TEXT DEFAULT '[]'",
+                    "opts_json": "TEXT DEFAULT '[]'",
+                })
                 tried = 0
                 continue
             _begin_write(conn)
