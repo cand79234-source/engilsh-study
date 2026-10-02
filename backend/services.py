@@ -1015,19 +1015,30 @@ def _build_combos(today_new, due_vocab, grammar, seed, n=10, per=5):
     n_eff = max(0, min(n, n_by_rev, n_by_new))       # 严格取小：任何一个池子不够就少出组
 
     combos, ri, ni = [], 0, 0
-    for gi in range(n_eff):
+    for gi in range(n):
         group = []
+        # 先凑 3 个：优先复习词；复习词不足（如第一周 / 无复习词）时用新词补，
+        # 避免整页空白。复习词优先、不会被挤掉。
         for _ in range(n_per_rev):
-            group.append({"word": review_words[ri].get("word"),
-                          "meaning": review_words[ri].get("meaning") or "",
-                          "review": True})
-            ri += 1
+            if ri < len(review_words):
+                group.append({"word": review_words[ri].get("word"),
+                              "meaning": review_words[ri].get("meaning") or "",
+                              "review": True}); ri += 1
+            elif ni < len(new_words):
+                group.append({"word": new_words[ni].get("word"),
+                              "meaning": new_words[ni].get("meaning") or "",
+                              "review": False}); ni += 1
+        # 再凑 2 个：优先新词，新词不足时用复习词补
         for _ in range(n_per_new):
-            group.append({"word": new_words[ni].get("word"),
-                          "meaning": new_words[ni].get("meaning") or "",
-                          "review": False})
-            ni += 1
-        # 收摊：严格 3+2 —— 这里理论上永远成立（n_eff 已保证），留断言式兜底
+            if ni < len(new_words):
+                group.append({"word": new_words[ni].get("word"),
+                              "meaning": new_words[ni].get("meaning") or "",
+                              "review": False}); ni += 1
+            elif ri < len(review_words):
+                group.append({"word": review_words[ri].get("word"),
+                              "meaning": review_words[ri].get("meaning") or "",
+                              "review": True}); ri += 1
+        # 新老词都耗尽、凑不足一组则收摊
         if len(group) != per:
             break
 

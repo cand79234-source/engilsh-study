@@ -385,6 +385,23 @@ def _store_large_scenes(large_scenarios):
     return saved
 
 
+def _collect_scene_words(large_scenarios):
+    """从导入的大/小场景块里收集所有出现过的词（去重、小写）。
+
+    用于「纯场景导入」时把场景里涉及的词自动补进本周词汇表，
+    否则词汇表为空 → 组合表达页因没有词可生成题目而整页空白。
+    """
+    out = []
+    seen = set()
+    for sc in (large_scenarios or []):
+        for w in (sc.get("words") or []):
+            wl = (w or "").strip().lower()
+            if wl and wl not in seen:
+                seen.add(wl)
+                out.append(wl)
+    return out
+
+
 def _move_progress_to(stage, week, day=1):
     """导入成功后把当前学习位置切到导入的周（Day1）。
 
@@ -466,17 +483,43 @@ def import_rich_week_merge(text, forced_stage=None, forced_week=None):
     title = parsed.get("title", "")
     groups = parsed.get("groups") or []
     large_scenes = parsed.get("large_scenes") or []
-    # 纯场景导入（无单词、只有 场景/大场景 块）：保留本周已导入的词，只存场景。
-    # 否则既没词也没场景 → 视为空导入，报错。
+    # 纯场景导入（无单词、只有 场景/大场景 块）：
+    #   把场景里出现的词自动补进本周词汇表（已存在的词不重复），
+    #   否则词汇表为空 → 组合表达页没有词可生成题目 → 场景也挂不上、整页空白。
+    #   这样「只导场景」也能正常显示，先导词再导场景也不受影响。
     if not groups:
         if large_scenes:
             existing = svc.get_week(stage, week) or {"title": title, "vocab": []}
+            base_vocab = list(existing.get("vocab") or [])
+            known_words = {v.get("word", "").lower() for v in base_vocab if v.get("word")}
+            scene_words = _collect_scene_words(large_scenes)
+            added = 0
+            if scene_words:
+                conn = get_conn()
+                known = _load_known(conn, scene_words)
+                counters = {"added_new": 0, "added_examples": 0,
+                            "added_collocations": 0, "autogen": 0}
+                for wl in scene_words:
+                    if wl in known_words:
+                        continue
+                    entry = _build_word_entry(
+                        conn, known, 0, "来自场景",
+                        {"word": wl, "meaning": ""}, counters)
+                    base_vocab.append(entry)
+                    known_words.add(wl)
+                    added += 1
+                conn.commit()
+                conn.close()
+            svc.update_week(stage, week, title=existing.get("title") or title, vocab=base_vocab)
+            _move_progress_to(stage, week)
             _store_large_scenes(large_scenes)
             return {"ok": True, "stage": stage, "week": week,
                     "title": existing.get("title") or title,
-                    "total": len(existing.get("vocab") or []), "days": 0,
+                    "total": len(base_vocab), "days": 0,
                     "scenes": len(large_scenes),
-                    "note": "仅导入场景，未改动已导入单词。"}
+                    "added_new": added,
+                    "note": ("已导入场景，并把场景涉及的 %d 个词补入本周词汇表。" % added)
+                            if added else "已导入场景（词汇表已有这些词，未重复添加）。"}
         return {"ok": False, "error": "没有识别到任何单词，也没有可导入的场景。", "parse": parsed}
 
     existing = svc.get_week(stage, week) or {"title": title, "vocab": []}
