@@ -326,8 +326,9 @@ def _trigger_scenarios(new_vocab, stage, week):
 def _store_large_scenes(large_scenarios):
     """把导入带进来的大/中场景写进 word_scenarios（tier='large'）。
 
-    - 只认 tier='large'/'medium'，small 来自每词 Mini Scenario 不走这里；
-      medium 是死层，并入 large 才能被组合句页取到，避免素材丢失。
+    - 认 tier='large'/'medium'/'small'：large/medium 是综合复习大场景，
+      small 是每日 10 个小场景（均按中文格式由 importer 解析出来，统一存为
+      tier='large' 以便组合句页取到，避免素材丢失）。
     - 覆盖导入语义：先按「本次涉及的所有词」一次性 DELETE 旧 large，再写入
       本次全部场景 —— 这样同一个词出现在多个场景块时不会被后面的块误删。
     - 一个场景列了多个词 → 每个词都存一份（用户确认的落库方式）。
@@ -340,7 +341,7 @@ def _store_large_scenes(large_scenarios):
     words = set()
     for sc in (large_scenarios or []):
         tier = (sc.get("tier") or "large").lower()
-        if tier not in ("large", "medium"):
+        if tier not in ("large", "medium", "small"):
             continue
         text = (sc.get("text") or "").strip()
         if len(text) < 4:
@@ -464,12 +465,22 @@ def import_rich_week_merge(text, forced_stage=None, forced_week=None):
     stage = _resolve_stage(parsed.get("stage"), forced_stage)
     title = parsed.get("title", "")
     groups = parsed.get("groups") or []
+    large_scenes = parsed.get("large_scenes") or []
+    # 纯场景导入（无单词、只有 场景/大场景 块）：保留本周已导入的词，只存场景。
+    # 否则既没词也没场景 → 视为空导入，报错。
     if not groups:
-        return {"ok": False, "error": "没有识别到任何单词。", "parse": parsed}
+        if large_scenes:
+            existing = svc.get_week(stage, week) or {"title": title, "vocab": []}
+            _store_large_scenes(large_scenes)
+            return {"ok": True, "stage": stage, "week": week,
+                    "title": existing.get("title") or title,
+                    "total": len(existing.get("vocab") or []), "days": 0,
+                    "scenes": len(large_scenes),
+                    "note": "仅导入场景，未改动已导入单词。"}
+        return {"ok": False, "error": "没有识别到任何单词，也没有可导入的场景。", "parse": parsed}
 
     existing = svc.get_week(stage, week) or {"title": title, "vocab": []}
     base_vocab = existing.get("vocab") or []
-    large_scenes = parsed.get("large_scenes") or []
     # 保留其它天的旧词，本次涉及的天将被替换。
     # 关键修复：系统「预设填充」词（ensure_week_content 按主题自动补的词）没有 day 字段、
     # 且标记为 source='builtin'；若不过滤会被当作"其它天"一起保留，混入用户没填的词。

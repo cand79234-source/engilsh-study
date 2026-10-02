@@ -99,14 +99,18 @@ _SCENE_LINE = re.compile(
 # 行首列表标记（-、•、·等；不含 */★，它们是重点词标记）
 _LIST_MARK_RE = re.compile(r"^[\s]*[-–—•·▪◦‣▪]+\s+")
 
-# 大/中/小场景块标题：形如  Scene 1｜large / Scene 3｜medium / Scene 2｜small
-# （用户「复制提示词 → 外部 AI 生成 → 导入」带来的场景，运行时系统不再调 AI 造）。
-# 负向后顾保证不匹配 "RScene"（复习场景块用 RScene 命名，不在此处解析）。
-_LARGE_SCENE_RE = re.compile(
-    r"(?<![A-Za-z])Scene\s+(\d+)\s*[｜|]\s*(large|medium|small)", re.I)
-_WORDS_HEAD_RE = re.compile(r"^使用词\s*[:：]")
-_SCENE_HEAD_RE = re.compile(r"^场景\s*[:：]")
-_CN_HEAD_RE = re.compile(r"^中文理解\s*[:：]")
+# 场景块标题（中文格式，与前端 WEEK_SCENE_PROMPT_TPL 输出一致）：
+#   场景 1｜<名称>        → 小场景（daily 10 个小场景，2–3 个当天词）
+#   大场景 1｜<名称>      → 大场景（综合复习，复习词 + 当天词）
+# 前缀「大」判定 tier；后面跟数字才认，避免误伤「今日综合复习｜5个大场景」这类分区标题。
+_SCENE_TITLE_RE = re.compile(r"(大?)\s*场景\s*(\d+)\s*[｜|]\s*(.*)")
+# 块内字段头（与用户给定格式一致）
+_SCENE_DESC_RE = re.compile(r"^场景说明\s*[:：]")          # 场景文本（中文情境）
+_USE_WORDS_RE = re.compile(r"^使用单词\s*[:：]")          # 小场景：使用的当天词
+_REVIEW_WORDS_RE = re.compile(r"^复习单词\s*[:：]")        # 大场景：复习词
+_CURR_WORDS_RE = re.compile(r"^当天单词\s*[:：]")          # 大场景：当天词
+_EXPR_RE = re.compile(r"^综合表达\s*[:：]")               # 大场景：英文表达（追加进文本）
+_CN_MEAN_RE = re.compile(r"^中文意思\s*[:：]")            # 大场景：中文翻译（忽略，仅辅助）
 
 
 def _parse_scene_line(s):
@@ -597,55 +601,91 @@ def _normalize_text(text):
     return text
 
 
-def _parse_large_scene_block(block):
-    """解析单个 Scene 块正文，返回 (words, scene_text)。
+def _extract_words_from_line(line):
+    """从「使用单词：family, parent, relative」这类行抽出英文词列表。
 
-    块结构（用户提示词 #二十四·五）：
-        Scene 1｜large
-        使用词：
-        - word1
-        - word2
-        场景：
-        English scene text（可多行）
-        中文理解：
-        中文翻译
+    支持逗号/顿号/空格分隔；会去掉 （Day1） 这类中文/英文括号备注。
+    """
+    s = re.sub(r"[（(][^）)]*[)）]", "", line)        # 去掉括号备注
+    parts = re.split(r"[,，、\s]+", s.strip())
+    out = []
+    for p in parts:
+        p = p.strip().strip("`").strip()
+        if re.match(r"^[a-zA-Z][a-zA-Z'\-]*$", p):
+            out.append(p.lower())
+    return out
+
+
+def _parse_large_scene_block(block):
+    """解析单个 场景/大场景 块正文，返回 (words, scene_text, tier)。
+
+    小场景结构：
+        场景 1｜<名称>
+        场景说明：<情境描述>
+        使用单词：family, parent, relative
+    大场景结构：
+        大场景 1｜<名称>
+        场景说明：<情境描述>
+        复习单词：currently, hometown, lifestyle
+        当天单词：family, parent, relative
+        综合表达：<英文表达>   （可选，追加进文本）
+        中文意思：<中文翻译>   （可选，忽略）
     """
     words = []
     scene_text = []
+    tier = "small"
     mode = None
     for raw in block.splitlines():
         s = raw.strip()
         if not s:
             continue
-        if _WORDS_HEAD_RE.match(s):
-            mode = "words"
+        tm = _SCENE_TITLE_RE.match(s)
+        if tm:                                  # 块首标题行：判定 tier
+            tier = "large" if tm.group(1) else "small"
             continue
-        if _SCENE_HEAD_RE.match(s):
-            mode = "scene"
-            rest = _SCENE_HEAD_RE.sub("", s).strip()
+        if _SCENE_DESC_RE.match(s):
+            mode = "desc"
+            rest = _SCENE_DESC_RE.sub("", s).strip()
             if rest:
                 scene_text.append(rest)
             continue
-        if _CN_HEAD_RE.match(s):
-            mode = "cn"          # 中文理解：仅作辅助，不入库
+        if _USE_WORDS_RE.match(s):
+            mode = "use"
+            words.extend(_extract_words_from_line(_USE_WORDS_RE.sub("", s)))
             continue
-        if mode == "words":
-            w = re.sub(r"^[\-\u2022\u00b7\u30fb\d\.、]+\s*", "", s).strip().strip("`").strip()
-            if w and _is_english_word(w):
-                words.append(w.lower())
-        elif mode == "scene":
+        if _REVIEW_WORDS_RE.match(s):
+            mode = "review"
+            words.extend(_extract_words_from_line(_REVIEW_WORDS_RE.sub("", s)))
+            continue
+        if _CURR_WORDS_RE.match(s):
+            mode = "curr"
+            words.extend(_extract_words_from_line(_CURR_WORDS_RE.sub("", s)))
+            continue
+        if _EXPR_RE.match(s):                    # 综合表达：英文，追加进场景文本
+            mode = "expr"
+            rest = _EXPR_RE.sub("", s).strip()
+            if rest:
+                scene_text.append(rest)
+            continue
+        if _CN_MEAN_RE.match(s):                 # 中文意思：仅辅助，忽略
+            mode = "cn"
+            continue
+        # 非字段头的普通行：按当前 mode 归属
+        if mode in ("use", "review", "curr"):
+            words.extend(_extract_words_from_line(s))
+        elif mode == "desc":
             scene_text.append(s)
-    return words, " ".join(scene_text).strip()
+    return words, " ".join(scene_text).strip(), tier
 
 
 def _extract_large_scenes(text):
-    """抽走文本里所有 Scene N｜tier 块，返回 (scenes, cleaned_text)。
+    """抽走文本里所有 场景 N｜ / 大场景 N｜ 块，返回 (scenes, cleaned_text)。
 
-    scenes: [{"tier": "large"/"medium"/"small", "words": [...], "text": "..."}, ...]
+    scenes: [{"tier": "large"/"small", "words": [...], "text": "..."}, ...]
     cleaned_text: 去掉这些块后的正文，交给主解析器（不干扰每词 Mini Scenario）。
     找不到块则原样返回。
     """
-    spans = [m.start() for m in _LARGE_SCENE_RE.finditer(text)]
+    spans = [m.start() for m in _SCENE_TITLE_RE.finditer(text)]
     if not spans:
         return [], text
     spans.append(len(text))
@@ -655,9 +695,7 @@ def _extract_large_scenes(text):
     for i in range(len(spans) - 1):
         start, end = spans[i], spans[i + 1]
         block = text[start:end]
-        tm = _LARGE_SCENE_RE.search(block)
-        tier = (tm.group(2) or "large").strip().lower()
-        words, scene_text = _parse_large_scene_block(block)
+        words, scene_text, tier = _parse_large_scene_block(block)
         if words and scene_text:
             scenes.append({"tier": tier, "words": words, "text": scene_text})
         parts.append(text[prev:start])   # 块之前的文本保留
