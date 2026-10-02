@@ -759,7 +759,7 @@ async function showImport(){
     <div class="tagline">示例格式：<br>第2周｜工作与日常｜120词<br>第1组｜职场人物（也认 Day 1｜… / 第1天｜…）<br>colleague /ˈkɒlɪɡ/ — 同事<br>We work with colleagues.　　(这行是该词的例句)<br>supervisor — 主管</div>
     <div class="btnrow" style="margin:6px 0">
       <button class="btn ghost sm" data-act="copyWeekPrompt">📋 复制「本周词汇生成」提示词（粘贴给 AI）</button>
-      <button class="btn ghost sm" data-act="copyWeekScenePrompt" title="把本周已导入的单词 + SRS算出的复习词填进造景提示词，复制给 AI 生成场景">🌅 复制本周单词+复习词给 AI 造景</button>
+      <button class="btn ghost sm" data-act="copyWeekScenePrompt" title="把本周已导入的单词 + 近期学过词（SRS学习历史，含本周及往前几周）填进造景提示词，复制给 AI 生成场景">🌅 复制本周单词+复习词给 AI 造景</button>
     </div>
     <textarea id="imp_rich" placeholder="粘贴或上传文件…（文本里写“第2周｜…”就导入第2周；没写周号则导入当前第 ${p.week} 周）" style="min-height:180px"></textarea>
     <div id="imp_file_result"></div>
@@ -2144,7 +2144,8 @@ function copyPrompt(){
 /* ============ 造景提示词（复制本周单词+复习词给 AI 生成场景） ============
  * 原「复制本周词汇生成提示词」按钮不动；这是旁边新增的第二个入口。
  * 模板正文为用户给定，只把「本周单词：（系统填写）」「本周复习单词：（系统填写）」
- * 两处按系统当前数据填好（本周已导入词 + SRS 到期复习词）。
+ * 两处填好：本周已导入词 + 近期学过词窗口（本周 + 往前 REVIEW_WINDOW_WEEKS 周，
+ * 不再用"SRS 当日到期"，这样周一一次性生成全周也能带出复习材料，且支持周内螺旋复习）。
  */
 const WEEK_SCENE_PROMPT_TPL =
 `六天120词｜每日英语场景造句与复习系统 Prompt
@@ -2372,8 +2373,10 @@ AI点评
 20个单词 → 10个不同的小场景 → 5个综合大场景 → 从认识单词转向真正会用。`;
 
 async function copyWeekScenePrompt(){
-  /* 新增入口：把本周已导入的单词 + SRS 算出的复习词填进造景提示词，复制给外部 AI 生成场景。
-     原「复制本周词汇生成提示词」按钮不动，本函数只服务于「造景」这一条。*/
+  /* 造景入口：把本周已导入的单词 + 「近期学过词窗口」填进造景提示词，复制给外部 AI 生成场景。
+     原「复制本周词汇生成提示词」按钮不动。复习词来源已从「SRS 当日到期」改为「近期学过词窗口」
+     （含本周 + 往前 REVIEW_WINDOW_WEEKS 周），这样周一一次性生成全周也能带出复习材料，
+     且本周后面的天能引用前面几天学过的词做螺旋复习。权重（易错率）只对真正做过每日复习的词有效。*/
   await ensureCurriculum();
   let p = (state.today && state.today.progress && state.today.progress.week != null) ? state.today.progress
         : (state.lp && state.lp.week != null) ? state.lp
@@ -2386,32 +2389,69 @@ async function copyWeekScenePrompt(){
   const wk = Math.min(Math.max(1, week), Math.max(1, maxW));
   const row = weekCurriculumOf(stage, wk);
 
-  // 取本周已导入的 120 词
+  // 1) 本周已导入的 120 词
   let vocab = [];
   try {
     const w = await api(`/week/${stage}/${wk}`);
     vocab = (w && w.vocab) || [];
   } catch(e) { vocab = []; }
 
-  // 复习词 = SRS 当前到期词（有多少给多少，AI 自行判断权重）
-  const rp = (state.today && state.today.review_pool) || [];
+  // 2) 近期学过词窗口：本周 + 往前 REVIEW_WINDOW_WEEKS 周（周一一次性生成全周也能带出复习材料）
+  const REVIEW_WINDOW_WEEKS = 2;   // 想扩大复习跨度（比如回看前 4 周）就把这个数调大
+  const fromW = Math.max(1, wk - REVIEW_WINDOW_WEEKS);
+  let recent = vocab.slice();      // 本周词已取到，先放进去
+  for (let w = fromW; w < wk; w++){
+    try { const r = await api(`/week/${stage}/${w}`); if (r && r.vocab) recent = recent.concat(r.vocab); } catch(_){}
+  }
+
+  // 3) 合并 SRS 权重：仅对「当前到期且做过每日复习」的词有真实易错率；其余权重为 0，AI 自行判断
+  const weightMap = {};
+  ((state.today && state.today.review_pool) || []).forEach(v => {
+    const k = String((v && v.word || '').trim()).toLowerCase();
+    if (k) weightMap[k] = v;
+  });
+
+  // 去重（同词只留一次，优先保留有权重的），并标注易错率
+  const seen = {};
+  const rp = [];
+  recent.forEach(v => {
+    const word = String((v && (v.word || v.ref_key) || '').trim()).toLowerCase();
+    if (!word) return;
+    if (seen[word]) return;
+    seen[word] = 1;
+    const w = (v && (v.word || v.ref_key)) || '';
+    const mean = (v && (v.meaning || '')) || '';
+    const wt = weightMap[word];
+    rp.push({ word: w, meaning: mean,
+      error_rate: wt ? (wt.error_rate || 0) : 0,
+      priority: wt ? (wt.priority || 0) : 0,
+      weighted: !!wt });
+  });
+  // 排序：做过复习、错得多的排前面；其余按原顺序
+  rp.sort((a, b) => (b.weighted ? 1 : 0) - (a.weighted ? 1 : 0) || (b.priority || 0) - (a.priority || 0));
 
   const fmt = list => (list || []).map(v => {
     const word = (v && (v.word || v.ref_key) || '').toString().trim();
     if (!word) return '';
     const mean = (v && (v.meaning || '') || '').toString().trim();
-    return '- ' + word + (mean ? ' — ' + mean : '');
+    const tag = (v && v.weighted && v.error_rate) ? `（⚠️易错率${Math.round((v.error_rate || 0) * 100)}%）` : '';
+    return '- ' + word + (mean ? ' — ' + mean : '') + tag;
   }).filter(Boolean).join('\n');
 
   const wordBlock = vocab.length ? fmt(vocab) : '（本周尚未导入单词，请先导入本周词汇）';
-  const revBlock  = rp.length   ? fmt(rp)   : '（暂无到期复习词，可跳过复习部分或交 AI 自行判断）';
+  const isFirstWeek = (wk === 1);
+  const revBlock  = rp.length
+    ? (isFirstWeek
+        ? '（第1周无过往学习历史，复习词即本周其他天的词，用于周内螺旋复习；AI 用 Day1–2 学过的词填 Day3–6 的大场景，不要与当天20词重复）\n' + fmt(rp)
+        : '（系统按 SRS 学习历史自动提供：含之前周与本周已学词；AI 不要与当天20词重复即可）\n' + fmt(rp))
+    : '（近期暂无已学复习词，可跳过复习大场景，或仅用本周其他天的词）';
 
   const filled = WEEK_SCENE_PROMPT_TPL
     .replace('本周单词：（系统填写）', '本周单词：\n' + wordBlock)
     .replace('本周复习单词：（系统填写）', '本周复习单词：\n' + revBlock);
 
   copyText(filled);
-  toast(`已复制：第 ${wk} 周「${row.theme}」· 单词 ${vocab.length} 个 + 复习词 ${rp.length} 个 · 给 AI 造景`);
+  toast(`已复制：第 ${wk} 周「${row.theme}」· 单词 ${vocab.length} 个 + 复习词 ${rp.length} 个（近 ${wk - fromW + 1} 周窗口）· 给 AI 造景`);
 }
 
 async function copyWeekPrompt(){
