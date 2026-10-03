@@ -2264,6 +2264,19 @@ def _row_to_attempt(r):
     # 下面会回落到基础列读取；基础列现在也写 AI 结果，所以不会丢反馈。
     by_ai = (final_source == "ai"
              and ("ai_score" not in keys or ai_score is not None))
+    # ⚠️ 兜底：即便 final_source 因写入异常/老库没标成 'ai'，只要 AI 确实跑过
+    #    （ai_score 非空，且 ai_* 列有实质内容），也按 AI 结果展示，
+    #    避免「AI 批改整片丢失、只剩本地扩写」这类偶发。纯本地规则行
+    #    （ai_* 均为空）不会误判为 AI。
+    if (not by_ai) and ai_score is not None:
+        # 逐列判断 ai_* 是否有「实质内容」（'[]' / '' / 'null' 都算空），不能拼字符串后比较，
+        # 否则本地行的 '[]'+'[]'='[][]' 会被误判为非空而错标成 AI。
+        def _ai_has(v):
+            s = ("" if v is None else str(v)).strip()
+            return s not in ("", "[]", "null", "{}")
+        if (_ai_has(r.get("ai_summary")) or _ai_has(r.get("ai_natural_json"))
+                or _ai_has(r.get("ai_errors_json"))):
+            by_ai = True
 
     out = {
         "id": r["id"], "attempt": r["attempt"], "sentence": r["original"],

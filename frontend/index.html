@@ -1301,7 +1301,9 @@ async function submitSentence(tk){
         source:f.source||(byAI?'ai':'rule'), ai_pending:(f.ai_pending!==undefined?f.ai_pending:!byAI),
         /* 补齐 ai 字段，保证这张兜底卡与「服务端回填」的卡片形状一致
            （否则 attemptCard 取不到 ai.natural，AI 建议会空一块）。 */
-        ai:(f.ai)?{natural:(f.ai.natural||[]), expand:(f.ai.expand||[])}:null});
+        ai:(f.ai)?{natural:(f.ai.natural||[]), expand:(f.ai.expand||[])}:null,
+        /* AI 总评：实时提交路径也带过来，否则断网兜底卡看不到「🤖 AI 总评」。 */
+        ai_summary:(f.ai&&f.ai.summary)||''});
     }
     renderAttempts(tk);
     planProgress();
@@ -1466,8 +1468,17 @@ function attemptCard(a,tk,i,isLast){
   });
   const tipsHtml = tips.length
     ? `<div style="margin-top:8px">
-        <div style="font-size:13px;font-weight:700;color:#92400e;margin-bottom:5px">💡 参考建议（原句没错，仅供参考，不扣分）</div>
+        <div style="font-size:13px;font-weight:700;color:#92400e;margin-bottom:5px">💡 参考建议（仅供参考，不扣分）</div>
         ${tips.map(t=>`<div style="font-size:13.5px;line-height:1.55;padding:4px 0;padding-left:16px;text-indent:-13px">● ${t}</div>`).join('')}
+      </div>`
+    : '';
+  /* 🤖 AI 总评（summary）：后端 AI 批改返回里就有，以前前端从没渲染过 ——
+        白白浪费了 AI 给的「整体点评」。有就显示，没有（AI 没跑/老数据）就静默退回。 */
+  const aiSum = (a.ai_summary || a.summary || '');
+  const summaryHtml = aiSum
+    ? `<div style="margin-top:8px;background:#f0f7ff;border:1px solid #cfe3ff;border-radius:9px;padding:9px 11px">
+        <div style="font-size:13px;font-weight:700;color:#1d4ed8;margin-bottom:4px">🤖 AI 总评</div>
+        <div style="font-size:13.5px;line-height:1.65;color:#1e3a5f">${esc(aiSum)}</div>
       </div>`
     : '';
   return `<div class="res ${pass?'good':''}" style="margin-top:8px;${isLast?'':'opacity:.72'}">
@@ -1479,7 +1490,7 @@ function attemptCard(a,tk,i,isLast){
       <button class="btn ghost sm" style="flex-shrink:0" data-act="copyOne" data-val="${tk}" data-val2="${a.attempt}">📋 复制</button>
     </div>
     <div style="margin-top:5px;font-size:14px;line-height:1.6">${esc(a.sentence)}</div>
-    ${errHtml}${corHtml}${tipsHtml}${taskHtml}
+    ${errHtml}${corHtml}${tipsHtml}${summaryHtml}${taskHtml}
   </div>`;
 }
 
@@ -1502,6 +1513,8 @@ function attemptCopyText(tk,a){
   L.push('我的句子：'+(a.sentence||''));
   L.push('得分：'+sc+'/100');
   L.push('判定：'+(a.ok?'✅ 正确':'❌ 有错误')+'（≥85 基本掌握，<85 需要改进）');
+  const _sum=(a.ai_summary||a.summary||'');
+  if(_sum) L.push('AI 总评：'+_sum);
   if((a.errors||[]).length){
     (a.errors||[]).forEach((e,j)=>{
       L.push('错误'+(j+1)+' · 哪里错了：'+e.where);
