@@ -756,19 +756,28 @@ async function showImport(){
       <button class="btn" id="imp_file_btn" onclick="document.getElementById('imp_file').click()">📎 上传文件（docx / pdf / txt / xlsx / md / html）</button>
     </div>
     <input type="file" id="imp_file" accept=".docx,.doc,.pdf,.txt,.md,.markdown,.csv,.tsv,.json,.html,.htm,.rtf,.xlsx,.xlsm,.log" style="display:none" onchange="uploadImportFile(this.files[0])">
-    <div class="tagline">示例格式：<br>第2周｜工作与日常｜120词<br>第1组｜职场人物（也认 Day 1｜… / 第1天｜…）<br>colleague /ˈkɒlɪɡ/ — 同事<br>We work with colleagues.　　(这行是该词的例句)<br>supervisor — 主管</div>
+    <div class="tagline">左框贴单词、右框贴场景，<b>各自独立识别、互不干扰</b>；场景识别到会<b>直接覆盖</b>该词已有场景。两框都支持「第N周｜…」指定周号，不写则导入当前第 ${p.week} 周。</div>
     <div class="btnrow" style="margin:6px 0">
       <button class="btn ghost sm" data-act="copyWeekPrompt">📋 复制「本周词汇生成」提示词（粘贴给 AI）</button>
       <button class="btn ghost sm" data-act="copyWeekScenePrompt" title="把本周已导入的单词 + 近期学过词（SRS学习历史，含本周及往前几周）填进造景提示词，复制给 AI 生成场景">🌅 复制本周单词+复习词给 AI 造景</button>
     </div>
-    <textarea id="imp_rich" placeholder="粘贴或上传文件…（文本里写“第2周｜…”就导入第2周；没写周号则导入当前第 ${p.week} 周）" style="min-height:180px"></textarea>
+    <div style="display:flex;gap:14px;align-items:stretch;margin:4px 0">
+      <div style="flex:1;min-width:0;display:flex;flex-direction:column">
+        <div class="lbl" style="margin-bottom:4px">📘 单词（每行一个词 · 例句用 ● 分隔）</div>
+        <textarea id="imp_words" placeholder="1. currently /ˈkɜːrəntli/ — 目前，现在 ●I currently live in Shanghai. 我目前住在上海。 ●I currently work for a company. 我目前在一家公司工作。 固定搭配：「currently live」目前居住；「currently work」目前工作" style="min-height:220px;flex:1"></textarea>
+      </div>
+      <div style="flex:1;min-width:0;display:flex;flex-direction:column">
+        <div class="lbl" style="margin-bottom:4px">🌅 场景（识别到直接覆盖）</div>
+        <textarea id="imp_scenes" placeholder="第1天｜主题&#10;① 今日10个小场景&#10;小场景1｜名称&#10;场景说明：…&#10;使用单词：currently / hometown / originally" style="min-height:220px;flex:1"></textarea>
+      </div>
+    </div>
     <div id="imp_file_result"></div>
     <div class="btnrow"><button class="btn" id="imp_run_btn" onclick="runImport()">🚀 解析并导入</button></div>
     <div id="imp_rich_result"></div>
   </div>`;
   document.body.appendChild(ov);
   // 支持拖拽文件到弹窗
-  const ta=ov.querySelector('#imp_rich');
+  const ta=ov.querySelector('#imp_words');
   ov.addEventListener('dragover',e=>{e.preventDefault();ta.style.outline='2px dashed #3b82f6';});
   ov.addEventListener('dragleave',()=>{ta.style.outline='';});
   ov.addEventListener('drop',e=>{e.preventDefault();ta.style.outline='';
@@ -779,7 +788,7 @@ async function showImport(){
 async function uploadImportFile(f){
   if(!f)return;
   const box=document.getElementById('imp_file_result')||document.getElementById('imp_rich_result');
-  const ta=document.getElementById('imp_rich');
+  const ta=document.getElementById('imp_words');
   const btn=document.getElementById('imp_file_btn');
   const old=btn?btn.textContent:'';
   if(btn){btn.textContent='⏳ 提取中…';btn.disabled=true;}
@@ -804,8 +813,11 @@ async function uploadImportFile(f){
   }
 }
 async function runImport(){
-  const raw=document.getElementById('imp_rich').value;
-  if(!raw.trim()){toast('请先粘贴要导入的词汇');return;}
+  const words=document.getElementById('imp_words').value;
+  const scenes=document.getElementById('imp_scenes').value;
+  if(!words.trim() && !scenes.trim()){toast('请先粘贴要导入的内容（左框单词或右框场景）');return;}
+  // 用固定分隔符把单词段与场景段拼成一段文本，后端据此拆开分别解析（不依赖 main.py 改动）
+  const raw=words + "\n§§SCENES§§\n" + scenes;
   const p=state.learn.d.progress;
   const btn=document.getElementById('imp_run_btn');
   btn.textContent='解析中…';btn.disabled=true;
@@ -821,9 +833,10 @@ async function runImport(){
   let dayTxt=(r.day_counts?Object.keys(r.day_counts).map(k=>`D${k}:${r.day_counts[k]}词`).join(' '):'');
   let w=[]; if(r.warnings&&r.warnings.length) w.push(`⚠️ ${r.warnings.length}条提示：${esc(r.warnings.join('；'))}`);
   if(r.skipped&&r.skipped.length) w.push(`自动跳过了 ${r.skipped.length} 行说明/注释文字。`);
+  const sceneTxt = (r.scenes!=null && r.scenes>0) ? ` · 场景覆盖 ${r.scenes} 条` : '';
   box.innerHTML=`<div class="res good">
       <b>✅ 已合并到 第${r.week}周「${esc(r.title||'未命名')}」</b><br>
-      <span style="color:var(--muted)">本次：${dayTxt?dayTxt:'若干词'} · 当前周共 ${r.total} 词 / ${r.days} 天</span><br>
+      <span style="color:var(--muted)">本次：${dayTxt?dayTxt:'若干词'} · 当前周共 ${r.total} 词 / ${r.days} 天${sceneTxt}</span><br>
       <span style="color:var(--muted)">词库新增 ${r.added_new} · 自带例句 ${r.added_examples} · 固定搭配 ${r.added_collocations||0} · 自动补例句 ${r.autogen}</span>
       ${w.length?('<br><span style="color:var(--amber);font-size:13px">'+w.join('<br>')+'</span>'):''}
     </div>`;

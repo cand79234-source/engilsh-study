@@ -707,6 +707,157 @@ def _extract_large_scenes(text):
     return scenes, "".join(parts)
 
 
+# ----------------------------------------------------------------------------
+# 「单词框」内联解析（前端导入弹窗左侧框专用）
+# 支持一行一词、例句用 ● 分隔、固定搭配用「」：
+#   1. currently /ˈkɜːrəntli/ — 目前，现在
+#      ●I currently live in Shanghai. 我目前住在上海。
+#      ●I currently work for a company. 我目前在一家公司工作。
+#      固定搭配：「currently live」目前居住；「currently work」目前工作
+# （● 可写在同一行，也可换行；本解析器两种都认）
+# ----------------------------------------------------------------------------
+def _split_en_cn(seg):
+    """把一个『英文. 中文』片段拆成 (英文, 中文)。没有中文就整段当英文。"""
+    seg = (seg or "").strip()
+    if not seg:
+        return "", ""
+    m = re.search(r"[\u4e00-\u9fff]", seg)
+    if not m:
+        return seg, ""
+    en = seg[:m.start()].strip()
+    cn = seg[m.start():].strip()
+    return en, cn
+
+
+_DOTTED_NUM_RE = re.compile(
+    r"^\s*(?:[0-9０-９]{1,3}\s*[.、)）]|[•·▪◦‣]|[\u2460-\u2473])\s*")
+
+
+def _parse_inline_word_line(line):
+    """解析『单词框』里的单行词（含 ● 内联例句 + 固定搭配）。
+
+    返回 word 条目 {"word","meaning","phonetic","examples","collocations"}，
+    或 None（不是单词行）。无分隔符的旧格式回退到通用 _parse_word_header。
+    """
+    s = line.strip()
+    if not s or len(s) > 600:
+        return None
+    # 去行首序号 "1." "15)" "2、" "①"
+    s = _DOTTED_NUM_RE.sub("", s)
+    # 分隔符：优先 — ，其次 – / －
+    sep = None
+    for sp in ("—", "–", "－"):
+        if sp in s:
+            sep = sp
+            break
+    if sep:
+        left, right = s.split(sep, 1)
+    else:
+        # 无分隔符：回退到通用单词头解析（旧格式，不含内联例句）
+        return _parse_word_header(s)
+    # 抽取音标（在左侧单词与中文释义之间）
+    phonetic = ""
+    m_ipa = _IPA_SEG_RE.search(left)
+    if m_ipa:
+        phonetic = m_ipa.group(0).strip().strip("[]").strip()
+        left = _IPA_SEG_RE.sub(" ", left).strip()
+    mw = re.match(r"^(" + _WORD_CHARS + r")", left)
+    if not mw or not _is_english_word(mw.group(1)):
+        # 左侧不是干净单词（整行是例句/说明）→ 放弃
+        return None
+    word = mw.group(1)
+    # right: 释义 ●En. 中 ●En. 中 固定搭配：...
+    segs = [x.strip() for x in re.split(r"●", right) if x.strip()]
+    meaning = segs[0] if segs else ""
+    examples = []
+    collocations = []
+    for seg in segs[1:]:
+        # 段内若带「固定搭配：」，其前是例句、其后是搭配
+        mfc = re.search(r"(?:固定)?搭配\s*[:：]", seg)
+        if mfc:
+            before = seg[:mfc.start()].strip()
+            after = seg[mfc.end():].strip()
+            if before:
+                en, cn = _split_en_cn(before)
+                examples.append({"sentence": en, "translation": cn})
+            if after:
+                collocations.extend(_parse_colloc_line("固定搭配：" + after) or [])
+        else:
+            en, cn = _split_en_cn(seg)
+            examples.append({"sentence": en, "translation": cn})
+    return {"word": word, "meaning": meaning, "phonetic": phonetic, "pos": "",
+            "examples": examples, "collocations": collocations, "scenes": []}
+
+
+def parse_words_block(text):
+    """解析『单词框』内容：每个词一行（支持 ● 内联例句 + 固定搭配）。
+
+    头行支持：第N周｜主题｜N词 / 第N组｜名 / 第N天｜名 / Day N｜名。
+    返回与 parse_import 兼容的 {week,title,stage,groups,flat,warnings,skipped}。
+    """
+    text = _normalize_text(text)
+    week_ref = [None]
+    title_ref = [""]
+    group_ref = [1, ""]
+    stage_ref = [None]
+    groups = {}
+    skipped = []
+    cur_word = None
+
+    def ensure_group(day, name=None):
+        g = groups.setdefault(day, {"day": day, "name": "", "words": []})
+        if name:
+            g["name"] = name
+        return g
+
+    for raw in text.splitlines():
+        line = raw.strip()
+        if not line:
+            continue
+        sm = _STAGE_RE.search(line)
+        if sm and len(line) <= 30 and not re.search(r"[。！？.!?]$", line):
+            st = _to_int(sm.group(1) or sm.group(2))
+            if st is not None:
+                stage_ref[0] = st
+                continue
+        kind = _read_headers(line, week_ref, title_ref, group_ref)
+        if kind == "week":
+            continue
+        if kind == "group":
+            ensure_group(group_ref[0], group_ref[1])
+            cur_word = None
+            continue
+        w = _parse_inline_word_line(line)
+        if w and _is_english_word(w["word"]):
+            w.setdefault("examples", [])
+            w.setdefault("collocations", [])
+            w.setdefault("scenes", [])
+            ensure_group(group_ref[0], group_ref[1])["words"].append(w)
+            cur_word = w
+            continue
+        if cur_word is not None and _is_eng_sentence(line):
+            cur_word["examples"].append(
+                {"sentence": _strip_list_marker(line), "translation": ""})
+            continue
+        colloc = _parse_colloc_line(line)
+        if colloc is not None and cur_word is not None:
+            cur_word["collocations"].extend(colloc)
+            continue
+        if cur_word is not None and _is_cn_only(line):
+            for ex in reversed(cur_word["examples"]):
+                if not ex["translation"]:
+                    ex["translation"] = line
+                    break
+            else:
+                skipped.append(raw)
+            continue
+        skipped.append(raw)
+    groups_list, flat, warnings = _finalize({"groups": groups})
+    return {"stage": stage_ref[0], "week": week_ref[0], "title": title_ref[0],
+            "grammar": "", "groups": groups_list, "flat": flat,
+            "warnings": warnings, "skipped": skipped}
+
+
 def parse_import(text):
     """主解析入口。返回结构见文件头。"""
     text = _normalize_text(text)

@@ -477,12 +477,48 @@ def import_rich_week_merge(text, forced_stage=None, forced_week=None):
     周号优先级：文本里明确写了周号优先；没写才用 forced_week（如前端传的当前周）。
     """
     from importer import parse_import
+    # 『单词框 / 场景框』分离导入：前端用 SCENE_SPLIT 把单词与场景切成两段，
+    # 单词段走 parse_words_block（支持 ● 内联例句），场景段走 _extract_large_scenes。
+    if SCENE_SPLIT in text:
+        pre, post = text.split(SCENE_SPLIT, 1)
+        return _merge_split(pre, post, forced_stage, forced_week)
     parsed = parse_import(text)
     week = parsed.get("week") or forced_week
     stage = _resolve_stage(parsed.get("stage"), forced_stage)
     title = parsed.get("title", "")
     groups = parsed.get("groups") or []
     large_scenes = parsed.get("large_scenes") or []
+    return _merge_into_week(groups, large_scenes, week, stage, title,
+                            parsed.get("warnings", []), parsed.get("skipped", []))
+
+
+# 前端两个框的分隔符（单词段在前、场景段在后）。务必与 frontend/index.html 保持一致。
+SCENE_SPLIT = "\n§§SCENES§§\n"
+
+
+def _merge_split(words_text, scenes_text, forced_stage=None, forced_week=None):
+    """『单词框 + 场景框』分离导入：单词用 parse_words_block，场景用 _extract_large_scenes。"""
+    from importer import parse_words_block, _extract_large_scenes
+    wp = parse_words_block(words_text or "")
+    week = wp.get("week") or forced_week
+    stage = _resolve_stage(wp.get("stage"), forced_stage)
+    title = wp.get("title", "")
+    groups = wp.get("groups") or []
+    large_scenes = []
+    if scenes_text and scenes_text.strip():
+        large_scenes, _ = _extract_large_scenes(scenes_text)
+    return _merge_into_week(groups, large_scenes, week, stage, title,
+                            wp.get("warnings", []), wp.get("skipped", []))
+
+
+def _merge_into_week(groups, large_scenes, week, stage, title, warnings=None, skipped=None):
+    """把解析出的 groups（按天）与 large_scenes 合并进目标周。
+
+    供 import_rich_week_merge 与 _merge_split 共用。覆盖语义：
+    本次涉及的天整段替换；场景按词覆盖（_store_large_scenes 内 DELETE+INSERT）。
+    """
+    warnings = warnings or []
+    skipped = skipped or []
     # 纯场景导入（无单词、只有 场景/大场景 块）：
     #   把场景里出现的词自动补进本周词汇表（已存在的词不重复），
     #   否则词汇表为空 → 组合表达页没有词可生成题目 → 场景也挂不上、整页空白。
@@ -520,7 +556,7 @@ def import_rich_week_merge(text, forced_stage=None, forced_week=None):
                     "added_new": added,
                     "note": ("已导入场景，并把场景涉及的 %d 个词补入本周词汇表。" % added)
                             if added else "已导入场景（词汇表已有这些词，未重复添加）。"}
-        return {"ok": False, "error": "没有识别到任何单词，也没有可导入的场景。", "parse": parsed}
+        return {"ok": False, "error": "没有识别到任何单词，也没有可导入的场景。", "parse": None}
 
     existing = svc.get_week(stage, week) or {"title": title, "vocab": []}
     base_vocab = existing.get("vocab") or []
@@ -563,11 +599,12 @@ def import_rich_week_merge(text, forced_stage=None, forced_week=None):
         "title": title or existing.get("title"),
         "total": len(new_vocab), "days": len(day_counts),
         "day_counts": day_counts,
+        "scenes": len(large_scenes),
         "added_new": counters["added_new"],
         "added_examples": counters["added_examples"],
         "added_collocations": counters["added_collocations"],
         "autogen": counters["autogen"],
-        "warnings": parsed.get("warnings", []),
-        "skipped": parsed.get("skipped", []),
+        "warnings": warnings,
+        "skipped": skipped,
         "words": [v["word"] for v in new_vocab],
     }
