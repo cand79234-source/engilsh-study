@@ -634,26 +634,31 @@ def _extract_words_from_line(line):
 
 
 def _parse_large_scene_block(block):
-    """解析单个 场景/大场景 块正文，返回 (words, scene_text, tier)。
+    """解析单个 场景/大场景 块正文，返回 (new_words, review_words, scene_text, tier)。
 
     小场景结构：
-        场景 1｜<名称>
+        场景 1｜<名称>        （或 ### 小场景1｜…）
         场景说明：<情境描述>
         使用单词：family, parent, relative
     大场景结构：
-        大场景 1｜<名称>
+        大场景 1｜<名称>      （或 ### 大场景1｜…）
         场景说明：<情境描述>
         复习单词：currently, hometown, lifestyle
         当天单词：family, parent, relative
         综合表达：<英文表达>   （可选，追加进文本）
         中文意思：<中文翻译>   （可选，忽略）
+    new_words  = 小场景的「使用单词」+ 大场景的「当天单词」（当天要练的词）；
+    review_words = 大场景的「复习单词」（旧词复习，标记 review）。
+    旧版只返回 (words, text, tier) 且把 new/review 混在一起，导致大场景的复习词
+    和小场景的新词无法区分——这里拆开，供『按天场景计划』把复习词标 🔁。
     """
-    words = []
+    new_words = []
+    review_words = []
     scene_text = []
     tier = "small"
     mode = None
     for raw in block.splitlines():
-        s = raw.strip()
+        s = _strip_md_hash(raw.strip())      # 去行首 Markdown '#' 前缀（### 小场景1｜…）
         if not s:
             continue
         tm = _SCENE_TITLE_RE.match(s)
@@ -669,15 +674,15 @@ def _parse_large_scene_block(block):
             continue
         if _USE_WORDS_RE.match(s):
             mode = "use"
-            words.extend(_extract_words_from_line(_USE_WORDS_RE.sub("", s)))
+            new_words.extend(_extract_words_from_line(_USE_WORDS_RE.sub("", s)))
             continue
         if _REVIEW_WORDS_RE.match(s):
             mode = "review"
-            words.extend(_extract_words_from_line(_REVIEW_WORDS_RE.sub("", s)))
+            review_words.extend(_extract_words_from_line(_REVIEW_WORDS_RE.sub("", s)))
             continue
         if _CURR_WORDS_RE.match(s):
             mode = "curr"
-            words.extend(_extract_words_from_line(_CURR_WORDS_RE.sub("", s)))
+            new_words.extend(_extract_words_from_line(_CURR_WORDS_RE.sub("", s)))
             continue
         if _EXPR_RE.match(s):                    # 综合表达：英文，追加进场景文本
             mode = "expr"
@@ -689,11 +694,13 @@ def _parse_large_scene_block(block):
             mode = "cn"
             continue
         # 非字段头的普通行：按当前 mode 归属
-        if mode in ("use", "review", "curr"):
-            words.extend(_extract_words_from_line(s))
+        if mode == "review":
+            review_words.extend(_extract_words_from_line(s))
+        elif mode in ("use", "curr"):
+            new_words.extend(_extract_words_from_line(s))
         elif mode == "desc":
             scene_text.append(s)
-    return words, " ".join(scene_text).strip(), tier
+    return new_words, review_words, " ".join(scene_text).strip(), tier
 
 
 def _extract_large_scenes(text):
@@ -713,13 +720,133 @@ def _extract_large_scenes(text):
     for i in range(len(spans) - 1):
         start, end = spans[i], spans[i + 1]
         block = text[start:end]
-        words, scene_text, tier = _parse_large_scene_block(block)
-        if words and scene_text:
-            scenes.append({"tier": tier, "words": words, "text": scene_text})
+        new_words, review_words, scene_text, tier = _parse_large_scene_block(block)
+        if (new_words or review_words) and scene_text:
+            scenes.append({"tier": tier, "words": new_words + review_words, "text": scene_text})
         parts.append(text[prev:start])   # 块之前的文本保留
         prev = end
     parts.append(text[prev:])
     return scenes, "".join(parts)
+
+
+# ----------------------------------------------------------------------------
+# 「按天场景计划」解析（用户新格式：# 第N天｜… + 小场景/大场景 + 使用单词/复习单词/当天单词）
+# ----------------------------------------------------------------------------
+# 这份格式顶层是「天」不是「周」，且只有单词列表 + 场景说明（没有 word—释义 词形），
+# 所以需要专门的解析：把每个「第N天」下的 使用单词/当天单词/复习单词 收成当天词汇表，
+# 把每个 小场景/大场景 收成 word_scenarios（tier 由 大/小 前缀判定）。
+# 周号缺失 → 调用方用 forced_week（前端传当前周）兜底。
+_DAY_RE = re.compile(r"第\s*([0-9０-９]{1,2})\s*天")
+
+
+def _is_day_scenario_plan(text):
+    """判断是否为『按天场景计划』新格式：含 第N天 天头，且含 使用单词/当天单词/复习单词 任一词。
+
+    与旧『场景 N｜使用单词』（带 第N周 周头、块状 word—释义）区分开：旧格式没有
+    第N天、且通常没有 使用单词/当天单词/复习单词 这种小场景字段，会走原 parse_import 路径。
+    """
+    if not text:
+        return False
+    if not re.search(r"第\s*[0-9０-９]+\s*天", text):
+        return False
+    if not ("使用单词" in text or "当天单词" in text or "复习单词" in text):
+        return False
+    return True
+
+
+def _parse_day_scenario_plan(text):
+    """解析『# 第N天｜…』按天场景计划。返回与 parse_import 兼容的结构。
+
+    每个词 meaning/pos 留空（由 weekimport 查词库补全；词库没有则自动补占位句）。
+    大场景的「复习单词」标 review=True（前端组合页显示 🔁），但仍进入当天词汇表。
+    返回 None 表示没解析出任何天（调用方回退到普通解析，不直接失败）。
+    """
+    text = _normalize_text(text)
+    groups = {}          # day -> {"day","name","words":[entries]}
+    day_seen = {}        # day -> set(小写词) 组内去重
+    day_new = {}         # day -> set(小写新词)
+    day_review = {}      # day -> set(小写复习词)
+    day_name = {}
+    large_scenes = []
+    skipped = []
+    cur_day = None
+    cur_block = None     # {"lines":[...], "day":int}
+
+    def ensure_group(day, name=None):
+        g = groups.setdefault(day, {"day": day, "name": "", "words": []})
+        if name:
+            g["name"] = name
+        return g
+
+    def close_block():
+        nonlocal cur_block, cur_day
+        if cur_block is None:
+            return
+        blk = "\n".join(cur_block["lines"])
+        d = cur_block.get("day") or cur_day or 1
+        new_words, review_words, scene_text, tier = _parse_large_scene_block(blk)
+        if (new_words or review_words) and scene_text:
+            ensure_group(d, day_name.get(d))
+            large_scenes.append({"tier": tier, "words": new_words + review_words,
+                                 "text": scene_text, "day": d})
+            s = day_seen.setdefault(d, set())
+            day_new.setdefault(d, set()).update(new_words)
+            day_review.setdefault(d, set()).update(review_words)
+            for w in (new_words + review_words):
+                wl = w.lower()
+                if wl in s:
+                    continue
+                s.add(wl)
+                review = (wl in day_review[d]) and (wl not in day_new[d])
+                ensure_group(d)["words"].append({
+                    "word": w, "meaning": "", "pos": "",
+                    "examples": [], "collocations": [], "scenes": [],
+                    "review": review,
+                })
+        else:
+            skipped.append(blk)
+        cur_block = None
+
+    for raw in text.splitlines():
+        line = raw.strip()
+        if not line:
+            continue
+        # 天头：# 第N天｜名称（别误伤场景块里的 第N天；长中文正文也不会带 第N天）
+        dm = _DAY_RE.search(line)
+        if dm and (line.startswith("#") or len(line) <= 30) and not _SCENE_TITLE_RE.search(line):
+            close_block()
+            cur_day = int(dm.group(1))
+            name = line[dm.end():].lstrip("｜|").strip()
+            day_name[cur_day] = name
+            continue
+        # 场景标题：### 小场景N｜… / ### 大场景N｜… / 小场景N｜…
+        if _SCENE_TITLE_RE.search(line):
+            close_block()
+            cur_block = {"lines": [line], "day": cur_day or 1}
+            continue
+        # 其它 # 标题（## ① 今日10个小场景 / ## ③ 今日综合复习｜5个大场景）→ 收块忽略
+        if line.startswith("#"):
+            close_block()
+            continue
+        if cur_block is not None:
+            cur_block["lines"].append(line)
+            continue
+        skipped.append(raw)
+
+    close_block()
+    if not groups:
+        return None
+    first_day = min(groups)
+    title = day_name.get(first_day, "")
+    parsed = {"stage": None, "week": None, "title": title, "grammar": "",
+              "groups": groups, "flat": None, "skipped": skipped, "header_lines": []}
+    groups_list, flat, warnings = _finalize(parsed)
+    return {
+        "stage": None, "week": None, "title": title, "grammar": "",
+        "groups": groups_list, "flat": flat, "warnings": warnings,
+        "skipped": skipped, "header_lines": [],
+        "large_scenes": large_scenes,
+    }
 
 
 # ----------------------------------------------------------------------------
@@ -881,6 +1008,13 @@ def parse_words_block(text):
 def parse_import(text):
     """主解析入口。返回结构见文件头。"""
     text = _normalize_text(text)
+    # 按天场景计划（# 第N天｜… + 小场景/大场景 + 使用单词/复习单词/当天单词）：
+    # 这种格式没有 word—释义 词形、没有周号，必须走专属解析，否则会落得
+    # "没有识别到任何单词，也没有可导入的场景"。周号由调用方 forced_week 兜底。
+    if _is_day_scenario_plan(text):
+        res = _parse_day_scenario_plan(text)
+        if res is not None:
+            return res
     # 先把「Scene N｜tier」大/中/小场景块抽走（这些来自导入，不归每词 Mini Scenario）：
     large_scenes, text = _extract_large_scenes(text)
     if _looks_like_block(text):

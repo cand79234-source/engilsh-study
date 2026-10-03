@@ -467,6 +467,7 @@ def _build_word_entry(conn, known, day, gname, w, counters):
         "examples": examples,
         "ex_source": ex_src,
         "focus": bool(w.get("focus")),   # ★ 用户标记的重点词 → 优先进入"升级"环节
+        "review": bool(w.get("review")), # 大场景「复习单词」→ 组合页显示 🔁
     }
 
 
@@ -497,8 +498,27 @@ SCENE_SPLIT = "\n§§SCENES§§\n"
 
 
 def _merge_split(words_text, scenes_text, forced_stage=None, forced_week=None):
-    """『单词框 + 场景框』分离导入：单词用 parse_words_block，场景用 _extract_large_scenes。"""
-    from importer import parse_words_block, _extract_large_scenes
+    """『单词框 + 场景框』分离导入：单词用 parse_words_block，场景用 _extract_large_scenes。
+
+    若左框（单词框）本身是『按天场景计划』（# 第N天｜… + 小场景/大场景 内联），
+    则整段走 _parse_day_scenario_plan——否则这份格式会因为"只有场景内联、没有
+    word—释义 词形"而两头落空（左框 parse_words_block 取不到词、右框又为空）。
+    """
+    from importer import (parse_words_block, _extract_large_scenes,
+                          _is_day_scenario_plan, _parse_day_scenario_plan)
+    if _is_day_scenario_plan(words_text):
+        wp = _parse_day_scenario_plan(words_text)
+        if wp:
+            week = wp.get("week") or forced_week
+            stage = _resolve_stage(wp.get("stage"), forced_stage)
+            title = wp.get("title", "")
+            groups = wp.get("groups") or []
+            large_scenes = list(wp.get("large_scenes") or [])
+            if scenes_text and scenes_text.strip():
+                extra, _ = _extract_large_scenes(scenes_text)
+                large_scenes.extend(extra)
+            return _merge_into_week(groups, large_scenes, week, stage, title,
+                                    wp.get("warnings", []), wp.get("skipped", []))
     wp = parse_words_block(words_text or "")
     week = wp.get("week") or forced_week
     stage = _resolve_stage(wp.get("stage"), forced_stage)
