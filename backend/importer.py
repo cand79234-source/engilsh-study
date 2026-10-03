@@ -787,20 +787,34 @@ def _parse_day_scenario_plan(text):
         new_words, review_words, scene_text, tier = _parse_large_scene_block(blk)
         if (new_words or review_words) and scene_text:
             ensure_group(d, day_name.get(d))
-            large_scenes.append({"tier": tier, "words": new_words + review_words,
-                                 "text": scene_text, "day": d})
+            # 仅「大场景」进 word_scenarios（tier='large'，供组合表达页取景）；
+            # 「小场景」是练当天 20 词用的，说明只挂 vocab.scenes 给基础句显示，不进
+            # word_scenarios，避免组合句页混入小场景、与「大场景=综合复习」的设计分层混淆。
+            if tier != "small":
+                large_scenes.append({"tier": tier, "words": new_words + review_words,
+                                     "text": scene_text, "day": d})
             s = day_seen.setdefault(d, set())
             day_new.setdefault(d, set()).update(new_words)
             day_review.setdefault(d, set()).update(review_words)
+            # 小场景：把「场景说明」挂到「使用单词」的 vocab.scenes（Mini Scenario），
+            # 这样基础句（20 词造句）本地就能显示该小场景，点 🔁 在多小场景间轮换。
+            # 大场景是综合复习，说明只留给 word_scenarios（组合句用），不进 vocab.scenes。
+            small_word_scenes = {w.lower(): scene_text for w in new_words} if tier == "small" else {}
             for w in (new_words + review_words):
                 wl = w.lower()
                 if wl in s:
+                    # 已存在：小场景则把本场景追加进已有词的 scenes（跨小场景累积）
+                    if tier == "small" and wl in small_word_scenes:
+                        ex = next((e for e in ensure_group(d)["words"] if e["word"].lower() == wl), None)
+                        if ex is not None:
+                            ex["scenes"].append({"text": scene_text})
                     continue
                 s.add(wl)
                 review = (wl in day_review[d]) and (wl not in day_new[d])
+                scenes = [{"text": scene_text}] if (tier == "small" and wl in small_word_scenes) else []
                 ensure_group(d)["words"].append({
                     "word": w, "meaning": "", "pos": "",
-                    "examples": [], "collocations": [], "scenes": [],
+                    "examples": [], "collocations": [], "scenes": scenes,
                     "review": review,
                 })
         else:
