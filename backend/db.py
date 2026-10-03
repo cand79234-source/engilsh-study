@@ -549,6 +549,17 @@ def init_db():
         verdict TEXT DEFAULT '',       -- '正确' / '有错误'
         errors_json TEXT DEFAULT '[]', -- 结构化错误明细
         opts_json TEXT DEFAULT '[]',   -- 可优化表达
+        -- ===== AI 批改结果（与基础列同写，读写分离下读副本读不到 ai_* 时回落用）=====
+        ai_score INTEGER,              -- AI 给的 0-100（NULL=未批改）
+        ai_corrected TEXT DEFAULT '',
+        ai_errors_json TEXT DEFAULT '[]',
+        ai_natural_json TEXT DEFAULT '[]',
+        ai_expand_json TEXT DEFAULT '[]',
+        ai_verdict TEXT DEFAULT '',
+        ai_summary TEXT DEFAULT '',
+        ai_model TEXT DEFAULT '',
+        ai_at TEXT DEFAULT '',
+        final_source TEXT DEFAULT '',
         created_at TEXT
     );
 

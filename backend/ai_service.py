@@ -1835,11 +1835,37 @@ def _insert_sentence_with_attempt(conn, stage, week, day, word, task_key, res, n
             args = [stage, week, day, word, task_key]
             if with_cat:
                 args.append(category)
+            # ⚠️ AI 批改成功时，把 AI 的「分数/改后句/错误/扩写/判定」**同时写进基础列**
+            #    （不只是 ai_* 列）。原因：Neon 是读写分离，读副本可能暂时读不到 ai_* 列，
+            #    一旦读不到，读回路径会回落到基础列——而基础列若只装本地规则值，AI 反馈就
+            #    整片丢失（表现正是「分数有、错误和参考建议空」）。把 AI 值也写进基础列后，
+            #    无论读副本能否读到 ai_*，显示都不会丢 AI 反馈。
+            if with_ai:
+                _ai_score = ai["score"]
+                _ai_corr = ai["corrected"]
+                _ai_verdict = ai["verdict"]
+                _ai_errors_json = ai["errors_json"]
+                _ai_opts_json = json.dumps(
+                    _merge_ai_expand_into_opts(
+                        res["optimizations"],
+                        json.loads(ai["expand_json"] or "[]"),
+                        json.loads(ai["natural_json"] or "[]")),
+                    ensure_ascii=False)
+                _base_good = (1 if (_ai_score >= 85
+                                   and not json.loads(_ai_errors_json or "[]"))
+                              else 0)
+            else:
+                _ai_score = res["score"]
+                _ai_corr = res["corrected"]
+                _ai_verdict = res["verdict"]
+                _ai_errors_json = json.dumps(res["errors"], ensure_ascii=False)
+                _ai_opts_json = json.dumps(res["optimizations"],
+                                          ensure_ascii=False)
+                _base_good = 1 if res["ok"] else 0
             args += [attempt, res["original"],
-                     res["corrected"], res["error_type"], res["explanation"], "rule",
-                     1 if res["ok"] else 0, res["score"], res["verdict"],
-                     json.dumps(res["errors"], ensure_ascii=False),
-                     json.dumps(res["optimizations"], ensure_ascii=False), now]
+                     _ai_corr, res["error_type"], res["explanation"], "rule",
+                     _base_good, _ai_score, _ai_verdict,
+                     _ai_errors_json, _ai_opts_json, now]
             if with_ai:
                 args += [ai["score"], ai["corrected"], ai["errors_json"],
                          ai["natural_json"], ai["expand_json"], ai["verdict"],
@@ -2233,19 +2259,28 @@ def _row_to_attempt(r):
 
     ai_score = r["ai_score"] if "ai_score" in keys else None
     final_source = (r["final_source"] if "final_source" in keys else "") or ""
-    by_ai = (final_source == "ai" and ai_score is not None)
+    # ⚠️ by_ai 主要看 final_source（入库时如实标记的真相）。但 Neon 读写分离下，
+    # 读副本可能暂时读不到 ai_score 列（列不存在/未同步）——此时仍放行走 AI 分支，
+    # 下面会回落到基础列读取；基础列现在也写 AI 结果，所以不会丢反馈。
+    by_ai = (final_source == "ai"
+             and ("ai_score" not in keys or ai_score is not None))
 
     out = {
         "id": r["id"], "attempt": r["attempt"], "sentence": r["original"],
         "created_at": r["created_at"],
     }
     if by_ai:
-        ai_errors = _j(r["ai_errors_json"] if "ai_errors_json" in keys else "[]")
-        ai_natural = _j(r["ai_natural_json"] if "ai_natural_json" in keys else "[]")
-        ai_expand = _j(r["ai_expand_json"] if "ai_expand_json" in keys else "[]")
-        ai_corr = (r["ai_corrected"] if "ai_corrected" in keys else "") or ""
-        ai_verdict = (r["ai_verdict"] if "ai_verdict" in keys else "") or ""
-        score = int(ai_score)
+        # ⚠️ 读副本读不到 ai_* 列时，回落到基础列（基础列现在也写 AI 结果）。
+        #    —— 这是根治「Neon 读写分离下 AI 反馈整片丢失」的关键。
+        ai_errors = _j(r["ai_errors_json"] if "ai_errors_json" in keys
+                       else r["errors_json"])
+        ai_natural = _j(r["ai_natural_json"] if "ai_natural_json" in keys
+                        else "[]")
+        ai_expand = _j(r["ai_expand_json"] if "ai_expand_json" in keys
+                       else "[]")
+        ai_corr = (r["ai_corrected"] if "ai_corrected" in keys else "") or r["corrected"]
+        ai_verdict = (r["ai_verdict"] if "ai_verdict" in keys else "") or r["verdict"]
+        score = int(ai_score) if ai_score is not None else int(r["score"] or 0)
         # #58 字段名对齐：库里存的是 AI 的**原始结构**（wrong/right/explain），
         #     而前端 attemptCard 读的是 where/correct/explanation。
         #     提交时前端翻译过一次（index.html 1244），但『从库回填』这条路没人翻译，
@@ -2267,8 +2302,12 @@ def _row_to_attempt(r):
             "status": "PASS" if ((score >= 85) and not ai_errors) else "NEEDS_REVIEW",
             "error_type": (ai_errors[0].get("type") if ai_errors else "") or "",
             "errors": ai_errors,
-            # ⚠️ 2026-09-11：把 AI 的扩写并进 optimizations，前端才看得到
-            "optimizations": _merge_ai_expand_into_opts(opts, ai_expand, ai_natural),
+            # ⚠️ 2026-09-11：把 AI 的扩写并进 optimizations，前端才看得到。
+            #    但若读副本读不到 ai_* 列（回落场景），基础列 opts_json 里**已经**
+            #    写好了 AI 扩写（见 _insert_sentence_with_attempt），此时不要再跑
+            #    合并剥离（否则会把基础列里的扩写也清掉），直接保留即可。
+            "optimizations": (_merge_ai_expand_into_opts(opts, ai_expand, ai_natural)
+                             if "ai_expand_json" in keys else opts),
             "task_issues": [],
             "source": "ai",
             "ai_score": score,
