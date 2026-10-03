@@ -57,8 +57,8 @@ _CN_PATTERN = re.compile(r"[\u4e00-\u9fff][\u4e00-\u9fff·/、，,（）()0-9a-z
 _EN_SKIP = {"the", "a", "an", "and", "or", "of", "to", "in", "on", "at", "for",
             "with", "by", "is", "are", "was", "were", "be", "do", "does", "did",
             "have", "has", "had", "not", "but", "so", "very", "it", "he", "she",
-            "we", "they", "you", "this", "that", "these", "those", "goal", "problem",
-            "group", "week", "day", "stage", "vocabulary", "english", "第", "第组"}
+            "we", "they", "you", "this", "that", "these", "those",
+            "vocabulary", "english", "第", "第组"}
 
 
 # 单词名允许的字符：字母开头，后面可跟字母 / 撇号 / 连字符 / 数字。
