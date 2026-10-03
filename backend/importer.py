@@ -206,6 +206,12 @@ def _split_pos_and_cn(rest):
     return pos, meaning
 
 
+def _strip_md_hash(s):
+    """去掉行首 Markdown 标题前缀（#/##/###…），让 '### 1. word'、'## Day 1'、
+    '# 第1周｜…' 这类也能被当作普通单词/周/组标题解析。"""
+    return re.sub(r"^#{1,6}\s*", "", s or "").strip()
+
+
 # 识别周/组行（支持中英文写法：第2周 / Week 2 / 第1组 / Day 1 / 第1天）
 _WEEK_RE = re.compile(
     r"(?:第\s*([0-9０-９]{1,2})\s*周|(?:week|wk)[\s.]*([0-9０-９]{1,2}))", re.I)
@@ -237,6 +243,8 @@ def _parse_word_header(line):
        11. branch — 分公司 / 分部
     """
     s = line.strip()
+    # 去掉行首 Markdown 标题前缀（### 1. word → 1. word）
+    s = _strip_md_hash(s)
     # 去掉行首序号 "1." "15." "40)" "2、" 及列表标记 "•" "①" 等
     s = re.sub(r"^\s*(?:[0-9０-９]{1,3}\s*[.、)）]|[•·▪◦‣]|[\u2460-\u2473])\s*", "", s)
     for sep in ("—", "–", "－", "："):
@@ -266,8 +274,8 @@ def _parse_word_header(line):
 
 def _is_word_header_line(line):
     """单词头通常是"短行"，且不是一句英文例句。用于避免把英文例句首词误当单词。"""
-    s = line.strip()
-    if not s or len(s) > 40:
+    s = _strip_md_hash(line.strip())   # 先去 Markdown '#' 前缀（### 1. word…）再判
+    if not s or len(s) > 60:
         return False
     if s[-1] in ".!?":
         return False  # 以句末标点结尾的多半是例句
@@ -324,10 +332,14 @@ def _read_headers(line, week_ref, title_ref, group_ref):
     以句末标点结尾的行视为句子而非标题（防止 "Day 1 was my first day." 误判）。
     """
     s = line.strip()
+    # 去掉 Markdown 标题前缀（#/##/###），让 '# 第1周｜…' 也能认
+    s = _strip_md_hash(s)
+    if not s:
+        return None
     if s and s[-1] in ".!?，。！？；;":
         return None
     wm = _WEEK_RE.search(s)
-    if wm and len(s) <= 40:
+    if wm and len(s) <= 60:
         wk = _to_int(wm.group(1) or wm.group(2))
         if wk is not None:
             week_ref[0] = wk
@@ -339,7 +351,7 @@ def _read_headers(line, week_ref, title_ref, group_ref):
             title_ref[0] = t
         return "week"
     gm = _GROUP_RE.search(s)
-    if gm and len(s) <= 60:
+    if gm and len(s) <= 80:
         gd = _to_int(gm.group(1) or gm.group(2) or gm.group(3)) or 1
         name = _GROUP_RE.sub("", s)
         name = re.sub(r"[|｜:：\s]+", " ", name).strip("|｜，,。:：-")
@@ -495,6 +507,9 @@ def _parse_line(text):
     for raw in text.splitlines():
         line = raw.strip()
         if not line:
+            continue
+        # 跳过 Markdown 分隔线 / 旧式分块线
+        if re.fullmatch(r"[-–—=_]{2,}", line):
             continue
         sm = _STAGE_RE.search(line)
         if sm and len(line) <= 30 and not re.search(r"[。！？.!?]$", line):
@@ -742,6 +757,8 @@ def _parse_inline_word_line(line):
     s = line.strip()
     if not s or len(s) > 600:
         return None
+    # 去掉行首 Markdown 标题前缀（### 1. word → 1. word）
+    s = _strip_md_hash(s)
     # 去行首序号 "1." "15)" "2、" "①"
     s = _DOTTED_NUM_RE.sub("", s)
     # 分隔符：优先 — ，其次 – / －
@@ -813,6 +830,9 @@ def parse_words_block(text):
     for raw in text.splitlines():
         line = raw.strip()
         if not line:
+            continue
+        # 跳过 Markdown 分隔线 / 旧式分块线
+        if re.fullmatch(r"[-–—=_]{2,}", line):
             continue
         sm = _STAGE_RE.search(line)
         if sm and len(line) <= 30 and not re.search(r"[。！？.!?]$", line):
