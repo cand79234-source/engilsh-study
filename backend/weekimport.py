@@ -500,33 +500,47 @@ SCENE_SPLIT = "\n§§SCENES§§\n"
 def _merge_split(words_text, scenes_text, forced_stage=None, forced_week=None):
     """『单词框 + 场景框』分离导入：单词用 parse_words_block，场景用 _extract_large_scenes。
 
-    若左框（单词框）本身是『按天场景计划』（# 第N天｜… + 小场景/大场景 内联），
-    则整段走 _parse_day_scenario_plan——否则这份格式会因为"只有场景内联、没有
-    word—释义 词形"而两头落空（左框 parse_words_block 取不到词、右框又为空）。
+    按天场景计划（# 第N天｜… + ①小场景/③大场景 内联）是『单词+场景』合一的整篇，
+    用户可能整篇贴进左框，也可能按导入弹窗右框的占位提示整篇贴进右框。两种放置都必须
+    正确解析——只要左、右任一框识别为 day-plan，就以该框为准走 _parse_day_scenario_plan；
+    另一框若另有内容则作为补充大场景。否则才走『单词框 + 场景框』分离导入。
+
+    ⚠️ 历史坑：旧实现只在 左框 命中 day-plan 时走专用解析；右框命中时走通用解析，
+    只抽大场景、把 ①小场景 全丢，导致基础句 vocab.scenes 为空、学习页看不到场景。
     """
     from importer import (parse_words_block, _extract_large_scenes,
                           _is_day_scenario_plan, _parse_day_scenario_plan)
-    if _is_day_scenario_plan(words_text):
-        wp = _parse_day_scenario_plan(words_text)
+    wt = (words_text or "").strip()
+    st = (scenes_text or "").strip()
+    # 选取含 day-plan 的那一框作为主解析源（左、右皆可）
+    if _is_day_scenario_plan(wt):
+        day_src, other = wt, st
+    elif _is_day_scenario_plan(st):
+        day_src, other = st, wt
+    else:
+        day_src = None
+    if day_src is not None:
+        wp = _parse_day_scenario_plan(day_src)
         if wp:
             week = wp.get("week") or forced_week
             stage = _resolve_stage(wp.get("stage"), forced_stage)
             title = wp.get("title", "")
             groups = wp.get("groups") or []
             large_scenes = list(wp.get("large_scenes") or [])
-            if scenes_text and scenes_text.strip():
-                extra, _ = _extract_large_scenes(scenes_text)
+            # 另一框若还有内容（且不是另一份 day-plan），补抽大场景
+            if other and not _is_day_scenario_plan(other):
+                extra, _ = _extract_large_scenes(other)
                 large_scenes.extend(extra)
             return _merge_into_week(groups, large_scenes, week, stage, title,
                                     wp.get("warnings", []), wp.get("skipped", []))
-    wp = parse_words_block(words_text or "")
+    wp = parse_words_block(wt)
     week = wp.get("week") or forced_week
     stage = _resolve_stage(wp.get("stage"), forced_stage)
     title = wp.get("title", "")
     groups = wp.get("groups") or []
     large_scenes = []
-    if scenes_text and scenes_text.strip():
-        large_scenes, _ = _extract_large_scenes(scenes_text)
+    if st:
+        large_scenes, _ = _extract_large_scenes(st)
     return _merge_into_week(groups, large_scenes, week, stage, title,
                             wp.get("warnings", []), wp.get("skipped", []))
 
