@@ -1060,9 +1060,13 @@ def scenes_import(body: dict):
 
 
 @app.get("/api/scenes")
-def scenes_list():
-    """已导入的全部场景（word_scenarios）。造句页「场景」单独一页的数据源。"""
-    return {"ok": True, "scenes": _weekimport.list_scenes()}
+def scenes_list(week: int = None, stage: int = None):
+    """已导入的场景（word_scenarios）。造句页「场景」单独一页的数据源。
+
+    week/stage 给定时按周/阶段过滤，支持「周/天选择器也作用于造句页」。
+    """
+    return {"ok": True,
+            "scenes": _weekimport.list_scenes(week=week, stage=stage)}
 
 
 # ---------- 文件上传导入（docx/pdf/txt/xlsx/html 等多格式） ----------
