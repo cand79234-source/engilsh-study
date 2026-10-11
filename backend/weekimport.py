@@ -292,7 +292,7 @@ def import_rich_week(text, forced_stage=None, forced_week=None):
     svc.update_week(stage, week, title=title, vocab=new_vocab)
     _move_progress_to(stage, week)
     _trigger_scenarios(new_vocab, stage, week)
-    _store_large_scenes(large_scenes)
+    _store_large_scenes(large_scenes, stage=stage, week=week)
     total = len(new_vocab)
     day_counts = {}
     for v in new_vocab:
@@ -323,20 +323,23 @@ def _trigger_scenarios(new_vocab, stage, week):
     return
 
 
-def _store_large_scenes(large_scenarios):
-    """把导入带进来的大/中场景写进 word_scenarios（tier='large'）。
+def _store_large_scenes(large_scenarios, stage=0, week=1, day=None):
+    """把导入带进来的大/中/小场景写进 word_scenarios。
 
     - 认 tier='large'/'medium'/'small'：large/medium 是综合复习大场景，
-      small 是每日 10 个小场景（均按中文格式由 importer 解析出来，统一存为
-      tier='large' 以便组合句页取到，避免素材丢失）。
-    - 覆盖导入语义：先按「本次涉及的所有词」一次性 DELETE 旧 large，再写入
-      本次全部场景 —— 这样同一个词出现在多个场景块时不会被后面的块误删。
+      small 是每日 10 个小场景。三档都存，前端按 tier 区分用途
+      （small→基础句情景 / large→组合句情景），不会混淆。
+    - 周/天隔离：每条场景带 stage/week/day，覆盖导入时只 DELETE「本 (stage,week)
+      下本次涉及的词」的旧场景，不同周之间互不影响（满足「周/天选择器也作用于
+      造句页」的需求，也避免多次导入把不同周的场景混在一起）。
     - 一个场景列了多个词 → 每个词都存一份（用户确认的落库方式）。
     返回入库条数。
     """
+    stage = int(stage or 0)
+    week = int(week or 1)
     if not large_scenarios:
         return 0
-    pairs = []          # (word, text) 去重后待写
+    pairs = []          # (word, tier, text, day) 去重后待写
     seen = set()
     words = set()
     for sc in (large_scenarios or []):
@@ -346,6 +349,7 @@ def _store_large_scenes(large_scenarios):
         text = (sc.get("text") or "").strip()
         if len(text) < 4:
             continue
+        d = int(sc.get("day") or 0) if sc.get("day") is not None else 0
         for w in (sc.get("words") or []):
             wl = (w or "").strip().lower()
             if not wl:
@@ -354,7 +358,7 @@ def _store_large_scenes(large_scenarios):
             if key in seen:
                 continue
             seen.add(key)
-            pairs.append(key)
+            pairs.append((wl, tier, text, d))
             words.add(wl)
     if not pairs:
         return 0
@@ -363,12 +367,13 @@ def _store_large_scenes(large_scenarios):
     try:
         for wl in words:
             conn.execute(
-                "DELETE FROM word_scenarios WHERE word=? AND tier='large'", (wl,))
-        for wl, text in pairs:
+                "DELETE FROM word_scenarios WHERE word=? AND stage=? AND week=?",
+                (wl, stage, week))
+        for wl, tier, text, d in pairs:
             conn.execute(
-                "INSERT INTO word_scenarios (word, tier, prompt, grammar, used_count, created_at)"
-                " VALUES (?,?,?,?,0,?)",
-                (wl, "large", text[:600], "", ts()))
+                "INSERT INTO word_scenarios (word, tier, prompt, grammar, used_count, created_at, stage, week, day)"
+                " VALUES (?,?,?,?,0,?,?,?,?)",
+                (wl, tier, text[:600], "", ts(), stage, week, d))
             saved += 1
         conn.commit()
     except Exception as e:
@@ -582,7 +587,7 @@ def _merge_into_week(groups, large_scenes, week, stage, title, warnings=None, sk
                 conn.close()
             svc.update_week(stage, week, title=existing.get("title") or title, vocab=base_vocab)
             _move_progress_to(stage, week)
-            _store_large_scenes(large_scenes)
+            _store_large_scenes(large_scenes, stage=stage, week=week)
             return {"ok": True, "stage": stage, "week": week,
                     "title": existing.get("title") or title,
                     "total": len(base_vocab), "days": 0,
@@ -619,7 +624,7 @@ def _merge_into_week(groups, large_scenes, week, stage, title, warnings=None, sk
     svc.update_week(stage, week, title=title or existing.get("title"), vocab=new_vocab)
     _move_progress_to(stage, week)
     _trigger_scenarios([v for v in new_vocab if v.get("day")], stage, week)
-    _store_large_scenes(large_scenes)
+    _store_large_scenes(large_scenes, stage=stage, week=week)
     # 统计各天词数。注意：kept 里可能混有旧版/自动填充的无 day 字段条目，
     # 用 get 防 KeyError（此前在"已有自动填充内容的周"上合并导入会 500）。
     day_counts = {}
@@ -678,6 +683,9 @@ def import_scenes_only(text, forced_stage=None, forced_week=None):
     if is_plan:
         wp = _parse_day_scenario_plan(text)
         large_scenes = list(wp.get("large_scenes") or [])
+        # ①小场景也一并进 word_scenarios（tier='small'），造句页基础句用「我的场景」做情景
+        for sc in (wp.get("small_scenes") or []):
+            large_scenes.append(sc)
         if not large_scenes:
             large_scenes, _ = _extract_large_scenes(text)
         week = wp.get("week") or forced_week
@@ -699,7 +707,9 @@ def import_scenes_only(text, forced_stage=None, forced_week=None):
 
     if not week:
         week = forced_week
-    saved = _store_large_scenes(large_scenes)
+    week = int(week or 1)
+    stage = int(stage or 0)
+    saved = _store_large_scenes(large_scenes, stage=stage, week=week)
     return {
         "ok": True,
         "stage": stage, "week": week,
@@ -709,16 +719,27 @@ def import_scenes_only(text, forced_stage=None, forced_week=None):
     }
 
 
-def list_scenes(limit=1000):
-    """列出已导入的全部场景（word_scenarios 表），供造句页「场景」单独一页展示。
+def list_scenes(limit=1000, week=None, stage=None):
+    """列出已导入的场景（word_scenarios 表），供造句页「场景」单独一页展示。
 
-    场景按词聚合后返回；不依赖词汇表，没有对应词的场景也能正常显示。
+    - week/stage 给定时按周/阶段过滤（满足「周/天选择器也作用于造句页」）。
+    - 不传则返回全部；不依赖词汇表，没有对应词的场景也能正常显示。
+    - 返回字段含 stage/week/day，供前端按天筛选与分组。
     """
     conn = get_conn()
     try:
-        rows = conn.execute(
-            "SELECT id, word, tier, prompt, grammar, used_count, created_at "
-            "FROM word_scenarios ORDER BY word, id LIMIT ?", (limit,)).fetchall()
+        sql = ("SELECT id, word, tier, prompt, grammar, used_count, created_at, "
+               "stage, week, day FROM word_scenarios")
+        where, params = [], []
+        if week is not None:
+            where.append("week=?"); params.append(int(week))
+        if stage is not None:
+            where.append("stage=?"); params.append(int(stage))
+        if where:
+            sql += " WHERE " + " AND ".join(where)
+        sql += " ORDER BY day, word, id LIMIT ?"
+        params.append(int(limit))
+        rows = conn.execute(sql, params).fetchall()
     finally:
         conn.close()
     return [dict(r) for r in rows]
