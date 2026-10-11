@@ -1016,6 +1016,17 @@ def init_db():
     except Exception as e:
         print("[db.init_db] 唯一索引建立失败(可忽略):", e)
 
+    # word_scenarios 补 stage/week/day 三列（周/天隔离，供「造句」页按周/天筛选）。
+    # 老库已有数据默认 stage=0/week=1/day=0，不影响历史场景显示。
+    try:
+        _ensure_columns(conn, "word_scenarios", {
+            "stage": "INTEGER DEFAULT 0",
+            "week": "INTEGER DEFAULT 1",
+            "day": "INTEGER DEFAULT 0",
+        })
+    except Exception as e:
+        print("[db.init_db] word_scenarios 补列失败(可忽略):", e)
+
     conn.commit()
     conn.close()
 
@@ -1024,7 +1035,7 @@ def init_db():
 # 全部来自本文件内写死的调用点，加白名单是为了让「外部输入拼进 DDL」这条路直接断掉。
 _DDL_TABLE_WHITELIST = {
     "reviews", "sentences", "errors", "training_projects", "training_attempts",
-    "word_output", "quizzes",
+    "word_output", "quizzes", "word_scenarios",
 }
 _SAFE_IDENT = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
