@@ -271,6 +271,7 @@ textarea{font-family:monospace;font-size:13px;min-height:110px;line-height:1.6}
 <main class="content" id="content"></main>
 <div class="bottomnav">
   <a data-page="learn" class="active"><span class="ico">📖</span><span>学习</span></a>
+  <a data-page="scenes"><span class="ico">🌅</span><span>造句</span></a>
   <a data-page="listen"><span class="ico">🎧</span><span>听力</span></a>
   <a data-page="review"><span class="ico">🔁</span><span>复习</span></a>
   <a data-page="test"><span class="ico">📝</span><span>测评</span></a>
@@ -536,35 +537,9 @@ pages.learn=async function(el){
     </div>
   </div>
 
-  <div style="display:flex;justify-content:space-between;align-items:center;margin:14px 0 10px">
-    <h2 style="margin:0">✍️ 造句</h2>
-    <span class="fold-ic" data-act="senToggle" data-fold-for="sentenceFold" title="折叠/展开">${state.folds.sen?'▽':'▷'}</span>
-  </div>
-  <div id="sentenceFold" ${state.folds.sen?'':'style="display:none"'}>
-
-  <div class="card" id="planBasic">
-    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px">
-      <h2 style="margin:0;flex:1;min-width:0">① 基础 · 每词一句 <span class="badge" id="basicProg" style="background:var(--primary-bg);color:var(--primary)"></span></h2>
-      <span class="fold-ic" data-act="catFold" data-val="basic" data-fold-for="basicBody" title="折叠/展开">${state.folds.basic?'▽':'▷'}</span>
-    </div>
-    <div class="sub" style="margin-top:4px">目标：<b>会用</b>。今天 ${(t.sentence_plan&&t.sentence_plan.basic||[]).length} 个词，每个造一句。</div>
-    <div style="display:flex;justify-content:flex-end;margin:3px 0 4px"><button class="btn ghost sm" style="min-height:auto;padding:5px 10px;font-size:13px" id="copyAllBtn" data-act="copyAll">📋 复制全部</button></div>
-    <div id="basicBody" ${state.folds.basic?'':'style="display:none"'}><div id="sentences"></div></div>
-  </div>
-
-  <div class="card" id="planCombo" style="background:#f8fafc;border-color:#e2e8f0">
-    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px">
-      <h2 style="margin:0;flex:1;min-width:0">② 组合表达 · 10 组 <span class="badge" id="comboProg" style="background:#e0e7ff;color:var(--primary)"></span></h2>
-      <span class="fold-ic" data-act="catFold" data-val="combo" data-fold-for="comboBody" title="折叠/展开">${state.folds.combo?'▽':'▷'}</span>
-    </div>
-    <div class="sub" style="margin-top:4px">目标：<b>把词放进连续表达</b>。到期复习词混在这里一起过${(t.review_pool||[]).length?`（今天 ${(t.review_pool||[]).length} 个）`:''} · 写多写少随意，不强制</div>
-    <div id="comboBody" ${state.folds.combo?'':'style="display:none"'}><div id="combos"></div></div>
-  </div>
-
-  </div>`}
+  `}
 
   `;
-  if(!t.is_rest_day) renderSentencePlan(t);
 };
 
 function renderWords(words){
@@ -744,35 +719,44 @@ async function master(word){
   toast(`已掌握「${word}」`); refreshProg(); pages.learn(document.getElementById('content'));
 }
 async function showImport(){
-  // 用弹出层展示富文本导入
+  // 用弹出层展示富文本导入 —— 单词与场景是两条独立通道
   const p=state.learn.d.progress;
+  const impWeek=state.impWeek||p.week, impDay=state.impDay||p.day;
+  state.impWeek=impWeek; state.impDay=impDay;
   const ov=document.createElement('div');ov.className='overlay';ov.style.cssText='z-index:95';
   ov.onclick=(e)=>{if(e.target===ov)ov.remove();};
   ov.innerHTML=`<div class="sheet">
     <button class="close" onclick="this.closest('.overlay').remove()">✕</button>
-    <h3>📥 导入整周词汇</h3>
-    <div class="sub" style="margin-top:2px">可分多次粘贴，第 N 组会合并进当前周，不会清掉前面的组。支持分组=每天、中文释义、例句、固定搭配。</div>
+    <h3>📥 导入本周词 / 场景</h3>
+    <div class="sub" style="margin-top:2px"><b>单词</b>与<b>场景</b>是两条独立通道：各自导入、各自存储，互不影响。导场景<b>不会</b>改动词汇表的数量与顺序；不导场景就没有场景。</div>
+    <div class="tagline" style="margin:8px 0">📍 导入到第
+      <b>W<input id="imp_week" type="number" min="1" max="16" value="${impWeek}" style="width:52px;display:inline-block;padding:4px 6px;margin:0 4px;text-align:center">/16</b>
+      的
+      <b>D<input id="imp_day" type="number" min="1" max="7" value="${impDay}" style="width:46px;display:inline-block;padding:4px 6px;margin:0 4px;text-align:center">/7</b>
+      （也可在文本开头写「第N周」覆盖）</div>
     <div class="btnrow" style="margin:8px 0 6px">
-      <button class="btn" id="imp_file_btn" onclick="document.getElementById('imp_file').click()">📎 上传文件（docx / pdf / txt / xlsx / md / html）</button>
+      <button class="btn" id="imp_file_btn" onclick="document.getElementById('imp_file').click()">📎 上传文件</button>
     </div>
     <input type="file" id="imp_file" accept=".docx,.doc,.pdf,.txt,.md,.markdown,.csv,.tsv,.json,.html,.htm,.rtf,.xlsx,.xlsm,.log" style="display:none" onchange="uploadImportFile(this.files[0])">
-    <div class="tagline">左框贴单词、右框贴场景，<b>各自独立识别、互不干扰</b>；场景识别到会<b>直接覆盖</b>该词已有场景。两框都支持「第N周｜…」指定周号，不写则导入当前第 ${p.week} 周。</div>
     <div class="btnrow" style="margin:6px 0">
-      <button class="btn ghost sm" data-act="copyWeekPrompt">📋 复制「本周词汇生成」提示词（粘贴给 AI）</button>
-      <button class="btn ghost sm" data-act="copyWeekScenePrompt" title="把本周已导入的单词 + 近期学过词（SRS学习历史，含本周及往前几周）填进造景提示词，复制给 AI 生成场景">🌅 复制本周单词+复习词给 AI 造景</button>
+      <button class="btn ghost sm" data-act="copyWeekPrompt">📋 复制「本周词汇生成」提示词</button>
+      <button class="btn ghost sm" data-act="copyWeekScenePrompt">🌅 复制本周单词+复习词给 AI 造景</button>
     </div>
     <div style="display:flex;gap:14px;align-items:stretch;margin:4px 0">
       <div style="flex:1;min-width:0;display:flex;flex-direction:column">
         <div class="lbl" style="margin-bottom:4px">📘 单词（每行一个词 · 例句用 ● 分隔）</div>
-        <textarea id="imp_words" placeholder="1. currently /ˈkɜːrəntli/ — 目前，现在 ●I currently live in Shanghai. 我目前住在上海。 ●I currently work for a company. 我目前在一家公司工作。 固定搭配：「currently live」目前居住；「currently work」目前工作" style="min-height:220px;flex:1"></textarea>
+        <textarea id="imp_words" placeholder="1. currently /ˈkɜːrəntli/ — 目前，现在 ●I currently live in Shanghai. 我目前住在上海。" style="min-height:200px;flex:1"></textarea>
       </div>
       <div style="flex:1;min-width:0;display:flex;flex-direction:column">
-        <div class="lbl" style="margin-bottom:4px">🌅 场景（识别到直接覆盖）</div>
-        <textarea id="imp_scenes" placeholder="第1天｜主题&#10;① 今日10个小场景&#10;小场景1｜名称&#10;场景说明：…&#10;使用单词：currently / hometown / originally" style="min-height:220px;flex:1"></textarea>
+        <div class="lbl" style="margin-bottom:4px">🌅 场景（单独一页，不进词汇表）</div>
+        <textarea id="imp_scenes" placeholder="第1天｜主题&#10;① 今日10个小场景&#10;小场景1｜名称&#10;场景说明：…&#10;使用单词：currently / hometown / originally" style="min-height:200px;flex:1"></textarea>
       </div>
     </div>
     <div id="imp_file_result"></div>
-    <div class="btnrow"><button class="btn" id="imp_run_btn" onclick="runImport()">🚀 解析并导入</button></div>
+    <div class="btnrow">
+      <button class="btn" id="imp_word_btn" onclick="runWordImport()">📘 导入单词</button>
+      <button class="btn green" id="imp_scene_btn" onclick="runSceneImport()">🌅 导入场景</button>
+    </div>
     <div id="imp_rich_result"></div>
   </div>`;
   document.body.appendChild(ov);
@@ -812,51 +796,66 @@ async function uploadImportFile(f){
     const inp=document.getElementById('imp_file');if(inp)inp.value='';
   }
 }
-async function runImport(){
+async function runWordImport(){
+  // 单词通道：只调 /api/words/import，绝不碰场景
   const words=document.getElementById('imp_words').value;
-  const scenes=document.getElementById('imp_scenes').value;
-  if(!words.trim() && !scenes.trim()){toast('请先粘贴要导入的内容（左框单词或右框场景）');return;}
-  // 用固定分隔符把单词段与场景段拼成一段文本，后端据此拆开分别解析（不依赖 main.py 改动）
-  const raw=words + "\n§§SCENES§§\n" + scenes;
-  const p=state.learn.d.progress;
-  const btn=document.getElementById('imp_run_btn');
-  btn.textContent='解析中…';btn.disabled=true;
+  const week=clampWeek(document.getElementById('imp_week').value);
+  const day=clampDay(document.getElementById('imp_day').value);
+  state.impWeek=week; state.impDay=day;
+  if(!words.trim()){toast('左框还没有单词');return;}
+  const btn=document.getElementById('imp_word_btn');
+  btn.textContent='导入中…';btn.disabled=true;
   const box=document.getElementById('imp_rich_result');
-  let r;
   try{
-    r=await api('/words/import',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:raw, merge:true, week:p.week})});
-  }catch(e){box.innerHTML=`<div class="res" style="background:#fee2e2;border-color:#fecaca;color:var(--red)">导入请求失败：${esc(e.message)}</div>`;btn.textContent='🚀 解析并导入';btn.disabled=false;return;}
-  if(!r.ok){
-    box.innerHTML=`<div class="res" style="background:#fee2e2;border-color:#fecaca;color:var(--red)">${esc(r.error||'未识别到内容')}</div>`;
-    btn.textContent='🚀 解析并导入';btn.disabled=false;return;
-  }
-  let dayTxt=(r.day_counts?Object.keys(r.day_counts).map(k=>`D${k}:${r.day_counts[k]}词`).join(' '):'');
-  let w=[]; if(r.warnings&&r.warnings.length) w.push(`⚠️ ${r.warnings.length}条提示：${esc(r.warnings.join('；'))}`);
-  if(r.skipped&&r.skipped.length) w.push(`自动跳过了 ${r.skipped.length} 行说明/注释文字。`);
-  const sceneTxt = (r.scenes!=null && r.scenes>0) ? ` · 场景覆盖 ${r.scenes} 条` : '';
-  box.innerHTML=`<div class="res good">
-      <b>✅ 已合并到 第${r.week}周「${esc(r.title||'未命名')}」</b><br>
-      <span style="color:var(--muted)">本次：${dayTxt?dayTxt:'若干词'} · 当前周共 ${r.total} 词 / ${r.days} 天${sceneTxt}</span><br>
-      <span style="color:var(--muted)">词库新增 ${r.added_new} · 自带例句 ${r.added_examples} · 固定搭配 ${r.added_collocations||0} · 自动补例句 ${r.autogen}</span>
-      ${w.length?('<br><span style="color:var(--amber);font-size:13px">'+w.join('<br>')+'</span>'):''}
-    </div>`;
-  toast(`已合并到第${r.week}周，当前共 ${r.total} 词 / ${r.days} 天`);
-  btn.textContent='✅ 完成，点击关闭';
-  btn.disabled=false;
-  btn.onclick=function(){const o=this.closest('.overlay'); if(o)o.remove();};
-  // 仅当导入到非当前周才询问跳转；否则直接刷新当前学习页
-  const cur=state.learn.d.progress;
+    const r=await api('/words/import',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:words, merge:true, week:week, day:day})});
+    if(!r.ok){box.innerHTML=errBox(r.error||'未识别到内容');btn.textContent='📘 导入单词';btn.disabled=false;return;}
+    box.innerHTML=wordOkBox(r);
+    toast(`单词已导入第${r.week}周，当前共 ${r.total} 词`);
+    refreshAfterImport(r);
+  }catch(e){box.innerHTML=errBox('单词导入失败：'+e.message);}
+  finally{btn.textContent='📘 导入单词';btn.disabled=false;}
+}
+async function runSceneImport(){
+  // 场景通道：只调 /api/scenes/import，只写 word_scenarios，绝不碰词汇表
+  const scenes=document.getElementById('imp_scenes').value;
+  const week=clampWeek(document.getElementById('imp_week').value);
+  state.impWeek=week;
+  if(!scenes.trim()){toast('右框还没有场景');return;}
+  const btn=document.getElementById('imp_scene_btn');
+  btn.textContent='导入中…';btn.disabled=true;
+  const box=document.getElementById('imp_rich_result');
+  try{
+    const r=await api('/scenes/import',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:scenes, week:week})});
+    if(!r.ok){box.innerHTML=errBox(r.error||'未识别到场景');btn.textContent='🌅 导入场景';btn.disabled=false;return;}
+    box.innerHTML=`<div class="res good"><b>✅ 已导入 ${r.scenes} 条场景</b><br><span style="color:var(--muted)">仅存场景，未改动词汇表。可在底部「🌅 造句」页查看。</span></div>`;
+    toast(`场景已导入第${r.week}周，共 ${r.scenes} 条`);
+  }catch(e){box.innerHTML=errBox('场景导入失败：'+e.message);}
+  finally{btn.textContent='🌅 导入场景';btn.disabled=false;}
+}
+function clampWeek(v){v=parseInt(v,10)||1;return Math.max(1,Math.min(16,v));}
+function clampDay(v){v=parseInt(v,10)||1;return Math.max(1,Math.min(7,v));}
+function errBox(msg){return `<div class="res" style="background:#fee2e2;border-color:#fecaca;color:var(--red)">${esc(msg)}</div>`;}
+function wordOkBox(r){
+  let w=[]; if(r.warnings&&r.warnings.length) w.push(`⚠️ ${r.warnings.join('；')}`);
+  if(r.skipped&&r.skipped.length) w.push(`自动跳过 ${r.skipped.length} 行说明/注释`);
+  return `<div class="res good"><b>✅ 单词已导入 第${r.week}周「${esc(r.title||'未命名')}」</b><br>
+    <span style="color:var(--muted)">当前周共 ${r.total} 词 / ${r.days} 天</span><br>
+    <span style="color:var(--muted)">词库新增 ${r.added_new} · 例句 ${r.added_examples} · 搭配 ${r.added_collocations||0} · 自动补 ${r.autogen}</span>
+    ${w.length?'<br><span style="color:var(--amber);font-size:13px">'+w.join('<br>')+'</span>':''}</div>`;
+}
+function refreshAfterImport(r){
+  // 导入到非当前周时询问是否跳转；否则刷新【当前页】（词汇/场景即时更新）。
+  // 用 render(state.page) 而非写死 pages.learn —— 在「造句」页导入也不会被切回学习页。
+  const cur=(state.learn&&state.learn.d&&state.learn.d.progress)||{week:r.week};
   setTimeout(()=>{
     if(r.week!==cur.week){
       if(confirm(`已导入到第 ${r.week} 周。现在跳到第 ${r.week} 周开始学习吗？`)){
         document.querySelector('.overlay')&&document.querySelector('.overlay').remove();
-        setProgressAndGo(r.week);
+        setProgressAndGo(r.week); return;
       }
-    } else {
-      pages.learn(document.getElementById('content'));
-      document.querySelector('.overlay')&&document.querySelector('.overlay').remove();
     }
-  }, 400);
+    render(state.page||'learn');
+  }, 350);
 }
 function setProgressAndGo(week){
   // 保存进度到该周 Day1，并回学习页
@@ -2639,6 +2638,69 @@ async function copyText(txt, emptyMsg){
 /* 复习页不再是「造句复习页」。造句不进 SRS，听力也不单独建复习入口。
    单词走 SRS 闪卡（英文 → 中文主动回忆），错误走薄弱项。
    （「全部词汇」入口将在词库浏览阶段加入）                       */
+pages.scenes=async function(el){
+  // 确保折叠状态已初始化（直接进入本页时 state.folds 可能还没建）
+  state.folds=Object.assign({voc:true,sen:true,copy:false,listen:false,basic:true,combo:true}, state.folds||{});
+  el.innerHTML=`<div class="card">
+    <h2>🌅 造句 / 场景</h2>
+    <div class="sub" style="margin-top:4px">这一页集中放你<b>单独导入的场景</b>和<b>造句练习</b>：上面是导入的场景库（按词分组），下面是用这些场景练造句的地方。AI 批改链接保持不变。</div>
+    <div class="btnrow"><button class="btn ghost sm" data-act="copyWeekScenePrompt">🌅 复制本周单词+复习词给 AI 造景</button></div>
+    <div id="sceneList"><div class="sub">加载中…</div></div>
+    <div id="sentenceArea"></div>
+  </div>`;
+  try{
+    const [scR, tR] = await Promise.all([api('/scenes'), api('/today')]);
+    const list=(scR.scenes||[]);
+    const t=tR;
+    state.today=t; state.learn=state.learn||{};
+    // —— 场景库（按词分组）——
+    const box=document.getElementById('sceneList');
+    if(!list.length){
+      box.innerHTML='<div class="sub" style="margin-top:8px">还没有导入场景。回到「学习」页点 📥 导入，把场景贴进右框再点「🌅 导入场景」即可。</div>';
+    }else{
+      const byWord={};
+      list.forEach(s=>{ (byWord[s.word]=byWord[s.word]||[]).push(s); });
+      box.innerHTML=Object.keys(byWord).map(w=>`<div class="card" style="margin-top:10px">
+         <div style="font-weight:800">${esc(w)} <span class="badge">${byWord[w].length} 条</span></div>
+         ${byWord[w].map(s=>`<div style="margin:6px 0;padding:8px 10px;background:var(--primary-bg);border-radius:9px;font-size:13.5px;line-height:1.6">${esc(s.prompt)}</div>`).join('')}
+       </div>`).join('');
+    }
+    // —— 造句练习（从学习页搬来：① 基础每词一句 + ② 组合表达）——
+    const sa=document.getElementById('sentenceArea');
+    if(t.is_rest_day){
+      sa.innerHTML=`<div class="card" style="margin-top:12px;background:#ecfdf5;border-color:#a7f3d0"><h2>😌 Day7 · 休息日</h2><div class="sub" style="margin-top:4px">今天不练造句。你可以翻翻上面的场景库，或者直接休息。</div></div>`;
+      return;
+    }
+    sa.innerHTML=`
+      <div style="display:flex;justify-content:space-between;align-items:center;margin:14px 0 10px">
+        <h2 style="margin:0">✍️ 造句</h2>
+        <span class="fold-ic" data-act="senToggle" data-fold-for="sentenceFold" title="折叠/展开">${state.folds.sen?'▽':'▷'}</span>
+      </div>
+      <div id="sentenceFold" ${state.folds.sen?'':'style="display:none"'}>
+        <div class="card" id="planBasic">
+          <div style="display:flex;justify-content:space-between;align-items:center;gap:8px">
+            <h2 style="margin:0;flex:1;min-width:0">① 基础 · 每词一句 <span class="badge" id="basicProg" style="background:var(--primary-bg);color:var(--primary)"></span></h2>
+            <span class="fold-ic" data-act="catFold" data-val="basic" data-fold-for="basicBody" title="折叠/展开">${state.folds.basic?'▽':'▷'}</span>
+          </div>
+          <div class="sub" style="margin-top:4px">目标：<b>会用</b>。今天 ${(t.sentence_plan&&t.sentence_plan.basic||[]).length} 个词，每个造一句。</div>
+          <div style="display:flex;justify-content:flex-end;margin:3px 0 4px"><button class="btn ghost sm" style="min-height:auto;padding:5px 10px;font-size:13px" id="copyAllBtn" data-act="copyAll">📋 复制全部</button></div>
+          <div id="basicBody" ${state.folds.basic?'':'style="display:none"'}><div id="sentences"></div></div>
+        </div>
+        <div class="card" id="planCombo" style="background:#f8fafc;border-color:#e2e8f0">
+          <div style="display:flex;justify-content:space-between;align-items:center;gap:8px">
+            <h2 style="margin:0;flex:1;min-width:0">② 组合表达 · 10 组 <span class="badge" id="comboProg" style="background:#e0e7ff;color:var(--primary)"></span></h2>
+            <span class="fold-ic" data-act="catFold" data-val="combo" data-fold-for="comboBody" title="折叠/展开">${state.folds.combo?'▽':'▷'}</span>
+          </div>
+          <div class="sub" style="margin-top:4px">目标：<b>把词放进连续表达</b>。到期复习词混在这里一起过${(t.review_pool||[]).length?`（今天 ${(t.review_pool||[]).length} 个）`:''} · 写多写少随意，不强制</div>
+          <div id="comboBody" ${state.folds.combo?'':'style="display:none"'}><div id="combos"></div></div>
+        </div>
+      </div>`;
+    renderSentencePlan(t);
+  }catch(e){
+    const sl=document.getElementById('sceneList');
+    if(sl) sl.innerHTML='<div class="sub" style="margin-top:8px;color:var(--red)">加载失败：'+esc(e.message)+'</div>';
+  }
+};
 pages.review=async function(el){
   const d=await api('/review/flashcards');
   state.revDue=d.items||[];
@@ -5474,6 +5536,7 @@ pages.history=async function(el){
 };
 
 async function render(page){
+  state.page=page;
   const el=document.getElementById('content');
   if(!pages[page]){
     el.innerHTML=`<div class="card"><h2>页面不存在：${page}</h2></div>`;

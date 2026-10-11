@@ -642,3 +642,83 @@ def _merge_into_week(groups, large_scenes, week, stage, title, warnings=None, sk
         "skipped": skipped,
         "words": [v["word"] for v in new_vocab],
     }
+
+
+# =====================================================================
+# 场景导入（独立于单词通道）
+#
+# 2026-09 拆分：原来单词框与场景框被前端拼成一个文本、发给同一个
+# /api/words/import，由 import_rich_week_merge 一起解析。问题是「只有场景、
+# 没有单词」时 _merge_into_week 会调用 _collect_scene_words 把场景里出现的词
+# **自动塞进本周词汇表** —— 这正是「导场景时单词数量 / 顺序错乱」的根因。
+#
+# 现在两条通道彻底分开：
+#   · 单词通道 /api/words/import  → 只写 weeks.vocab（含每个词的 Mini Scenario）
+#   · 场景通道 /api/scenes/import  → 只写 word_scenarios（大/中场景），绝不碰词汇表
+# 两者存储互不触碰，导场景永远不会反向污染单词的数量与顺序。
+# =====================================================================
+def import_scenes_only(text, forced_stage=None, forced_week=None):
+    """场景导入（独立于单词通道）。
+
+    只把解析出的大/中场景写进 word_scenarios，绝不改动本周词汇表
+    （不新增词、不改词序、不改计数）。纯场景导入时若识别不到任何场景，
+    返回错误提示，而不是偷偷把场景里的词补进词汇表。
+
+    支持两种格式：
+      · 整篇「按天场景计划」：# 第N天｜主题 … ①小场景 / ③大场景（_parse_day_scenario_plan）
+      · 纯大场景块：①小场景 / ③大场景 内联（_extract_large_scenes）
+    """
+    from importer import (parse_import, _extract_large_scenes,
+                          _is_day_scenario_plan, _parse_day_scenario_plan)
+    text = (text or "").strip()
+    if not text:
+        return {"ok": False, "error": "场景内容为空，请先在右侧框粘贴场景。"}
+
+    is_plan = _is_day_scenario_plan(text)
+    if is_plan:
+        wp = _parse_day_scenario_plan(text)
+        large_scenes = list(wp.get("large_scenes") or [])
+        if not large_scenes:
+            large_scenes, _ = _extract_large_scenes(text)
+        week = wp.get("week") or forced_week
+        stage = _resolve_stage(wp.get("stage"), forced_stage)
+        title = wp.get("title", "")
+    else:
+        parsed = parse_import(text)
+        large_scenes = parsed.get("large_scenes") or []
+        if not large_scenes:
+            large_scenes, _ = _extract_large_scenes(text)
+        week = parsed.get("week") or forced_week
+        stage = _resolve_stage(parsed.get("stage"), forced_stage)
+        title = parsed.get("title", "")
+
+    if not large_scenes:
+        return {"ok": False,
+                "error": "没有识别到场景。请按「第N天｜主题 / ① 小场景 / ③大场景」"
+                        "格式粘贴，或把大场景块贴进右侧框。"}
+
+    if not week:
+        week = forced_week
+    saved = _store_large_scenes(large_scenes)
+    return {
+        "ok": True,
+        "stage": stage, "week": week,
+        "title": title or "",
+        "scenes": saved,
+        "note": "已导入 %d 条场景（仅存场景，未改动词汇表）。" % saved,
+    }
+
+
+def list_scenes(limit=1000):
+    """列出已导入的全部场景（word_scenarios 表），供造句页「场景」单独一页展示。
+
+    场景按词聚合后返回；不依赖词汇表，没有对应词的场景也能正常显示。
+    """
+    conn = get_conn()
+    try:
+        rows = conn.execute(
+            "SELECT id, word, tier, prompt, grammar, used_count, created_at "
+            "FROM word_scenarios ORDER BY word, id LIMIT ?", (limit,)).fetchall()
+    finally:
+        conn.close()
+    return [dict(r) for r in rows]

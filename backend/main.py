@@ -1005,14 +1005,18 @@ def words_import(body: dict):
     支持用户一次性粘贴「第N周｜主题｜N词 + 第N组｜分组名 + word—中文(+例句行)」，
     自动识别周号与分组(=每天)，生词写回词库并自动补例句。纯本地无 AI。
     """
-    import weekimport
     text = body.get("text", "") or ""
     forced_week = body.get("week")
     forced_stage = body.get("stage")
     merge = body.get("merge") or False  # 分批导入：只替换本次涉及的天，保留其它天
     if not text.strip():
         return {"ok": False, "error": "内容为空，请先粘贴要导入的词汇。"}
-    fn = weekimport.import_rich_week_merge if merge else weekimport.import_rich_week
+    fn = _weekimport.import_rich_week_merge if merge else _weekimport.import_rich_week
+    # 防御：单词通道只认「单词段」。若前端仍按旧式把场景拼在后面
+    # （\n§§SCENES§§\n），这里只取分隔符之前的部分，场景交给 /api/scenes/import。
+    # 这样即便旧前端/旧脚本误调，导场景也绝不会反向污染本周词汇表的数量与顺序。
+    if _weekimport.SCENE_SPLIT in text:
+        text = text.split(_weekimport.SCENE_SPLIT, 1)[0]
     # 兜底：导入链路里任何未捕获异常都转成 JSON 错误返回。
     # 否则 FastAPI 直接抛 500，前端 api() 里的 r.json() 会抛
     # "Unexpected token"，用户只看到一句没头没尾的「导入请求失败」，
@@ -1027,6 +1031,38 @@ def words_import(body: dict):
         import traceback
         traceback.print_exc()
         return {"ok": False, "error": f"导入失败：{type(e).__name__}: {e}"}
+
+
+# ---------- 场景导入（独立于单词通道） ----------
+@app.post("/api/scenes/import")
+def scenes_import(body: dict):
+    """场景导入：只把大/中场景写进 word_scenarios，绝不改动本周词汇表。
+
+    与 /api/words/import 是两条完全独立的通道 —— 导场景不会新增词、不会改词序、
+    不会改单词计数。不导场景时 word_scenarios 为空，造句页「场景」也就没有内容
+    （即「不导入场景就没有场景」）。
+    """
+    text = (body.get("text") or "").strip()
+    forced_week = body.get("week")
+    forced_stage = body.get("stage")
+    if not text:
+        return {"ok": False, "error": "场景内容为空，请先在右侧框粘贴场景。"}
+    try:
+        return _weekimport.import_scenes_only(
+            text,
+            forced_stage=int(forced_stage) if forced_stage is not None else None,
+            forced_week=int(forced_week) if forced_week is not None else None,
+        )
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return {"ok": False, "error": f"场景导入失败：{type(e).__name__}: {e}"}
+
+
+@app.get("/api/scenes")
+def scenes_list():
+    """已导入的全部场景（word_scenarios）。造句页「场景」单独一页的数据源。"""
+    return {"ok": True, "scenes": _weekimport.list_scenes()}
 
 
 # ---------- 文件上传导入（docx/pdf/txt/xlsx/html 等多格式） ----------
