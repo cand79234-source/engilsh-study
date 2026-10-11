@@ -768,6 +768,7 @@ def _parse_day_scenario_plan(text):
     day_review = {}      # day -> set(小写复习词)
     day_name = {}
     large_scenes = []
+    small_scenes = []     # ①小场景也收集起来，供「场景通道」单独导入时一并进 word_scenarios
     skipped = []
     cur_day = None
     cur_block = None     # {"lines":[...], "day":int}
@@ -792,6 +793,13 @@ def _parse_day_scenario_plan(text):
             # word_scenarios，避免组合句页混入小场景、与「大场景=综合复习」的设计分层混淆。
             if tier != "small":
                 large_scenes.append({"tier": tier, "words": new_words + review_words,
+                                     "text": scene_text, "day": d})
+            else:
+                # ①小场景：场景通道单独导入时需要一并进 word_scenarios（tier='small'），
+                # 供造句页基础句用「我的场景」做情景。注意这里只收、不重复挂 vocab.scenes
+                # （vocab.scenes 的挂载仍由下方 new_words 循环完成，给「单词通道」的
+                # 基础句显示用，两者互不影响）。
+                small_scenes.append({"tier": "small", "words": new_words,
                                      "text": scene_text, "day": d})
             s = day_seen.setdefault(d, set())
             day_new.setdefault(d, set()).update(new_words)
@@ -860,6 +868,7 @@ def _parse_day_scenario_plan(text):
         "groups": groups_list, "flat": flat, "warnings": warnings,
         "skipped": skipped, "header_lines": [],
         "large_scenes": large_scenes,
+        "small_scenes": small_scenes,
     }
 
 
