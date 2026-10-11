@@ -390,27 +390,7 @@ document.addEventListener('click', function(e){
   else if (act === 'copyRevWords') copyRevWords();
   else if (act === 'copyPrompt') copyPrompt();
   else if (act === 'copyWeekPrompt') copyWeekPrompt();
-  else if (act === 'sceneLibFold') {            // 造句页：折叠/展开「我的场景库」
-    state.sceneLibFold=!state.sceneLibFold;
-    render('scenes');
-  }
   else if (act === 'copyWeekScenePrompt') copyWeekScenePrompt();
-  else if (act === 'sceneGoToday') {           // 造句页：回到「今天」
-    const pg=(state.today&&state.today.progress)||{};
-    let tw=Number(pg.week||1)||1, td=Number(pg.day||1)||1;
-    // 若"今天"那一周/那天没场景，就落到最近一个有场景的周/天，绝不跳到空页
-    const _cur=(state.__allScenes)||[];
-    const has=(w,d)=>_cur.some(s=>Number(s.week||1)===w && Number(s.day||0)===d);
-    if(!has(tw,td)){
-      const wks=Array.from(new Set(_cur.map(s=>Number(s.week||1)))).sort((a,b)=>a-b);
-      for(const w of wks){ if(has(w,td)){ tw=w; break; }
-        const dd=Array.from(new Set(_cur.filter(s=>Number(s.week||1)===w).map(s=>Number(s.day||0)))).sort((a,b)=>a-b);
-        if(dd.length){ tw=w; td=dd[0]; break; }
-      }
-    }
-    state.sceneWeek=tw; state.sceneDay=td;
-    render('scenes');
-  }
   else if (act === 'copyErrorReport') copyErrorReport();
   else if (act === 'copySummaryReport') copySummaryReport();
   else if (act === 'revFlash') startFlashcard();
@@ -494,16 +474,19 @@ const state={}; const pages={};
 document.querySelectorAll('.bottomnav a').forEach(a=>a.onclick=()=>{
   document.querySelectorAll('.bottomnav a').forEach(x=>x.classList.remove('active'));
   a.classList.add('active'); render(a.dataset.page); window.scrollTo(0,0);});
-async function refreshProg(){try{const p=await api('/progress'); renderTopPicker(p);}catch(e){}}
+async function refreshProg(){try{const p=await api('/progress');
+  renderTopPicker({week: state.sceneWeek!=null?state.sceneWeek:p.week,
+                   day:  state.sceneDay!=null ?state.sceneDay :p.day});}catch(e){}}
 
 /* ---------- 顶部进度胶囊：week 下拉 + Day1–Day7 芯片（可直接点击切换） ----------
    造句页读这里的值（state.sceneWeek/sceneDay），所以在顶部切天/切周，
    造句页跟着变；学习页位置不动（不写 /progress）。 */
 function renderTopPicker(p){
   if(!p) return;
-  state.progPill={week:Number(p.week||1), day:Number(p.day||1)};
-  if(state.sceneWeek==null) state.sceneWeek=state.progPill.week;
-  if(state.sceneDay==null)  state.sceneDay=state.progPill.day;
+  // 注意：这里【不】回写 state.sceneWeek/sceneDay。
+  // 顶部显示的就是用户的当前选择；服务器进度不能覆盖它，否则点 Day 会被刷回去。
+  const w=Number(p.week||1), d=Number(p.day||1);
+  state.progPill={week:w, day:d};
   const dd=document.getElementById('topWeekDD');
   if(dd){
     // 固定 1–16 周（没有阶段概念）
@@ -518,19 +501,19 @@ function renderTopPicker(p){
   if(box) box.innerHTML=[1,2,3,4,5,6,7].map(d=>
     `<button class="daychip${d===state.progPill.day?' on':''}" onclick="topPickDay(${d})">D${d}</button>`).join('');
 }
-function topPickWeek(v){
-  v=parseInt(v,10)||1;
-  state.sceneWeek=v;
-  state.progPill.week=v;
-  render(state.page||'learn');
-}
 function topPickDay(d){
   d=parseInt(d,10)||1;
   state.sceneDay=d;
   state.progPill.day=d;
-  // 造句页/学习页都跟着切到该天
-  if(state.page==='scenes') render('scenes');
-  else render(state.page||'learn');
+  renderTopPicker(state.progPill);          // 任何页都立刻更新顶部高亮
+  render(currentPage());                    // 重画当前页（造句页跟着换天）
+}
+function topPickWeek(v){
+  v=parseInt(v,10)||1;
+  state.sceneWeek=v;
+  state.progPill.week=v;
+  renderTopPicker(state.progPill);
+  render(currentPage());
 }
 
 function go(page){document.querySelectorAll('.bottomnav a').forEach(x=>x.classList.remove('active'));
@@ -562,7 +545,13 @@ pages.learn=async function(el){
   const lD=Math.min(Number(d.today.listening_done)||0, lT);
   const lp=lT?Math.round(lD/lT*100):0;
   state.folds=Object.assign({voc:true,sen:true,copy:false,listen:false,basic:true,combo:true}, state.folds||{});
-  renderTopPicker(p);
+  // 顶部周/天以【用户当前选择】为准（topPickWeek/topPickDay 写入 state.sceneWeek/sceneDay），
+  // 不能用服务器进度覆盖回去，否则点 D2 会被立刻刷回 D1。
+  // 首次进入：把服务器进度写进 state.sceneWeek/sceneDay，作为顶部选择的初值；
+  // 之后一律以用户当前选择为准，不再被服务器进度覆盖。
+  if(state.sceneWeek==null) state.sceneWeek=Number(p.week||1)||1;
+  if(state.sceneDay==null)  state.sceneDay =Number(p.day ||1)||1;
+  renderTopPicker({week:state.sceneWeek, day:state.sceneDay});
   el.innerHTML=`
   <div class="card" style="border:1.5px solid var(--primary)">
     <div style="display:flex;justify-content:space-between;align-items:center">
@@ -2762,7 +2751,7 @@ function buildScenesPlan(list){
 pages.scenes=async function(el){
   // 确保折叠状态已初始化（直接进入本页时 state.folds 可能还没建）
   state.folds=Object.assign({voc:true,sen:true,copy:false,listen:false,basic:true,combo:true}, state.folds||{});
-  if(state.sceneLibFold==null) state.sceneLibFold=true;   // 场景库默认收起，先看到造句练习
+  if(state.sceneLibFold==null) state.sceneLibFold=false;   // 场景库直接显示（顶部已是唯一控制入口）
   const prog=(state.today&&state.today.progress)||{};
   // 先拉【全部】场景 + 今日进度：本页只显示"我导入的场景"，所以必须拿到全部周再自动选中含场景的那一周
   let allScenes=[], tToday=null;
@@ -2797,13 +2786,7 @@ pages.scenes=async function(el){
   const maxW = Math.max(1, stageWeeks(state.stages||[], Number(prog.stage||0)||0) || 16);
   el.innerHTML=`<div class="card">
     <h2>🌅 造句 / 场景</h2>
-    <div class="sub" style="margin-top:4px">这一页用你<b>导入的场景</b>练造句：下面是<b>和学习页底部完全一样的造句练习</b>（① 基础每词一句 + ② 组合表达）。在顶部切<b>周 / Day</b> 即可换天。AI 批改链接保持不变。</div>
-    <div class="btnrow" style="margin:8px 0 6px">
-      <span class="badge" style="background:var(--primary-bg);color:var(--primary)">Week${state.sceneWeek} · Day${state.sceneDay}</span>
-      <button class="btn ghost sm" data-act="sceneGoToday">📍 回到今天</button>
-      <button class="btn ghost sm" data-act="sceneLibFold">${state.sceneLibFold?'▷ 展开场景库':'▾ 收起场景库'}</button>
-      <button class="btn ghost sm" data-act="copyWeekScenePrompt" title="没有场景时，用 AI 帮你造一批（可选）">🌅 AI 帮造场景（可选）</button>
-    </div>
+    <div class="sub" style="margin-top:4px">这一页用你<b>导入的场景</b>练造句：下面是<b>和学习页底部完全一样的造句练习</b>（① 基础每词一句 + ② 组合表达）。在顶部切 <b>Week / Day</b> 即可换周换天。AI 批改链接保持不变。</div>
     <div id="sceneList" ${state.sceneLibFold?'style="display:none"':''}><div class="sub">加载中…</div></div>
     <div id="sentenceArea"></div>
     <div class="sub" style="margin-top:14px;color:var(--muted)">没有场景？把「第N天｜主题 / ① 小场景 / ③ 大场景」格式的计划贴进导入弹窗右侧「🌅 场景」框，点「🌅 导入场景」即可。本页只显示你导入的场景，绝不会自动生成或混入 AI 场景。</div>
