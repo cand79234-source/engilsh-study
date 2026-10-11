@@ -547,11 +547,10 @@ pages.learn=async function(el){
   state.folds=Object.assign({voc:true,sen:true,copy:false,listen:false,basic:true,combo:true}, state.folds||{});
   // 顶部周/天以【用户当前选择】为准（topPickWeek/topPickDay 写入 state.sceneWeek/sceneDay），
   // 不能用服务器进度覆盖回去，否则点 D2 会被立刻刷回 D1。
-  // 首次进入：把服务器进度写进 state.sceneWeek/sceneDay，作为顶部选择的初值；
-  // 之后一律以用户当前选择为准，不再被服务器进度覆盖。
-  if(state.sceneWeek==null) state.sceneWeek=Number(p.week||1)||1;
-  if(state.sceneDay==null)  state.sceneDay =Number(p.day ||1)||1;
-  renderTopPicker({week:state.sceneWeek, day:state.sceneDay});
+  // 这里【不】给初值（那会把进度周写死进来）；顶部只在用户点过时更新，
+  // 未选择时 renderTopPicker 内部回落到 p.week 显示，但不写进 state。
+  renderTopPicker({week: state.sceneWeek!=null?state.sceneWeek:p.week,
+                   day:  state.sceneDay!=null ?state.sceneDay :p.day});
   el.innerHTML=`
   <div class="card" style="border:1.5px solid var(--primary)">
     <div style="display:flex;justify-content:space-between;align-items:center">
@@ -2763,24 +2762,20 @@ pages.scenes=async function(el){
     return;
   }
   state.today=tToday; state.learn=state.learn||{};
-  state.__allScenes=allScenes;      // 供「回到今天」等处判断哪天/哪周有场景
+  state.__allScenes=allScenes;
   const todayDay=Number(prog.day||1)||1;
   const progWeek=Number(prog.week||1)||1;
-  // 周/天以【顶部胶囊】的选择为准（state.sceneWeek/sceneDay，由 topPickWeek/topPickDay 写入）。
-  // 首次进入才做一次兜底：当前选择没场景时，落到最近一个"有场景的周+天"，绝不打开就是空页。
-  if(state.sceneWeek==null) state.sceneWeek=progWeek;
-  if(state.sceneDay==null)  state.sceneDay=todayDay;
-  if(!allScenes.some(s=>Number(s.week||1)===state.sceneWeek && Number(s.day||0)===state.sceneDay)){
-    const has=(w,d)=>allScenes.some(s=>Number(s.week||1)===w && Number(s.day||0)===d);
-    if(has(progWeek,todayDay)){ state.sceneWeek=progWeek; state.sceneDay=todayDay; }
-    else{
-      const wks=Array.from(new Set(allScenes.map(s=>Number(s.week||1)))).sort((a,b)=>a-b);
-      for(const ww of wks){
-        if(has(ww,state.sceneDay)){ state.sceneWeek=ww; break; }
-        const dd=Array.from(new Set(allScenes.filter(s=>Number(s.week||1)===ww).map(s=>Number(s.day||0)))).sort((a,b)=>a-b);
-        if(dd.length){ state.sceneWeek=ww; state.sceneDay=dd[0]; break; }
-      }
-    }
+  // 周/天完全以【顶部胶囊】的选择为准（topPickWeek/topPickDay 写入 state.sceneWeek/sceneDay）。
+  // 仅"首次进入、还没选过"时给初值：优先当前进度周；若该周一天场景都没有，才落到
+  // 第一个有场景的周。此后绝不替用户改选择 —— 你选哪天就显示哪天，没场景就提示没场景。
+  if(state.sceneWeek==null){
+    const hasAny=(w)=>allScenes.some(s=>Number(s.week||1)===w);
+    state.sceneWeek = hasAny(progWeek) ? progWeek
+                    : (Array.from(new Set(allScenes.map(s=>Number(s.week||1)))).sort((a,b)=>a-b)[0] || progWeek);
+  }
+  if(state.sceneDay==null){
+    const days=Array.from(new Set(allScenes.filter(s=>Number(s.week||1)===state.sceneWeek).map(s=>Number(s.day||0)))).sort((a,b)=>a-b);
+    state.sceneDay = days.includes(todayDay) ? todayDay : (days[0] || todayDay);
   }
   renderTopPicker({week:state.sceneWeek, day:state.sceneDay});
   const maxW = Math.max(1, stageWeeks(state.stages||[], Number(prog.stage||0)||0) || 16);
