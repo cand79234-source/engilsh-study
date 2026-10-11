@@ -30,6 +30,14 @@ h2{font-size:15px;font-weight:700;display:flex;align-items:center;gap:8px}
 .brand{font-weight:800;font-size:17px;color:var(--primary)}
 .prog-pill{background:var(--primary-bg);color:var(--primary);border-radius:20px;padding:5px 12px;font-size:12px;font-weight:700;cursor:pointer;border:none}
 .prog-pill:active{opacity:.7}
+/* 顶部进度胶囊里的 周/天 切换：week 可点，旁边直接列出 Day1–Day7 */
+.topbar .wsel{background:var(--primary-bg);color:var(--primary);border-radius:20px;padding:4px 9px;font-size:12px;font-weight:700;
+  cursor:pointer;border:none;display:flex;align-items:center;flex:0 0 auto;white-space:nowrap}
+.topbar .wsel select{border:none;background:transparent;color:inherit;font:inherit;font-weight:700;cursor:pointer;
+  outline:none;-webkit-appearance:none;appearance:none;padding:0 1px;width:62px}
+.topbar .daychip{background:#fff;color:var(--muted);border:1px solid var(--border);border-radius:20px;
+  padding:4px 7px;font-size:11px;font-weight:700;cursor:pointer;line-height:1;flex:0 0 auto}
+.topbar .daychip.on{background:var(--primary);color:#fff;border-color:var(--primary)}
 
 /* 内容 */
 .content{padding:66px 14px calc(var(--nav-h) + 24px);max-width:620px;margin:0 auto}
@@ -264,9 +272,14 @@ textarea{font-family:monospace;font-size:13px;min-height:110px;line-height:1.6}
 </head>
 <body>
 <div class="topbar">
-  <div class="brand">English OS</div>
-  <button class="prog-pill" id="topProg" onclick="openProg()">阶段0 · W1 · D1</button>
-  <button class="prog-pill" onclick="openStealth()" title="打开隐身学习小窗（用当天的词造句 + AI 批改）">🫥 隐身</button>
+  <div class="brand" style="flex:0 0 auto">English OS</div>
+  <div style="display:flex;align-items:center;gap:6px;flex:1;min-width:0;justify-content:flex-end">
+    <button class="wsel" id="topWeekSel" title="切换周（1–16）">
+      <select id="topWeekDD" onchange="topPickWeek(this.value)"></select>
+    </button>
+    <span id="topDayChips" style="display:flex;gap:4px;overflow-x:auto;scrollbar-width:none;-webkit-overflow-scrolling:touch"></span>
+  </div>
+  <button class="prog-pill" onclick="openStealth()" title="打开隐身学习小窗（用当天的词造句 + AI 批改）" style="flex:0 0 auto">🫥 隐身</button>
 </div>
 <main class="content" id="content"></main>
 <div class="bottomnav">
@@ -481,8 +494,45 @@ const state={}; const pages={};
 document.querySelectorAll('.bottomnav a').forEach(a=>a.onclick=()=>{
   document.querySelectorAll('.bottomnav a').forEach(x=>x.classList.remove('active'));
   a.classList.add('active'); render(a.dataset.page); window.scrollTo(0,0);});
-async function refreshProg(){try{const p=await api('/progress');
-  document.getElementById('topProg').textContent=`阶段${p.stage} · W${p.week} · D${p.day}`;}catch(e){}}
+async function refreshProg(){try{const p=await api('/progress'); renderTopPicker(p);}catch(e){}}
+
+/* ---------- 顶部进度胶囊：week 下拉 + Day1–Day7 芯片（可直接点击切换） ----------
+   造句页读这里的值（state.sceneWeek/sceneDay），所以在顶部切天/切周，
+   造句页跟着变；学习页位置不动（不写 /progress）。 */
+function renderTopPicker(p){
+  if(!p) return;
+  state.progPill={week:Number(p.week||1), day:Number(p.day||1)};
+  if(state.sceneWeek==null) state.sceneWeek=state.progPill.week;
+  if(state.sceneDay==null)  state.sceneDay=state.progPill.day;
+  const dd=document.getElementById('topWeekDD');
+  if(dd){
+    // 固定 1–16 周（没有阶段概念）
+    if(!dd.dataset.filled){
+      dd.innerHTML=Array.from({length:16},(_,i)=>
+        `<option value="${i+1}">Week${i+1}</option>`).join('');
+      dd.dataset.filled='1';
+    }
+    dd.value=String(state.progPill.week);
+  }
+  const box=document.getElementById('topDayChips');
+  if(box) box.innerHTML=[1,2,3,4,5,6,7].map(d=>
+    `<button class="daychip${d===state.progPill.day?' on':''}" onclick="topPickDay(${d})">D${d}</button>`).join('');
+}
+function topPickWeek(v){
+  v=parseInt(v,10)||1;
+  state.sceneWeek=v;
+  state.progPill.week=v;
+  render(state.page||'learn');
+}
+function topPickDay(d){
+  d=parseInt(d,10)||1;
+  state.sceneDay=d;
+  state.progPill.day=d;
+  // 造句页/学习页都跟着切到该天
+  if(state.page==='scenes') render('scenes');
+  else render(state.page||'learn');
+}
+
 function go(page){document.querySelectorAll('.bottomnav a').forEach(x=>x.classList.remove('active'));
   document.querySelector(`.bottomnav a[data-page=${page}]`).classList.add('active');render(page);window.scrollTo(0,0);}
 
@@ -512,7 +562,7 @@ pages.learn=async function(el){
   const lD=Math.min(Number(d.today.listening_done)||0, lT);
   const lp=lT?Math.round(lD/lT*100):0;
   state.folds=Object.assign({voc:true,sen:true,copy:false,listen:false,basic:true,combo:true}, state.folds||{});
-  document.getElementById('topProg').textContent=`阶段${p.stage} · W${p.week} · D${p.day}`;
+  renderTopPicker(p);
   el.innerHTML=`
   <div class="card" style="border:1.5px solid var(--primary)">
     <div style="display:flex;justify-content:space-between;align-items:center">
@@ -2727,41 +2777,31 @@ pages.scenes=async function(el){
   state.__allScenes=allScenes;      // 供「回到今天」等处判断哪天/哪周有场景
   const todayDay=Number(prog.day||1)||1;
   const progWeek=Number(prog.week||1)||1;
-  // 默认定位到「当前进度的周 + 今天」——和第一页学习页底部同一天、同一范围。
-  // 今天/这一周没场景时，落到最近一个"有场景的周+天"，绝不打开就是空页。
-  if(state.sceneWeek==null || state.sceneDay==null){
+  // 周/天以【顶部胶囊】的选择为准（state.sceneWeek/sceneDay，由 topPickWeek/topPickDay 写入）。
+  // 首次进入才做一次兜底：当前选择没场景时，落到最近一个"有场景的周+天"，绝不打开就是空页。
+  if(state.sceneWeek==null) state.sceneWeek=progWeek;
+  if(state.sceneDay==null)  state.sceneDay=todayDay;
+  if(!allScenes.some(s=>Number(s.week||1)===state.sceneWeek && Number(s.day||0)===state.sceneDay)){
     const has=(w,d)=>allScenes.some(s=>Number(s.week||1)===w && Number(s.day||0)===d);
-    let w=progWeek, d=todayDay;
-    if(!has(w,d)){
+    if(has(progWeek,todayDay)){ state.sceneWeek=progWeek; state.sceneDay=todayDay; }
+    else{
       const wks=Array.from(new Set(allScenes.map(s=>Number(s.week||1)))).sort((a,b)=>a-b);
-      let found=false;
       for(const ww of wks){
-        if(has(ww,d)){ w=ww; found=true; break; }
+        if(has(ww,state.sceneDay)){ state.sceneWeek=ww; break; }
         const dd=Array.from(new Set(allScenes.filter(s=>Number(s.week||1)===ww).map(s=>Number(s.day||0)))).sort((a,b)=>a-b);
-        if(dd.length){ w=ww; d=dd[0]; found=true; break; }
+        if(dd.length){ state.sceneWeek=ww; state.sceneDay=dd[0]; break; }
       }
-      if(!found){ w=progWeek; d=todayDay; }
     }
-    if(state.sceneWeek==null) state.sceneWeek=w;
-    if(state.sceneDay==null)  state.sceneDay=d;
   }
+  renderTopPicker({week:state.sceneWeek, day:state.sceneDay});
   const maxW = Math.max(1, stageWeeks(state.stages||[], Number(prog.stage||0)||0) || 16);
   el.innerHTML=`<div class="card">
     <h2>🌅 造句 / 场景</h2>
-    <div class="sub" style="margin-top:4px">这一页用你<b>导入的场景</b>练造句：下面是<b>和学习页底部完全一样的造句练习</b>（① 基础每词一句 + ② 组合表达），默认只练<b>今天</b>。AI 批改链接保持不变。</div>
-    <div style="display:flex;gap:7px;margin:8px 0 4px">
-      <label style="flex:1;font-size:11.5px;color:var(--muted);font-weight:700">周
-        <select id="sceneWeekSel" onchange="state.sceneWeek=parseInt(this.value,10)||1;render('scenes')" style="width:100%;margin-top:2px">
-          ${Array.from({length:Math.max(1,maxW)},(_,i)=>`<option value="${i+1}" ${i+1===state.sceneWeek?'selected':''}>第${i+1}周</option>`).join('')}
-        </select></label>
-      <label style="flex:1;font-size:11.5px;color:var(--muted);font-weight:700">天
-        <select id="sceneDaySel" onchange="state.sceneDay=parseInt(this.value,10)||1;render('scenes')" style="width:100%;margin-top:2px">
-          ${[1,2,3,4,5,6,7].map(d=>`<option value="${d}" ${d===state.sceneDay?'selected':''}>Day ${d}</option>`).join('')}
-        </select></label>
-    </div>
-    <div class="btnrow" style="margin:0 0 6px">
+    <div class="sub" style="margin-top:4px">这一页用你<b>导入的场景</b>练造句：下面是<b>和学习页底部完全一样的造句练习</b>（① 基础每词一句 + ② 组合表达）。在顶部切<b>周 / Day</b> 即可换天。AI 批改链接保持不变。</div>
+    <div class="btnrow" style="margin:8px 0 6px">
+      <span class="badge" style="background:var(--primary-bg);color:var(--primary)">Week${state.sceneWeek} · Day${state.sceneDay}</span>
       <button class="btn ghost sm" data-act="sceneGoToday">📍 回到今天</button>
-      <button class="btn ghost sm" data-act="sceneLibFold" id="sceneLibFoldBtn">${state.sceneLibFold?'▷ 展开场景库':'▾ 收起场景库'}</button>
+      <button class="btn ghost sm" data-act="sceneLibFold">${state.sceneLibFold?'▷ 展开场景库':'▾ 收起场景库'}</button>
       <button class="btn ghost sm" data-act="copyWeekScenePrompt" title="没有场景时，用 AI 帮你造一批（可选）">🌅 AI 帮造场景（可选）</button>
     </div>
     <div id="sceneList" ${state.sceneLibFold?'style="display:none"':''}><div class="sub">加载中…</div></div>
@@ -2784,8 +2824,8 @@ pages.scenes=async function(el){
       const _wkHas=all.filter(s=>Number(s.week||1)===state.sceneWeek);
       box.innerHTML='<div class="sub" style="margin-top:8px">'
         + (_wkHas.length
-            ? '第'+state.sceneWeek+'周的 Day'+state.sceneDay+' 没有场景。换上面的「天」看看别的天，或点「📍 回到今天」。'
-            : '第'+state.sceneWeek+'周没有导入场景。换上面的「周」看别的周，或回到「学习」页 📥 导入 → 右框粘贴 → 点「🌅 导入场景」。')
+            ? 'Week'+state.sceneWeek+' 的 Day'+state.sceneDay+' 没有场景。换顶部的 Day 看看别的天，或点「📍 回到今天」。'
+            : 'Week'+state.sceneWeek+' 没有导入场景。换顶部的 Week 看别的周，或回到「学习」页 📥 导入 → 右框粘贴 → 点「🌅 导入场景」。')
         + '</div>';
       return;
     }else{
@@ -4778,8 +4818,9 @@ function _tpl(id){ const t=document.getElementById(id); return t?String(t.textCo
 /* 当前 PGOS 学习数据摘要：两份提示词共用 */
 function pgosDataDump(){
   const L=['【PGOS 学习数据 · 实时导出】','导出时间：'+new Date().toLocaleString()];
-  const pg=document.getElementById('topProg');
-  L.push('当前进度：'+(pg?(pg.textContent||'').trim():'—'));
+  const pr0=(state.progPill||{});
+  if(pr0.week!=null) L.push('当前进度：第 '+pr0.week+' 周 · 第 '+pr0.day+' 天');
+  else L.push('当前进度：—');
   const pr=(state.today&&state.today.progress)||(state.learn&&state.learn.d&&state.learn.d.progress)||{};
   if(pr.week!=null) L.push('课程位置：阶段'+(pr.stage!=null?pr.stage:'—')+' · 第 '+pr.week+' 周 · 第 '+pr.day+' 天');
 
