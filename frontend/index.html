@@ -2638,25 +2638,114 @@ async function copyText(txt, emptyMsg){
 /* 复习页不再是「造句复习页」。造句不进 SRS，听力也不单独建复习入口。
    单词走 SRS 闪卡（英文 → 中文主动回忆），错误走薄弱项。
    （「全部词汇」入口将在词库浏览阶段加入）                       */
+/* 用「我的场景」（word_scenarios）构造一段造句计划，喂给 renderSentencePlan。
+   —— 和学习页底部被删掉的那段【结构完全一致】：① 基础每词一句 + ② 组合表达。
+   区别只在于题目来源：这里全部来自用户导入的场景，而不是本周词汇表。
+     · tier='small'（①小场景）→ 基础句：每个词一句，该词的全部小场景作为 🔁 可轮换情景
+     · tier='large'/'medium'（③大场景）→ 组合句：每个大场景一组，组内词即场景里涉及的词
+   renderSentencePlan / submitSentence（AI 批改）完全不动，只是换了一份输入。 */
+function buildScenesPlan(list){
+  const small = (list||[]).filter(s => (s.tier||'small')==='small');
+  const large = (list||[]).filter(s => {
+    const t=(s.tier||'').toLowerCase(); return t==='large'||t==='medium';
+  });
+  // ① 基础：每个词收集它自己的小场景文本
+  const wordScenes = {};
+  small.forEach(s=>{
+    const w=(s.word||'').trim().toLowerCase();
+    if(!w) return;
+    (wordScenes[w]=wordScenes[w]||[]).push(s);
+  });
+  const basic = Object.keys(wordScenes).sort().map((w,i)=>{
+    const items = wordScenes[w];
+    const scenes = items.map((s,idx)=>({n:String(idx+1), text:(s.prompt||'').trim()}))
+                        .filter(x=>x.text);
+    const disp = items[0].word || w;
+    return {
+      i:i+1, word:disp, meaning:'', category:'用我的场景',
+      task:`用 ${disp} 造一句（情景见下方 🔁 轮换）`,
+      focus:false, scenes:scenes
+    };
+  });
+  // ② 组合：按唯一大场景文本分组，组内词即该场景涉及的词
+  const byPrompt = {};
+  large.forEach(s=>{
+    const k=(s.prompt||'').trim();
+    if(!k) return;
+    (byPrompt[k]=byPrompt[k]||[]).push(s);
+  });
+  const combo = Object.keys(byPrompt).map((prompt,i)=>{
+    const rows = byPrompt[prompt];
+    const words = rows.map(r=>({word:r.word, meaning:'', review:false}));
+    return {
+      i:i+1, words:words, category:'综合场景',
+      scene:prompt,
+      task:`用 ${words.map(w=>w.word).join(' / ')} 写一段连续表达（场景：${prompt}）`,
+      hint:'建议 2-3 句连续表达，写多写少随意，不强制。',
+      has_review:false
+    };
+  });
+  return {basic, combo,
+          meta:{basic_count:basic.length, combo_count:combo.length, from_scenes:true}};
+}
+
 pages.scenes=async function(el){
   // 确保折叠状态已初始化（直接进入本页时 state.folds 可能还没建）
   state.folds=Object.assign({voc:true,sen:true,copy:false,listen:false,basic:true,combo:true}, state.folds||{});
-  el.innerHTML=`<div class="card">
-    <h2>🌅 造句 / 场景</h2>
-    <div class="sub" style="margin-top:4px">这一页集中放你<b>单独导入的场景</b>和<b>造句练习</b>：上面是导入的场景库（按词分组），下面是用这些场景练造句的地方。AI 批改链接保持不变。</div>
-    <div class="btnrow"><button class="btn ghost sm" data-act="copyWeekScenePrompt">🌅 复制本周单词+复习词给 AI 造景</button></div>
-    <div id="sceneList"><div class="sub">加载中…</div></div>
-    <div id="sentenceArea"></div>
-  </div>`;
+  const prog=(state.today&&state.today.progress)||{};
+  // 先拉【全部】场景 + 今日进度：本页只显示"我导入的场景"，所以必须拿到全部周再自动选中含场景的那一周
+  let allScenes=[], tToday=null;
   try{
     const [scR, tR] = await Promise.all([api('/scenes'), api('/today')]);
-    const list=(scR.scenes||[]);
-    const t=tR;
-    state.today=t; state.learn=state.learn||{};
+    allScenes=(scR.scenes||[]); tToday=tR;
+  }catch(e){
+    el.innerHTML='<div class="card"><h2>🌅 造句 / 场景</h2><div class="sub" style="margin-top:8px;color:var(--red)">加载失败：'+esc(e.message)+'</div></div>';
+    return;
+  }
+  state.today=tToday; state.learn=state.learn||{};
+  // 自动选中含场景最多的周（优先当前进度周；都没有则落在第1周并显示空态）
+  if(state.sceneWeek==null){
+    const byWeek={}; allScenes.forEach(s=>{const w=Number(s.week||1); byWeek[w]=(byWeek[w]||0)+1;});
+    const pw=Number(prog.week!=null?prog.week:1);
+    if(byWeek[pw]) state.sceneWeek=pw;
+    else { let best=1,bn=-1; Object.keys(byWeek).forEach(w=>{ if(byWeek[w]>bn){bn=byWeek[w];best=+w;} }); state.sceneWeek=(bn>0?best:1); }
+  }
+  if(state.sceneDay==null) state.sceneDay=0;
+  const maxW = Math.max(1, stageWeeks(state.stages||[], Number(prog.stage||0)||0) || 16);
+  el.innerHTML=`<div class="card">
+    <h2>🌅 造句 / 场景</h2>
+    <div class="sub" style="margin-top:4px">这一页用你<b>导入的场景</b>练造句：上面是「我的场景库」（按词分组），下面是<b>完全和学习页底部一样的造句练习</b>（① 基础每词一句 + ② 组合表达）。AI 批改链接保持不变。</div>
+    <div class="btnrow" style="margin:8px 0 2px;flex-wrap:wrap">
+      <span class="lbl" style="align-self:center">周</span>
+      <select id="sceneWeekSel" onchange="state.sceneWeek=parseInt(this.value,10)||1;render('scenes')" style="min-width:64px">
+        ${Array.from({length:Math.max(1,maxW)},(_,i)=>`<option value="${i+1}" ${i+1===state.sceneWeek?'selected':''}>第${i+1}周</option>`).join('')}
+      </select>
+      <span class="lbl" style="align-self:center">天</span>
+      <select id="sceneDaySel" onchange="state.sceneDay=parseInt(this.value,10)||0;render('scenes')" style="min-width:78px">
+        <option value="0" ${0===state.sceneDay?'selected':''}>全部</option>
+        ${Array.from({length:7},(_,i)=>`<option value="${i+1}" ${i+1===state.sceneDay?'selected':''}>第${i+1}天</option>`).join('')}
+      </select>
+      <button class="btn ghost sm" data-act="copyWeekScenePrompt" title="没有场景时，用 AI 帮你造一批（可选）">🌅 AI 帮造场景（可选）</button>
+    </div>
+    <div id="sceneList"><div class="sub">加载中…</div></div>
+    <div id="sentenceArea"></div>
+    <div class="sub" style="margin-top:14px;color:var(--muted)">没有场景？把「第N天｜主题 / ① 小场景 / ③ 大场景」格式的计划贴进导入弹窗右侧「🌅 场景」框，点「🌅 导入场景」即可。本页只显示你导入的场景，绝不会自动生成或混入 AI 场景。</div>
+  </div>`;
+  try{
+    const all=allScenes;
+    const t=tToday;
+    state.learn=state.learn||{};
+    // 按"周 + 天"精确筛选：week 必须匹配选中的周，day 默认"全部"（0 表示不分天/全部）
+    const list = all
+      .filter(s=> Number(s.week||1)===state.sceneWeek)
+      .filter(s=> state.sceneDay>0 ? ((s.day||0)===state.sceneDay || (s.day||0)===0) : true);
     // —— 场景库（按词分组）——
     const box=document.getElementById('sceneList');
-    if(!list.length){
-      box.innerHTML='<div class="sub" style="margin-top:8px">还没有导入场景。回到「学习」页点 📥 导入，把场景贴进右框再点「🌅 导入场景」即可。</div>';
+    if(!all.length){
+      box.innerHTML='<div class="sub" style="margin-top:8px">还没有导入任何场景。回到「学习」页点 📥 导入，把「第N天｜主题 / ① 小场景 / ③ 大场景」计划贴进右框，再点「🌅 导入场景」即可。本页只显示你导入的场景，绝不自动生成或混入 AI 场景。</div>';
+    }else if(!list.length){
+      box.innerHTML='<div class="sub" style="margin-top:8px">第'+state.sceneWeek+'周还没有导入场景。可切换上方「周」选择器查看其他周，或回到「学习」页导入第'+state.sceneWeek+'周的场景。</div>';
+      return;
     }else{
       const byWord={};
       list.forEach(s=>{ (byWord[s.word]=byWord[s.word]||[]).push(s); });
@@ -2665,12 +2754,16 @@ pages.scenes=async function(el){
          ${byWord[w].map(s=>`<div style="margin:6px 0;padding:8px 10px;background:var(--primary-bg);border-radius:9px;font-size:13.5px;line-height:1.6">${esc(s.prompt)}</div>`).join('')}
        </div>`).join('');
     }
-    // —— 造句练习（从学习页搬来：① 基础每词一句 + ② 组合表达）——
+    // —— 造句练习：优先用「我的场景」构建，否则回退本周词汇表计划 ——
     const sa=document.getElementById('sentenceArea');
     if(t.is_rest_day){
       sa.innerHTML=`<div class="card" style="margin-top:12px;background:#ecfdf5;border-color:#a7f3d0"><h2>😌 Day7 · 休息日</h2><div class="sub" style="margin-top:4px">今天不练造句。你可以翻翻上面的场景库，或者直接休息。</div></div>`;
       return;
     }
+    const scenesPlan=buildScenesPlan(list);
+    const useScenes=(scenesPlan.basic.length+scenesPlan.combo.length)>0;
+    const plan= useScenes ? scenesPlan : planOf(t);
+    state.today=Object.assign({}, t, {sentence_plan: plan});
     sa.innerHTML=`
       <div style="display:flex;justify-content:space-between;align-items:center;margin:14px 0 10px">
         <h2 style="margin:0">✍️ 造句</h2>
@@ -2682,20 +2775,24 @@ pages.scenes=async function(el){
             <h2 style="margin:0;flex:1;min-width:0">① 基础 · 每词一句 <span class="badge" id="basicProg" style="background:var(--primary-bg);color:var(--primary)"></span></h2>
             <span class="fold-ic" data-act="catFold" data-val="basic" data-fold-for="basicBody" title="折叠/展开">${state.folds.basic?'▽':'▷'}</span>
           </div>
-          <div class="sub" style="margin-top:4px">目标：<b>会用</b>。今天 ${(t.sentence_plan&&t.sentence_plan.basic||[]).length} 个词，每个造一句。</div>
+          <div class="sub" style="margin-top:4px">目标：<b>会用</b>。今天 ${(plan.basic||[]).length} 个词，每个造一句（情景来自你导入的场景，点 🔁 轮换）。</div>
           <div style="display:flex;justify-content:flex-end;margin:3px 0 4px"><button class="btn ghost sm" style="min-height:auto;padding:5px 10px;font-size:13px" id="copyAllBtn" data-act="copyAll">📋 复制全部</button></div>
           <div id="basicBody" ${state.folds.basic?'':'style="display:none"'}><div id="sentences"></div></div>
         </div>
         <div class="card" id="planCombo" style="background:#f8fafc;border-color:#e2e8f0">
           <div style="display:flex;justify-content:space-between;align-items:center;gap:8px">
-            <h2 style="margin:0;flex:1;min-width:0">② 组合表达 · 10 组 <span class="badge" id="comboProg" style="background:#e0e7ff;color:var(--primary)"></span></h2>
+            <h2 style="margin:0;flex:1;min-width:0">② 组合表达 · ${(plan.combo||[]).length} 组 <span class="badge" id="comboProg" style="background:#e0e7ff;color:var(--primary)"></span></h2>
             <span class="fold-ic" data-act="catFold" data-val="combo" data-fold-for="comboBody" title="折叠/展开">${state.folds.combo?'▽':'▷'}</span>
           </div>
-          <div class="sub" style="margin-top:4px">目标：<b>把词放进连续表达</b>。到期复习词混在这里一起过${(t.review_pool||[]).length?`（今天 ${(t.review_pool||[]).length} 个）`:''} · 写多写少随意，不强制</div>
+          <div class="sub" style="margin-top:4px">目标：<b>把词放进连续表达</b>。用你导入的大场景写一段${plan.combo&&plan.combo.length?'':'（暂无可练的大场景）'} · 写多写少随意，不强制</div>
           <div id="comboBody" ${state.folds.combo?'':'style="display:none"'}><div id="combos"></div></div>
         </div>
       </div>`;
-    renderSentencePlan(t);
+    renderSentencePlan(state.today);
+    if(!useScenes){
+      sa.insertAdjacentHTML('afterbegin',
+        '<div class="sub" style="margin:8px 0;color:var(--muted)">第'+state.sceneWeek+'周既没有导入的场景，也没有可练的本周词汇，先去「学习」页导入本周内容，或用上方「AI 帮造场景」生成一批。</div>');
+    }
   }catch(e){
     const sl=document.getElementById('sceneList');
     if(sl) sl.innerHTML='<div class="sub" style="margin-top:8px;color:var(--red)">加载失败：'+esc(e.message)+'</div>';
